@@ -8,6 +8,7 @@
 
 @section('content')
     <p class="text-sm">ログイン中: {{ $ownerChannelTitle }}</p>
+    @include('partials.owner-logout')
     <h1 class="mt-2 text-2xl font-bold break-words">{{ $proposal->title }}</h1>
 
     <noscript>

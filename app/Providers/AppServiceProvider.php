@@ -32,6 +32,15 @@ class AppServiceProvider extends ServiceProvider
         $this->validateQuotaConfig($this->app->runningInConsole());
         $this->configureRateLimiting();
         $this->configureSessions();
+        $this->warnAboutDebugInProduction();
+    }
+
+    /** Debug pages expose configuration and stack traces (spec 6.7 I2). */
+    public function warnAboutDebugInProduction(): void
+    {
+        if ($this->app->isProduction() && config('app.debug')) {
+            Log::warning('APP_DEBUG is enabled in production');
+        }
     }
 
     /**

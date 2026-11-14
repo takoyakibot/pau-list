@@ -130,6 +130,11 @@ php artisan test
 - **削除バッチは cron が毎日動いていることが前提です。** 一覧キャッシュ・提案は「次回実行までに期限が来る行（現在 + 24 時間）」を削除するため、毎日動いていれば表示した削除日を過ぎて残ることはありません。cron が止まる・失敗すると、その分だけ保存期間（30 日）を超えて残ります。`storage/logs/cron.log` と `storage/logs/laravel-*.log`（`app:prune-expired` の結果・エラー）を定期的に確認してください。バッチが失敗したステップがあると終了コードが 0 以外になります。
 - **ゲートウェイのタイムアウト（要確認: CORESERVER）**: チャンネルの取り込みは最悪で約 85 秒かかることがあります（同じチャンネルを取り込み中の別リクエストのロック待ち最大 40 秒 + 取り込み全体の上限 30 秒 + 最後の API 呼び出しのタイムアウト 15 秒）。CORESERVER の Web サーバー／PHP の実行時間制限（`max_execution_time`、リバースプロキシのタイムアウト）がこれより短いと、取り込みの途中で 504 などになります（途中まで読んだ分は保存されないため、データは壊れません）。実際の制限値を確認し、短い場合は `ChannelVideoCatalog` のロック待ち時間・取り込み上限を下げることを検討してください。
 
+- **チャンネル主のログイン（Phase 2）**: ログイン中のアクセストークンは暗号化 DB セッション（`SESSION_DRIVER=database`・`SESSION_ENCRYPT=true`）にだけ置きます。保持は最長 `SESSION_LIFETIME`（120 分）で、トークン自体も約 1 時間で失効します。ログアウトでセッションを即削除し、Google 側の承認も取り消します（取り消しに失敗したときはログアウト後の画面で https://myaccount.google.com/permissions からの取り消しを案内します）。refresh_token は保存しません。
+- **コールバック URL とアクセスログ**: `/auth/google/callback?code=...&state=...` は Web サーバーのアクセスログに残りえます。認可コードは一回限り・短命で、state もセッションから一度で取り出して削除するため再利用できません（spec 6.7 I3）。本番でアクセスログに残るかは確認して spec に記録してください。
+- **`GOOGLE_REDIRECT_URI`**: GCP に登録したリダイレクト URI と完全に一致させてください（http/https・末尾スラッシュも含む）。本番は `https://` 以外だとログインが 503（未設定扱い）になります。
+- **`APP_DEBUG`**: 本番で `true` だと起動時に `APP_DEBUG is enabled in production` の警告をログに出します。本番は必ず `false` にしてください。
+
 ## リクエストボディの上限（要確認: CORESERVER）
 
 `LimitRequestBody` ミドルウェアは `Content-Length` と読み込んだボディが 64KB を超えると 413 を返しますが、PHP のミドルウェアでは multipart ボディを PHP が解析する前に制限できません。サーバー側でも約 64KB に抑えるため、`post_max_size` / `upload_max_filesize`（`.user.ini` やコントロールパネルで設定）や、Web サーバーの `LimitRequestBody` を設定してください。CORESERVER で設定できるか・反映されるかは未確認です。

@@ -12,9 +12,11 @@
     @if ($ownerMatches)
         <p class="mt-2">ログイン中: {{ $ownerChannelTitle }}</p>
         <p class="mt-2"><a class="font-semibold underline" href="{{ route('proposals.edit', $key) }}">編集画面へ進む</a></p>
+        @include('partials.owner-logout')
     @else
         @if ($ownerChannelTitle !== null)
             <p class="mt-2">ログイン中: {{ $ownerChannelTitle }}（この提案の対象チャンネルではありません）</p>
+            @include('partials.owner-logout')
         @endif
         <p class="mt-2">
             <a class="font-semibold underline" href="{{ route('owner.login', ['p' => $key]) }}">{{ $ownerChannelTitle !== null ? '別のチャンネルでログインし直す' : 'チャンネル主の方: Google でログインして作成へ' }}</a>

@@ -135,9 +135,10 @@ class OwnerAuthController extends Controller
                 return $this->backToPreview($key, self::NO_CHANNEL_MESSAGE);
             }
 
-            // New session id on privilege change (6.7 G1). An existing owner login is overwritten without
-            // revoking its token: revoking the same grant could also invalidate the new token.
-            $request->session()->regenerate();
+            // New session id on privilege change (6.7 G1); the pre-login session row is destroyed, not left
+            // behind with its stale contents. An existing owner login is overwritten without revoking its
+            // token: revoking the same grant could also invalidate the new token.
+            $request->session()->regenerate(true);
             $this->owners->login(new OwnerLogin($token->accessToken, $token->expiresAt, $channel->id, $channel->title));
             $loggedIn = true;
         } finally {
@@ -148,6 +149,28 @@ class OwnerAuthController extends Controller
 
         // Channel mismatch is decided (and shown) by RequireOwnerSession on the edit page.
         return redirect()->route('proposals.edit', $key);
+    }
+
+    /**
+     * Logout (spec 6.6, 6.7 F3, G2): revoke the token at Google (even when expired; best effort), then
+     * drop the whole session and the CSRF token. A failed revoke never keeps the user logged in.
+     */
+    public function logout(Request $request): RedirectResponse
+    {
+        $token = $this->owners->tokenForRevoke();
+        $revokeFailed = $token !== null && ! $this->oauth->revoke($token);
+
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return redirect()->route('owner.logged-out')->with('revoke_failed', $revokeFailed);
+    }
+
+    public function loggedOut(Request $request): Response
+    {
+        return response()->view('owner.logged-out', [
+            'revokeFailed' => $request->session()->get('revoke_failed') === true,
+        ]);
     }
 
     private function backToPreview(string $key, string $message): RedirectResponse

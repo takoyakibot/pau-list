@@ -62,3 +62,5 @@ Route::get('/auth/google', [OwnerAuthController::class, 'redirect'])
 Route::get('/auth/google/callback', [OwnerAuthController::class, 'callback'])
     ->middleware([RequireDocumentNavigation::class, 'throttle:oauth'])
     ->name('owner.callback');
+Route::post('/logout', [OwnerAuthController::class, 'logout'])->name('owner.logout');
+Route::get('/logged-out', [OwnerAuthController::class, 'loggedOut'])->name('owner.logged-out');

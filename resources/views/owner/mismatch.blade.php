@@ -14,4 +14,5 @@
     </section>
 
     <p class="mt-6 text-sm"><a class="underline" href="{{ route('proposals.show', $key) }}">提案のプレビューへ戻る</a></p>
+    @include('partials.owner-logout')
 @endsection

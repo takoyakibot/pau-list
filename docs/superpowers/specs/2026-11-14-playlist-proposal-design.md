@@ -546,6 +546,61 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 | J2 | OAuth 開始・コールバックにレート制限（8.1）、コールバックは GET のみ | — | 既存ケース |
 | J3 | 認可 URL のパラメータは `http_build_query`（RFC 3986 エンコード）で組み立て、文字列連結しない | league（クエリ組み立て） | 認可 URL の解析で全パラメータが期待どおり |
 
+**判定記録（Phase 2）**
+
+判定は実装者の仮記入。最終レビュー担当が Socialite・league/oauth2-client・google/auth のソースを確認して「参照ライブラリでの裏取り」欄を記入し、判定を確定する（U13）。未記入または「満たさない」が残る間は Phase 2 を完了としない（10.5・11 章）。
+
+| # | 判定（満たす・対象外） | 根拠（テスト名またはファイル・理由） | 参照ライブラリでの裏取り（レビュー担当が記入） |
+|---|---|---|---|
+| A1 | 満たす | `OwnerSessionTest::test_begin_generates_fresh_43_char_state`（32 バイトの CSPRNG・base64url 43 文字・毎回異なる） |  |
+| A2 | 満たす | 静的: state は `OwnerSession`（暗号化 DB セッション）にのみ保存。`OwnerAuthStartTest::test_start_stores_state_only_in_session`（Cookie・本文に出ない） |  |
+| A3 | 満たす | `OwnerCallbackValidationTest::test_bad_state_is_400_without_token_request`（欠落／空／不一致／配列。`hash_equals`） |  |
+| A4 | 満たす | `OwnerSessionTest::test_pull_pending_is_one_time`、`OwnerCallbackValidationTest::test_replayed_callback_is_400`（照合前に pull） |  |
+| A5 | 満たす | `OwnerCallbackValidationTest::test_state_older_than_10_minutes_is_400`（`OwnerSession::STATE_TTL_SECONDS` = 600） |  |
+| A6 | 満たす | 静的: state 省略モード・設定が無い。`OwnerSecurityTest::test_no_stateless_mode_exists`（`app/` と関連設定に `stateless` が 0 件） |  |
+| B1 | 満たす | `PkceTest::test_verifier_is_43_unreserved_chars_and_random` |  |
+| B2 | 満たす | `PkceTest::test_challenge_matches_rfc7636_appendix_b`、`GoogleOAuthTest::test_authorization_url_parameters`（`code_challenge_method=S256` 固定） |  |
+| B3 | 満たす | `OwnerSessionTest::test_pull_pending_is_one_time`、`OwnerCallbackLoginTest::test_success_logs_in_and_redirects_to_edit`（交換後に pending 無し） |  |
+| C1 | 満たす | `OwnerAuthStartTest::test_redirect_uri_ignores_forged_host`（`config('services.google.redirect')` のみ） |  |
+| C2 | 満たす | `GoogleOAuthTest::test_is_configured_rejects_blank_and_http_in_production`、`OwnerCallbackLoginTest::test_redirect_uri_is_identical_in_both_requests`。GCP 登録値との完全一致は人手確認（README） |  |
+| C3 | 満たす | `OwnerAuthStartTest::test_external_return_url_is_ignored`、`OwnerCallbackLoginTest::test_success_logs_in_and_redirects_to_edit`（戻り先は `proposals.edit` ルートのみ） |  |
+| D1 | 満たす | `OwnerCallbackValidationTest::test_replayed_callback_is_400`（2 回目はトークン要求なし）、`GoogleOAuthTest::test_invalid_grant_is_not_retried` |  |
+| D2 | 満たす | `GoogleOAuthTest::test_timeout_is_not_retried` |  |
+| D3 | 満たす | `OwnerCallbackLoginTest::test_success_logs_in_and_redirects_to_edit`（302・本文に code 無し・`Referrer-Policy: no-referrer`） |  |
+| D4 | 満たす | `OwnerCallbackValidationTest::test_malformed_code_or_error_with_code_is_400`（`OwnerAuthController::CODE_PATTERN`） |  |
+| D5 | 満たす（返る場合のみ） | `OwnerCallbackValidationTest::test_wrong_iss_is_400_and_correct_iss_passes`。Google が `iss` を返すかは人手確認 |  |
+| E1 | 満たす | `GoogleOAuthTest::test_exchange_posts_form_body`（`asForm()` の POST 本文。URL クエリに秘密なし） |  |
+| E2 | 満たす | `GoogleOAuthTest::test_exchange_rejects_invalid_token_responses`（データプロバイダ） |  |
+| E3 | 満たす | `OwnerCallbackLoginTest::test_insufficient_scope_revokes_and_explains`。応答に `scope` が無い場合も不足扱い（下記の理由 5） |  |
+| E4 | 満たす（ID トークン検証は対象外） | `GoogleOAuthTest::test_refresh_token_is_dropped`、`OwnerCallbackLoginTest::test_session_holds_only_owner_fields`、`OwnerSecurityTest::test_no_token_in_any_table_cache_or_log`。OIDC を使わないため id_token・nonce・署名検証は対象外 |  |
+| E5 | 満たす | `GoogleOAuthTest::test_expires_at_has_60s_margin`・`test_expires_at_is_capped_at_3600`、`OwnerSessionTest::test_current_is_null_at_expiry_boundary`、`OwnerEditAccessTest::test_expired_owner_is_sent_back_to_preview_at_boundary` |  |
+| F1 | 満たす | `OwnerCallbackValidationTest::test_error_description_is_never_shown` |  |
+| F2 | 満たす | `GoogleOAuthTest::test_token_error_logs_only_status_and_code` |  |
+| F3 | 満たす | `OwnerLogoutTest::test_revoke_failure_still_logs_out`（取り消し失敗は画面で案内し、ログはステータスのみ） |  |
+| G1 | 満たす | `OwnerCallbackLoginTest::test_session_id_changes_on_login`（`regenerate(true)` で旧セッション行も削除） |  |
+| G2 | 満たす | `OwnerLogoutTest::test_logout_revokes_and_invalidates_session`、`test_csrf_token_changes_on_logout`、`test_session_id_changes_on_logout` |  |
+| G3 | 満たす | `OwnerSecurityTest::test_no_token_in_any_table_cache_or_log`（database セッション＋暗号化・database キャッシュで全テーブルとログを検査） |  |
+| H1 | 満たす | `OwnerSecurityTest::test_tls_verification_is_never_disabled`（`app/` のソース検査） |  |
+| H2 | 満たす | `GoogleOAuthTest::test_endpoints_are_https_constants`（`GoogleOAuth`／`YouTubeReader` の `const`） |  |
+| H3 | 満たす | `GoogleOAuthTest::test_timeout_is_not_retried`、`YouTubeOwnerClientTest::test_connection_error_is_transient`（全呼び出しに `connectTimeout(5)->timeout(15)`） |  |
+| H4 | 満たす | `GoogleOAuthTest::test_redirect_response_is_failure`（トークン・取り消しとも `withoutRedirecting()`） |  |
+| H5 | 満たす | `GoogleOAuthTest::test_revoke_posts_token_in_body` |  |
+| I1 | 満たす | `OwnerSecurityTest::test_secrets_never_reach_logs`（トークン 500・接続例外・channels 401・取り消し 400・ログアウト時の取り消し 400）、`OwnerSecurityTest::test_secret_parameters_are_sensitive`。8.8 のマスク用ラッパーは作らず `#[\SensitiveParameter]`＋ログはステータス・コードのみで代替（下記の理由 6） |  |
+| I2 | 満たす | `OwnerSecurityTest::test_debug_in_production_logs_warning`・`test_boot_runs_the_debug_check`（`AppServiceProvider::warnAboutDebugInProduction()`）。本番の `APP_DEBUG=false` はデプロイ時の人手確認 |  |
+| I3 | 対象外（記録のみ） | Web サーバーのアクセスログはホスティング側の管理。コールバック URL の code は一回限り・短命で、A4・D1 により再利用できない。README の運用メモに記載、プライバシーポリシーへの反映は Phase 4。本番でアクセスログに残るかは人手確認 |  |
+| I4 | 満たす | `OwnerSecurityTest::test_client_secret_never_reaches_html_or_frontend`（S4・S5・不一致・callback-invalid・ログアウト後の HTML、`resources/js`・`.env.example` に `VITE_*GOOGLE*` 無し） |  |
+| J1 | 満たす | `GoogleOAuthTest::test_authorization_url_parameters`（`scope` は youtube のみ・`include_granted_scopes=false`。応答の余分なスコープは使わない） |  |
+| J2 | 満たす | `OwnerAuthStartTest::test_oauth_routes_are_rate_limited`・`test_callback_is_get_only` |  |
+| J3 | 満たす | `GoogleOAuthTest::test_authorization_url_parameters`（`parse_str` で全パラメータ一致・RFC 3986） |  |
+
+ライブラリと違う判断をした項目の理由:
+1. **state の 10 分期限（A5）**: Socialite・league は state に期限を持たせない（セッションの寿命に従う）。本設計は放置されたログイン手続きを短く無効にするため 600 秒で拒否する。拒否時は「もう一度ログインしてください」とプレビューへのリンクを出す。
+2. **トークン交換の再試行なし（D1・D2）**: 認可コードは一回限りで、再送は `invalid_grant` になるか、成功していた場合はトークンを二重に発行させるだけになる。タイムアウト・5xx でも再試行せず再ログインを案内する。
+3. **トークン・取り消しのリダイレクト非追従（H4）**: Guzzle の既定はリダイレクトを追従するが、client_secret・認可コード・トークンを含む POST 本文を別ホストへ再送させないため `withoutRedirecting()` とし、3xx は失敗扱いにする。
+4. **再ログイン時に古いトークンを取り消さない上書き（ログアウト時は取り消す）**: 同じ Google アカウント・同じクライアントの再ログインでは、古いトークンの取り消しが同じ付与（grant）ごと新しいトークンも無効にしうるため、セッション内の古いトークンは取り消さずに上書きする（古いトークンは最長 1 時間で失効し、どこにも保存されない）。ログアウト時はセッションのトークンを（期限切れでも）取り消す。
+5. **`scope` 欠落を不足扱い（E3）**: RFC 6749 では要求どおりなら `scope` を省略できるが、Google は付与スコープを返すため、欠落は想定外として不足扱いにし、トークンを取り消して案内する（安全側）。
+6. **マスク用ラッパーを作らない（I1）**: 8.8 のマスク用ラッパーの代わりに、秘密を受け取る引数すべてに `#[\SensitiveParameter]` を付け（例外トレースから除外）、ログは「何が・HTTP ステータス・形式を検証した `error`／`reason` コード」だけを記録する。応答本文・URL・例外メッセージは記録しない。テストで固有文字列がログに出ないことを確認する。
+
 ---
 
 ## 7. 再生リスト作成処理

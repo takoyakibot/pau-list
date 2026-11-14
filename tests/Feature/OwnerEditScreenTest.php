@@ -88,7 +88,9 @@ class OwnerEditScreenTest extends TestCase
             ->assertSee('動画 A')->assertSee('動画 B')
             ->assertDontSee('本減らすか');
         $this->assertDoesNotMatchRegularExpression('/<button[^>]*id="create-playlist"[^>]*disabled/', $res->getContent());
-        $this->assertDoesNotMatchRegularExpression('/<form\b/i', $res->getContent());
+        // The only form is logout (creating is Phase 3).
+        preg_match_all('/<form\b[^>]*>/i', $res->getContent(), $forms);
+        $this->assertSame(['<form method="post" action="'.route('owner.logout').'" class="mt-2">'], $forms[0]);
         $this->assertNoInlineCode($res->getContent());
     }
 
