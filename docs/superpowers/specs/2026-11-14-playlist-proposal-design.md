@@ -258,7 +258,7 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 ### 4.3 保持期限と削除
 | データ | 期限 | 方法 |
 |---|---|---|
-| proposals ＋ items ＋ creations ＋ creation_items ＋ quota_reservations | 提案作成から 30 日（作成済み・未閲覧も同じ） | 日次バッチで `expires_at < now()` を削除（FK cascade） |
+| proposals ＋ items ＋ creations ＋ creation_items ＋ quota_reservations | 提案作成から 30 日（作成済み・未閲覧も同じ） | 日次バッチで `expires_at < now()` を削除。作成行を id 順にロック→当日の書込行をロック→子（予約・作成項目・作成行・提案項目）を明示的に削除してから提案を削除（FK cascade は予備） |
 | channel_caches ＋ channel_cache_videos | **チャンネル単位**: 全件取り込みの完了（cached_since）から 30 日。差分で後から足した行も同時に消える ［ユーザー決定: Y9］ | 日次バッチで `expires_at < now()` のチャンネルを削除（動画行は cascade）し、同一トランザクションで `channel_cache_expirations` に ID と削除日時を記録。取り込み時に期限切れの行を見つけた場合もその場で同じ処理をする。期限切れ後に開かれたら全件取り込みし直す（5.3）。定期取り直しはしない |
 | channel_cache_expirations | 記録から 30 日 | 日次バッチで `expired_at` から 30 日経過した記録を削除。期限切れ後の全件取り込みが完了した時点でも削除する |
 | quota_usage | 90 日 | 日次バッチ（YouTube データを含まない） |
@@ -381,6 +381,7 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 - **PT の日付をまたいだら予約は失効**（前日の予約は当日の空き計算に入らないので自動的に無効。再開時に `status=expired` に更新）。再開時は残り分 `(playlist 未作成なら 50) + 50×(pending＋in_flight の件数)` を当日分として再予約し、確保できなければ再開させずリセット時刻を表示。
 - **失敗分の再試行**: `failed` 件数 ×50 を当日の予約に追加（当日 active 予約があれば加算、無ければ新規）。確保できなければ再試行を開始しない。
 - 閉じたタブ等で放置された作成も、当日中は予約を保持し続ける（最長でも PT の日付が変わるまで） ［ユーザー決定: Y15］。無操作での解放は行わない。
+  - 運用の逃げ道（最終レビュー security I1）: 放置された予約が他のチャンネル主の作成をふさいでいる場合、運用者は `php artisan app:release-creation-reservation {creation_id}` で、作成行→当日の書込行の順にロックしたうえで、その作成の active 予約を解放する（当日分は released、前日以前は expired）。実行中（pending/creating_playlist/adding）の作成は `paused(user)` にする（ステップが勝手に再予約しないため。チャンネル主は「続きから」で空きがあれば再予約して再開できる）。出力は件数のみ。creation_id は作成開始ログ（チャンネル ID の先頭 8 文字つき）で特定する。無操作での自動解放を入れるかは U15 で再検討中。
 - 台帳は**見込み**であり Google 側の実値と一致しない。Google の実際の `quotaExceeded` を正とし、受けたら `paused(quota_exceeded)` にする（予約は保持し、日付が変われば失効→再予約）。
 
 ### 5.5 残り表示（「残りどれぐらいの操作が可能か」） ［ユーザー決定］
@@ -625,7 +626,7 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 
 ### 7.2 開始（`POST /p/{key}/creation`）
 1. `RequireOwnerSession` を通過（S6 の表示・開始・ステップ・再開・中止はすべてチャンネル主のログイン＋チャンネル一致が必要）。入力（編集後のリスト・名前・説明・公開範囲）を検証（8.2。本数は 1〜99）。
-   - **JSON で呼ばれる経路**（ステップ等、`expectsJson()`）では、`RequireOwnerSession` は画面へのリダイレクトではなく、未ログイン・期限切れに 401 JSON（`RequireOwnerSession::NOTICE`）、チャンネル不一致に 403 JSON を返す（Phase 2 の `RequireOwnerSession` は HTML 画面用のリダイレクト／不一致画面のみなので、Phase 3 で追加する）。
+   - **JSON で呼ばれる経路**（ステップ等、`expectsJson()`）では、`RequireOwnerSession` は画面へのリダイレクトではなく、未ログイン・期限切れに 401 JSON（`RequireOwnerSession::NOTICE`）、チャンネル不一致に 403 JSON を返す（Phase 2 の `RequireOwnerSession` は HTML 画面用のリダイレクト／不一致画面のみだったため、Phase 3 で追加した）。
 2. 作成前の最終確認として videos.list で全動画の存在と公開状態を再取得（owner_read）。消えた動画は除外せず、画面に戻して確認させる。
    - **チャンネル主自身の限定公開動画**（Y11。S5 で追加したもの）は、公開動画と同じ API キーの確認では落とさず、**チャンネル主のトークン**で videos.list を呼び、`snippet.channelId` がログイン中のチャンネルと一致し `status.privacyStatus` が `unlisted` であるものだけを受け付ける。それ以外の非公開・他チャンネルの限定公開は拒否する。
    - 限定公開動画の ID は `proposal_items` にも、プレビュー（S4）・共有画面など第三者が見られる画面にも**決して書かない／出さない**（作成の記録 `playlist_creation_items` にのみ置き、表示はログイン中の該当チャンネル主の S6 だけ）。
@@ -691,6 +692,7 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 | OAuth 開始・コールバック | 10 回/分/IP |
 | 作成開始・失敗分再試行 | 5 回/時/チャンネル |
 | 作成ステップ | 2 回/秒/セッション（ブラウザは 1 秒間隔） |
+| 一時停止・続きから・残りを中止・作り直し（共通） | 30 回/分/セッション |
 | 問い合わせ送信 | 3 回/10 分・10 回/日/IP、全体 50 件/日 |
 | 全ページ共通 | 120 回/分/IP |
 - レート制限キーは IP をハッシュ化して cache に置くだけ（TTL 付き）。DB のアプリテーブルには保存しない。
@@ -745,7 +747,7 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 - 削除依頼の場合は本文に提案 URL を書いてもらう（運営は 7 日以内に `app:delete-proposal` で削除）。
 
 ### 8.8 ログ
-- 記録する: API エラー（メソッド、HTTP ステータス、reason）、クオータ超過・予約不足、レート制限超過の件数、作成の開始・完了（creation id、本数、予約量）、問い合わせ送信の成否。
+- 記録する: API エラー（メソッド、HTTP ステータス、reason）、クオータ超過・予約不足、レート制限超過の件数、作成の開始・完了（creation id、本数、予約量。開始はチャンネル ID の先頭 8 文字も）、運用者による予約の解放（creation id、件数）、問い合わせ送信の成否。
 - 記録しない: アクセストークン、API キー、認可コード、公開キー（必要なら key_hash の先頭 8 文字）、IP（Web サーバーのアクセスログはホスティング側管理）、問い合わせの本文・メールアドレス。
 - HTTP クライアントの例外をログに出す前に、URL のクエリと `Authorization` を除去するラッパーを通す。
 
@@ -928,7 +930,10 @@ CONTACT_TO_ADDRESS=
 | D27 | （Phase 3）再生リスト単位のエラー（5.7 の表）は項目を `failed` にせず（`pending` に戻して）作成を `needs_check` にする（`playlistContainsMaximumNumberOfVideos`・`manualSortRequired` を含む） | 以降の全項目が同じ理由で失敗するため |
 | D28 | （Phase 3）アプリのセッション期限切れでは作成の状態を変えない（Google の 401 だけ `paused(auth_expired)`）。ステップの自動開始は「作成」直後だけ | 未認証の要求で状態を書き換えない。開き直しただけで書込を始めない |
 | D29 | （Phase 3）Google の `quotaExceeded` で止めた PT 日付は専用カラム `paused_day_pt` に記録し、`updated_at` から導かない | 後から別の書込で `updated_at` が動いても再開判定が狂わない |
-| D30 | （Phase 3）MySQL 固有のロック・同時予約のテストは `mysql` グループとして CI の MySQL 8.4（空の root パスワード）で毎回実行する | SQLite では `FOR UPDATE` が効かないため（10.5） |
+| D30 | （Phase 3）MySQL 固有のロック・同時予約のテストは `mysql` グループとして CI の MySQL 8.4（空の root パスワード）で毎回実行する。DB 名が `_test` で終わらない MySQL ではテストを実行せずスキップする（migrate:fresh・truncate で本番等を消さないため） | SQLite では `FOR UPDATE` が効かないため（10.5） |
+| D31 | （Phase 3 最終レビュー）ロック順は常に 作成行 → 当日の書込行 → 項目行（中止・再生リスト恒久エラーの完了・期限切れ削除も同じ）。`playlist_creation_items` の status 単独インデックスは置かない | InnoDB の範囲更新で他の作成の行までロックしない・デッドロック回避 |
+| D32 | （Phase 3 最終レビュー）照合の読取（playlists.list／playlistItems.list）が Google の `quotaExceeded` なら `paused(quota_exceeded)`、401 なら `paused(auth_expired)`、一時エラーはバックオフで再読取、それ以外の失敗が 5 回続いたら `needs_check`（`reconcile_failures`、読取に成功したら 0 に戻す）。`paused_day_pt` の無い `paused(quota_exceeded)` は再開できる。1 ステップの途中で PT の日付が変わっても、送信直前の確定で当日分を再予約する | 照合で止まり続けない・誤った一時停止をしない |
+| D33 | （Phase 3 最終レビュー）作成開始は書込行のロック内で提案の存在を確かめ、削除済みなら 404（何も作らない）。S6 の開き直しでは「この画面を開いている間だけ進みます」と案内し、「残りを中止」は 2 回押しで確定。作成されなかった（または不明の）提案は「この提案を削除」してから作り直すよう S4・S6 で案内する。S4 の状態は 未作成／作成中／作成済み／再生リストは作成されませんでした／再生リストが作成されたか確認できませんでした の 5 つ | 競合時の 500 防止と、行き止まりをなくす |
 
 ### 12.3 未決事項
 | # | 事項 | 決める人／時期 |
@@ -947,6 +952,7 @@ CONTACT_TO_ADDRESS=
 | U10 | アプリ台帳と Google 側実使用量のずれが大きい場合、`QUOTA_WRITE_LIMIT` の安全余裕を見直すか | 運用開始後 |
 | U11 | （決定済み → Y15）放置された作成の予約の扱い | — |
 | U14 | （決定 → Y19）作成中（Phase 3 の playlist_creations が進行中）の提案をチャンネル主が削除した場合の扱い（削除を拒むか、作成記録ごと消すか） | — |
+| U15 | （Y15 の再検討。最終レビュー security I1）放置された作成の予約を当日中保持すると、1 人のチャンネル主が最大 99 本分（5,000 ユニット）を押さえて他の作成を当日ふさげる。無操作（例: 一定時間ステップが来ない）での自動解放を入れるか。当面は Y15 のまま、運用コマンド `app:release-creation-reservation` で対応（5.4） | ユーザー |
 
 ---
 
