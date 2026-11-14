@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Console\Commands\DeleteProposal;
+use App\Models\ChannelCache;
 use App\Models\PlaylistCreation;
 use App\Models\PlaylistCreationItem;
 use App\Models\Proposal;
@@ -237,6 +239,122 @@ class DeleteProposalCommandTest extends TestCase
         $this->assertSame('warning', $entry['level']);
         $this->assertSame([], $entry['context']);
         $this->assertNull(collect($this->logs)->firstWhere('message', 'Proposal deleted by operator'));
+        $this->assertSame(1, Proposal::count());
+    }
+
+    // ---- target read at the prompt (kept out of the shell history) ----
+
+    public function test_target_omitted_is_read_at_a_hidden_prompt(): void
+    {
+        $key = $this->createProposal();
+
+        $this->artisan('app:delete-proposal', ['--force' => true])
+            ->expectsQuestion(DeleteProposal::ASK_TARGET, url("/p/$key"))
+            ->expectsOutput('deleted')
+            ->doesntExpectOutputToContain($key)
+            ->assertSuccessful();
+
+        $this->assertSame(0, Proposal::count());
+    }
+
+    public function test_target_omitted_without_interaction_deletes_nothing(): void
+    {
+        $this->createProposal();
+
+        $this->artisan('app:delete-proposal', ['--force' => true, '--no-interaction' => true])
+            ->expectsOutput('proposal not found')
+            ->assertFailed();
+
+        $this->assertSame(1, Proposal::count());
+    }
+
+    // ---- channel-wide deletion (final review, policy I2) ----
+
+    private function channelCache(string $id): void
+    {
+        ChannelCache::create([
+            'channel_id' => $id, 'handle' => null, 'title' => 'ch', 'thumbnail_url' => null,
+            'uploads_playlist_id' => 'UU'.substr($id, 2), 'meta_fetched_at' => now(), 'cached_since' => now(),
+            'last_synced_at' => now(), 'truncated' => false, 'expires_at' => now()->addDays(30),
+        ]);
+        DB::table('channel_cache_videos')->insert([
+            ['channel_id' => $id, 'video_id' => substr($id, 2, 10).'1', 'title' => 'v1', 'thumbnail_url' => null, 'published_at' => now(), 'fetched_at' => now()],
+            ['channel_id' => $id, 'video_id' => substr($id, 2, 10).'2', 'title' => 'v2', 'thumbnail_url' => null, 'published_at' => now(), 'fetched_at' => now()],
+        ]);
+    }
+
+    public function test_channel_option_deletes_all_of_the_channels_data(): void
+    {
+        $other = 'UC'.str_repeat('b', 22);
+        $ledger = app(QuotaLedger::class);
+        $ledger->ensureWriteRow();
+        $running = $this->makeCreation(2, ['status' => PlaylistCreation::ADDING], 150);
+        DB::table('quota_usage')->where('bucket', QuotaLedger::WRITE)->update(['units' => 0]);
+        $this->createProposal();
+        $kept = $this->createProposal(['channel_id' => $other]);
+        $this->channelCache($this->channelId);
+        $this->channelCache($other);
+        DB::table('channel_cache_expirations')->insert([
+            ['channel_id' => $this->channelId, 'expired_at' => now()->subDay()],
+            ['channel_id' => $other, 'expired_at' => now()->subDay()],
+        ]);
+
+        $this->artisan('app:delete-proposal', ['--channel' => 'https://www.youtube.com/channel/'.$this->channelId, '--force' => true])
+            ->expectsOutput('proposals: 2')
+            ->expectsOutput('creations: 1')
+            ->expectsOutput('channel_caches: 1')
+            ->expectsOutput('channel_cache_videos: 2')
+            ->expectsOutput('channel_cache_expirations: 1')
+            ->expectsOutput('deleted')
+            ->doesntExpectOutputToContain('私の再生リスト')
+            ->assertSuccessful();
+
+        $this->assertSame([$other], Proposal::pluck('channel_id')->all());
+        $this->assertTrue(Proposal::where('key_hash', ProposalKey::hash($kept))->exists());
+        $this->assertSame(0, PlaylistCreation::count());
+        $this->assertSame(0, PlaylistCreationItem::count());
+        $this->assertSame(0, QuotaReservation::count());
+        $this->assertSame([$other], DB::table('channel_caches')->pluck('channel_id')->all());
+        $this->assertSame(2, DB::table('channel_cache_videos')->count());
+        $this->assertSame([$other], DB::table('channel_cache_expirations')->pluck('channel_id')->all());
+        $this->assertFalse(PlaylistCreation::whereKey($running->id)->exists());
+        $log = collect($this->logs)->firstWhere('message', 'Channel data deleted by operator');
+        $this->assertNotNull($log);
+        $this->assertSame('UCaaaaaa', $log['context']['channel']);
+        $this->assertStringNotContainsString($this->channelId, json_encode($this->logs));
+    }
+
+    public function test_channel_option_needs_confirmation(): void
+    {
+        $this->createProposal();
+        $this->channelCache($this->channelId);
+
+        $this->artisan('app:delete-proposal', ['--channel' => $this->channelId])
+            ->expectsOutput('proposals: 1')
+            ->expectsConfirmation(DeleteProposal::CONFIRM_CHANNEL, 'no')
+            ->expectsOutput('cancelled')
+            ->assertFailed();
+        $this->artisan('app:delete-proposal', ['--channel' => $this->channelId, '--no-interaction' => true])
+            ->expectsOutput('cancelled')
+            ->assertFailed();
+
+        $this->assertSame(1, Proposal::count());
+        $this->assertSame(1, DB::table('channel_caches')->count());
+    }
+
+    public function test_channel_option_rejects_handles_and_bad_input(): void
+    {
+        $this->createProposal();
+
+        foreach (['@someone', 'https://www.youtube.com/@someone', 'UCshort', 'https://example.com/channel/'.$this->channelId] as $bad) {
+            $this->artisan('app:delete-proposal', ['--channel' => $bad, '--force' => true])
+                ->expectsOutput('invalid channel (UC… の ID か https://www.youtube.com/channel/UC… の URL)')
+                ->assertFailed();
+        }
+        $this->artisan('app:delete-proposal', ['target' => 'x', '--channel' => $this->channelId, '--force' => true])
+            ->expectsOutput('use either a proposal or --channel')
+            ->assertFailed();
+
         $this->assertSame(1, Proposal::count());
     }
 }
