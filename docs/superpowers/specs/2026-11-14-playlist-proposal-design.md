@@ -1,6 +1,6 @@
-# 再生リスト提案・作成ツール「List Maker」（仮称）設計書
+# 再生リスト提案・作成ツール「List Maker」設計書
 
-- 作成日: 2026-11-14（同日改訂: クオータ予約制・動画数上限の導出・保持期限・問い合わせフォーム等を反映。第 2 改訂: チャンネル動画一覧の差分取り込み（行単位の 30 日削除）、OAuth の参照ライブラリ安全対策チェックリスト（6.7）を反映。第 3 改訂: 一覧キャッシュの 30 日期限を行単位からチャンネル単位に変更し、needs_rescan による全走査を廃止（Y9））
+- 作成日: 2026-11-14（同日改訂: クオータ予約制・動画数上限の導出・保持期限・問い合わせフォーム等を反映。第 2 改訂: チャンネル動画一覧の差分取り込み（行単位の 30 日削除）、OAuth の参照ライブラリ安全対策チェックリスト（6.7）を反映。第 3 改訂: 一覧キャッシュの 30 日期限を行単位からチャンネル単位に変更し、needs_rescan による全走査を廃止（Y9）。第 4 改訂（2026-11-15）: 未決事項 U1〜U5・U11・U12 の決定、チャンネル主の限定公開動画の追加、チャンネル主による提案削除、提案保存のレート制限の数え方、読取の日次上限を設けない方針を反映（Y10〜Y18））
 - 入力: ユーザーとの合意事項（本書に反映済み）、元の指示書（`YouTube再生リスト作成支援ツール 実装指示書.ini`。方針の一部は本書で変更済み）、既存サービス channel-calendar / ycs。調査で確認した事実は**付録 A** に転記しており、本書だけで完結する
 - 表記: **［事実］** = 公式ドキュメント・既存コード・コマンドで確認済み（出典は付録 A）／**［要確認］** = 推測または未検証で、実装前・実装中に確かめる／**［ユーザー決定］** = ユーザーが明示的に決めたこと／**［設計判断］** = 要件に明記がなく監督者・設計者が決めたこと（12 章に一覧）
 
@@ -24,7 +24,7 @@
 - 提案者アカウント、提案の編集・履歴管理（提案は作成後に変更不可）。
 - チャンネル主への通知（メール・DM 送信など）。URL は提案者が自分で渡す。
 - 他チャンネルの動画一覧取得、チャンネル主の出演有無の検証 ［ユーザー決定］。
-- 非公開・限定公開動画の扱い（提案者には見えない。チャンネル主ログイン後の取り込みも v1 では行わない）。
+- 非公開動画の扱い（提案者にもチャンネル主にも表示しない）。限定公開動画も提案者には見えない。例外として、チャンネル主はログイン後の S5 で**自分の限定公開動画**をボタン操作で読み込んで追加できる（Y11。読み込んだ一覧はそのチャンネル主のセッションに 10 分だけ置き、共有キャッシュには置かない）。
 - 既存再生リストへの追加・更新、作成後の同期。
 - 動画データの定期取り直し ［ユーザー決定］。
 - watch_videos を作成手段にすること（不採用。プレビュー補助リンクは任意機能）。
@@ -47,7 +47,7 @@
 | 役割 | 認証 | できること |
 |---|---|---|
 | 提案者 | なし | チャンネル指定、動画選択、提案保存、共有 URL 取得 |
-| チャンネル主 | Google OAuth（youtube スコープ） | プレビュー（ログイン不要）、編集、再生リスト作成、作成状況確認 |
+| チャンネル主 | Google OAuth（youtube スコープ） | プレビュー（ログイン不要）、編集、再生リスト作成、作成状況確認、自分のチャンネル宛ての提案の削除（Y14） |
 | 問い合わせ者 | なし | 問い合わせフォーム送信（削除依頼を含む） |
 | 運営（自分） | サーバー SSH | デプロイ、.env、ログ確認、問い合わせメール対応、削除依頼の実行（artisan コマンド）。管理画面は作らない ［設計判断］ |
 
@@ -63,9 +63,10 @@
 1. 共有 URL を開く → プレビュー（ログイン不要）。作成済みなら状態を表示（リンクの表示条件は 7.6）。
 2. 「チャンネル主の方: Google でログインして作成へ」→ OAuth（未審査警告あり）。
 3. 戻ってきたら channels.list mine=true でチャンネル ID を取得し、提案の対象チャンネルと照合。不一致なら作成画面に進ませない（2.4）。
-4. 編集画面: 動画の削除・並べ替え・追加（対象チャンネル一覧から／URL 指定、最大 99 本）、名前・説明修正、公開範囲選択。「この内容に必要な枠: 再生リスト 1 つ＋動画 n 本」と「本日の残り: 再生リスト 1 つ＋動画あと N 本まで作成できます」を並べて表示（5.5）。n > N なら作成ボタンを押せず、減らす本数とリセット時刻を表示。
+4. 編集画面: 動画の削除・並べ替え・追加（対象チャンネル一覧から／URL 指定／「限定公開の動画も表示する」ボタンで読み込む自分の限定公開動画（Y11）、最大 99 本）、名前・説明修正、公開範囲選択。「この内容に必要な枠: 再生リスト 1 つ＋動画 n 本」と「本日の残り: 再生リスト 1 つ＋動画あと N 本まで作成できます」を並べて表示（5.5）。n > N なら作成ボタンを押せず、減らす本数とリセット時刻を表示。
 5. 「作成」→ サーバーが枠を予約（5.4）。予約できなければ開始しない。予約できたら進捗画面へ。ブラウザが 1 ステップずつサーバーを呼び、進捗を表示（7 章）。
 6. 完了 → 再生リスト URL、失敗分の再試行ボタン、ログアウト（トークン取り消し）と Google 側の承認取り消し案内。
+7. 提案の削除（任意、Y14）: 編集画面の「この提案を削除」→ 確認ページ（`GET /p/{key}/delete`。「削除すると元に戻せません。共有された URL でも表示できなくなります」）→「削除する」（`POST /p/{key}/deletion`、CSRF 検証つき）→ 提案と動画明細を 1 トランザクションで削除 →「削除しました」ページ（`/deleted`）。このページはそのタブの編集下書き（sessionStorage）を消す。ログインは保たれる。
 
 ### 2.4 チャンネル不一致時 ［設計判断］
 - **作成させない**（明示確認での続行も不可）。理由: 誤チャンネルへの作成は取り消しが面倒で、提案は「そのチャンネルのため」に作られている。ブランドアカウントで別チャンネルを選んだだけのケースが多いと想定し、「別のチャンネルでログインし直す」（`prompt=select_account` 付き再認可）を案内する。
@@ -74,12 +75,13 @@
 ### 2.5 画面一覧
 | # | パス | 画面 | 主な要素 |
 |---|---|---|---|
-| S1 | `/` | ホーム（審査用ホームページ兼用） | アプリ名（List Maker・仮称）、ツール説明（提案→作成の流れ図）、チャンネル入力欄、YouTube データ利用の説明、フッタ（プライバシー・規約・YouTube 利用規約・Google プライバシーポリシー・お問い合わせ） |
+| S1 | `/` | ホーム（審査用ホームページ兼用） | アプリ名（List Maker）、ツール説明（提案→作成の流れ図）、チャンネル入力欄、YouTube データ利用の説明、フッタ（プライバシー・規約・YouTube 利用規約・Google プライバシーポリシー・お問い合わせ） |
 | S2 | `/channels/{channelId}/propose` | 提案作成 | チャンネル見出し（アイコン・名前、出典表示）、**上限表示「1 つの再生リストに入れられるのは最大 99 本」**、**本日の残り表示**（5.5）、絞り込み入力、表示件数／選択数（n / 99）、動画カード（サムネ・タイトル・公開日・チェック）、全解除、URL 追加欄、選択済みパネル（並べ替え・削除・対象チャンネル外バッジ）、名前・説明・コメント・ニックネーム、文字数カウンタ、保存ボタン（近くに規約・プライバシーポリシーへの同意文）、取得上限の注記、一覧の最終取り込み日時（読取予算切れでキャッシュのみ表示する場合は強調表示）、一覧の保存期限（「この一覧は○月○日に取り込み、○月○日に削除されます」）、期限切れ後の取り込み直しの案内（5.3） |
 | S3 | `/p/{key}/shared`（直後 1 回のみ） | 提案完了 | 共有 URL とコピー、有効期限、「この URL を知っている人は誰でも閲覧できる」注意、プレビューへのリンク |
 | S4 | `/p/{key}` | プレビュー | 再生リスト風表示（名前・説明・本数・合計時間・動画リスト・対象チャンネル外バッジ）、提案者コメント・ニックネーム、作成日・削除予定日、状態（未作成／作成中／作成済み）、作成済み再生リストのリンク（public のみ。unlisted/private はログイン中の該当チャンネル主にのみ。7.6）、**上限表示（最大 99 本）**、**本日の残り表示**（未作成時）、ログインボタン（未確認アプリ警告の案内・同意文付き）、任意の watch_videos プレビューリンク |
-| S5 | `/p/{key}/edit` | 編集・作成（要ログイン＋一致） | ログイン中チャンネル表示、編集可能リスト（n / 99）、追加 UI（対象チャンネル一覧／URL）、名前・説明・公開範囲、**必要な枠と本日の残り**、不足時のメッセージとリセット時刻、作成ボタン（書込操作であることを明記）、ログアウト |
-| S6 | `/p/{key}/creation` | 進捗・結果 | 全体進捗バー、項目ごとの状態、一時停止／再開、残りを中止、失敗分再試行（必要な枠と本日の残りを表示）、再ログイン促し、枠不足時のリセット時刻、完了時の再生リスト URL、取り消し案内 |
+| S5 | `/p/{key}/edit` | 編集・作成（要ログイン＋一致） | ログイン中チャンネル表示、編集可能リスト（n / 99）、追加 UI（対象チャンネル一覧／URL）、名前・説明・公開範囲、**必要な枠と本日の残り**、不足時のメッセージとリセット時刻、作成ボタン（書込操作であることを明記）、「限定公開の動画も表示する」ボタン（Y11）、「この提案を削除」リンク（Y14）、ログアウト |
+| S6 | `/p/{key}/creation` | 進捗・結果（要ログイン＋一致。`RequireOwnerSession`。7.2） | 全体進捗バー、項目ごとの状態、一時停止／再開、残りを中止、失敗分再試行（必要な枠と本日の残りを表示）、再ログイン促し、枠不足時のリセット時刻、完了時の再生リスト URL、取り消し案内 |
+| S5a | `/p/{key}/delete` → `/deleted` | 提案の削除確認・削除完了（要ログイン＋一致、Y14） | 確認: 提案名・本数、元に戻せない旨、「削除する」ボタン（POST）、編集画面へ戻るリンク。完了: 「削除しました」、トップへのリンク。どちらも noindex・no-store |
 | S7 | `/privacy`, `/terms` | 静的ページ | 9 章の必須事項 |
 | S8 | `/contact` | 問い合わせフォーム | 種別（一般／削除依頼／不具合）、本文、返信用メールアドレス（任意）、ハニーポット、送信完了表示（8.7） |
 | — | エラー表示 | 共通 | 提案なし／期限切れ（区別しない 404）、チャンネル不一致、枠不足（リセット時刻つき）、Google 側クオータ超過、レート制限 |
@@ -133,6 +135,7 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 - **提案は作成後に不変**。チャンネル主の編集結果は提案を書き換えず、作成開始時点の内容を `playlist_creations`／`playlist_creation_items` に**別スナップショットとして持つ** ［設計判断］。
   - 理由: 提案者の案とチャンネル主が実際に作った内容を混同しない。プレビュー URL を再訪した提案者に「何が変わったか」を誤解させない。作成処理は不変のスナップショットに対して進めるので再開が単純。
   - 作成前の編集中の状態はブラウザ（sessionStorage）のみに保持し、「作成」押下時に確定内容を POST する。編集はログイン後に行うので OAuth リダイレクトで消える問題はない。
+  - 下書きはログアウト後画面・削除完了画面で**そのタブの分だけ**消す。**既知の制限**: 別のタブの sessionStorage にある下書き（自分の限定公開動画の ID を含みうる）は、そのタブを閉じるまで残る（sessionStorage はタブ単位で、他のタブからは消せない）。
 - 提案 1 件につき作成は 1 回まで（`playlist_creations.proposal_id` UNIQUE）。
 - YouTube 由来データ（タイトル・サムネ URL 等）は**取得から最長 30 日**で削除する ［ユーザー決定］。定期的な取り直しはしない ［ユーザー決定］（9.3）。
 
@@ -264,6 +267,7 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 - 作成済み提案も 30 日で消えるため、二重作成防止は「提案が存在する間」有効。提案が消えれば作成ボタン自体が存在しない。
 - 削除済み・存在しないキーはどちらも同じ 404 を返す（キーの存在を推測させない）。
 - 削除依頼（問い合わせフォーム経由）は 7 日以内に `php artisan app:delete-proposal {URL またはキー}` で即時削除する（Developer Policies III.E.4.g ［事実: A.6］）。
+- チャンネル主は自分のチャンネル宛ての提案を 30 日を待たずに S5 から削除できる（Y14、流れは 2.3 の 7）。提案と動画明細を 1 トランザクションで削除し、削除後のキーは存在しないキーと同じ 404 になる。他のチャンネルでログイン中は 403（不一致画面）、未ログイン・トークン期限切れはプレビューへ戻す。
 
 ---
 
@@ -277,12 +281,14 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 | 個別動画追加・提案保存時の再取得 | videos.list `part=snippet,contentDetails,status` `id=最大50件` | API キー | 1/50件 | read |
 | 作成前の最終確認（チャンネル主操作） | videos.list（同上） | API キー | 1/50件 | owner_read |
 | ログイン後のチャンネル確認 | channels.list `mine=true part=snippet` | OAuth | 1 | owner_read |
+| 自分の限定公開動画の読み込み（Y11。S5 のボタン操作時のみ） | playlistItems.list `part=snippet,contentDetails,status` `maxResults=50` `playlistId=UU…`（UC→UU で導出）ページング | OAuth | 1/ページ。最大 `CHANNEL_FETCH_MAX_VIDEOS`÷50 ＝ 20 ページ（20 ユニット）。限定公開が 300 本を超えた時点で打ち切り（保持・表示は新しい順に 300 本まで） | owner_read（`QuotaPolicy::ownerReadGuard` で全体を制限。5.4） |
 | 再生リスト作成 | playlists.insert `part=snippet,status` | OAuth | 50 | write（予約から消費） |
 | 動画追加 | playlistItems.insert `part=snippet`（`snippet.position` 指定） | OAuth | 50 | write（予約から消費） |
 | 曖昧失敗の照合 | playlists.list `mine=true maxResults=50` / playlistItems.list `playlistId=作成分` | OAuth | 1/ページ | owner_read |
 
 - search.list は使わない。
 - uploads プレイリスト ID は `contentDetails.relatedPlaylists.uploads` を使う（UC→UU 置換は既存コードで実績ありだが、公式フィールドを優先） ［設計判断］。
+- 例外: チャンネル主の限定公開動画の読み込みでは、uploads プレイリスト ID をチャンネル ID から **UC→UU 置換で導出**し、channels.list を呼ばない ［設計判断］。チャンネル ID はログイン時に channels.list `mine=true` で確認済みで、1 回の読み込みごとに 1 ユニット節約できるため。導出した ID が存在しない（`playlistNotFound`）場合は限定公開の動画なしとして扱う。
 - 一覧の公開状態: uploads に API キーで見えるのは公開動画のみと想定 ［要確認］。`status.privacyStatus` が `public` 以外の項目は除外する。メンバー限定は uploads に出ない ［事実: channel-calendar のコメント］。
 - 再生時間は playlistItems では取れないため、一覧画面では出さず、**提案保存時**に選択分だけ videos.list で取得（99 本で 2 ユニット）。この時点で削除・非公開になった動画は保存を拒否し、外して保存し直すよう表示。
 - API キーはクエリ文字列ではなく `X-Goog-Api-Key` ヘッダで送り、例外メッセージやログに URL ごとキーが残るのを避ける ［設計判断・ヘッダ対応は要確認。不可ならログ出力時にマスク］。
@@ -355,7 +361,8 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 **記録（全区分共通）**
 - 全 API 呼び出しを QuotaLedger 経由にし、送信前に `quota_usage` を加算（Laravel の `upsert` で `units = units + ?`）。日付は `America/Los_Angeles` の今日（`QuotaClock`）。
 - `read`: 送信前に `QUOTA_READ_BUDGET` と比較し、超えるなら送信せず「本日の取得上限」を返す。→ **匿名利用が書込枠を食えない**。
-- `owner_read`: チャンネル主操作に伴う少量の読取（ログイン確認、最終確認、照合）。アプリ側の上限は設けず記録のみ ［設計判断］。匿名の読取予算切れでチャンネル主の作成が止まらないようにするため。想定は 1 作成あたり数ユニットで、Google 枠のうち書込・読取上限の外側（約 3,000）に十分収まる。
+- `owner_read`: チャンネル主操作に伴う少量の読取（ログイン確認、最終確認、照合、自分の限定公開動画の読み込み）。アプリ側の上限は設けず記録のみ ［設計判断］。匿名の読取予算切れでチャンネル主の作成が止まらないようにするため。想定は 1 作成あたり数ユニットで、Google 枠のうち書込・読取上限の外側（約 3,000）に十分収まる。
+  - ただし任意の読取である**限定公開動画の読み込み**（Y11）だけは、送信前に当日の `owner_read` を `QuotaPolicy::ownerReadGuard()`（`QUOTA_GOOGLE_DAILY − QUOTA_WRITE_LIMIT − QUOTA_READ_BUDGET` の半分。既定 1,500）と比べ、達していれば送信せず「読み込めませんでした」と案内する ［設計判断］。ログイン確認・最終確認・照合は止めない。
 
 **書込の予約（予約 → 確定 → 解放の 3 段階）** ［設計判断］
 1. **予約**（作成開始時）: 見込み `50 + 50×本数` を予約する。トランザクション内で当日の `quota_usage(write)` 行をロック（無ければ作成してから `SELECT … FOR UPDATE`）し、
@@ -369,7 +376,7 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 - **一時停止中（`paused` の全理由、`needs_check`）は予約を保持する**。トークン切れで再ログインする間に他人に枠を取られないため。
 - **PT の日付をまたいだら予約は失効**（前日の予約は当日の空き計算に入らないので自動的に無効。再開時に `status=expired` に更新）。再開時は残り分 `(playlist 未作成なら 50) + 50×(pending＋in_flight の件数)` を当日分として再予約し、確保できなければ再開させずリセット時刻を表示。
 - **失敗分の再試行**: `failed` 件数 ×50 を当日の予約に追加（当日 active 予約があれば加算、無ければ新規）。確保できなければ再試行を開始しない。
-- 閉じたタブ等で放置された作成も、当日中は予約を保持し続ける（最長でも PT の日付が変わるまで）。他の利用者を長く妨げる実害が出たら、無操作 N 分で解放する案を検討（U11）。
+- 閉じたタブ等で放置された作成も、当日中は予約を保持し続ける（最長でも PT の日付が変わるまで） ［ユーザー決定: Y15］。無操作での解放は行わない。
 - 台帳は**見込み**であり Google 側の実値と一致しない。Google の実際の `quotaExceeded` を正とし、受けたら `paused(quota_exceeded)` にする（予約は保持し、日付が変われば失効→再予約）。
 
 ### 5.5 残り表示（「残りどれぐらいの操作が可能か」） ［ユーザー決定］
@@ -395,8 +402,9 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 | 同（差分取り込み、前回以降の新規 50 本未満） | channels 1 + 1 ページ + 保存時 2 ＋ URL 追加分 ≒ 4〜7 | — | — |
 | 同（6 時間以内でキャッシュ命中） | 保存時 2 ＋ URL 追加分 ≒ 2〜5 | — | — |
 | チャンネル主ログイン | — | 1 | — |
+| 自分の限定公開動画の読み込み（1 回） | — | 1 ページ 1（uploads 50 本ごと）。最大 20（打ち切りは 5.1）。セッションに 10 分保持し、チャンネルごとに 5 回/10 分（8.1） | — |
 | 作成（n 本、n ≤ 99） | — | 最終確認 1〜2 ＋照合（発生時のみ） | 50 + 50n（49 本 ≒ 2,500、99 本 = 5,000） |
-| 1 日の上限（アプリ側） | ≤ 2,000 | 数十想定 | ≤ 5,000 |
+| 1 日の上限（アプリ側） | ≤ 2,000 | 数十想定（限定公開の読み込みは全体で 1,500 に達したら止める） | ≤ 5,000 |
 
 - 一覧取り込みの比較（1,000 本以上のチャンネルを 1 日中よく開かれる＝6 時間ごとに取り込む場合）: 従来の丸ごと取り直しは 21×4 ≒ 84 ユニット/日。差分取り込みは通常 2×4 ≒ 8 ユニット/日で、全件取り込み 21 はチャンネルの期限切れ後に 1 回だけ（30 日に 1 回）加わる（その日でも ≒ 29 ユニット、30 日平均で ≒ 9 ユニット/日）。
 - 1 日に作れるのは、99 本なら 1 件、49 本なら 2 件、24 本なら 4 件まで。
@@ -463,7 +471,7 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 
 ### 6.7 参照ライブラリの安全対策チェックリスト ［ユーザー決定: 直接実装を維持し、確認項目として取り込む］
 - 目的: OAuth 2.0 認可コードフローと HTTP 呼び出しを自前で書くことによる見落としを防ぐ。**Laravel Socialite**、**league/oauth2-client**、**Google 公式 google/apiclient（google/auth）** が行っている安全対策を観点として列挙し、実装がそれぞれを満たすか（または対象外である理由）をレビューで確認する。
-- 本表の「参照先」はライブラリの一般的な挙動に基づく観点の出典であり、ソースでの裏取りは**実装フェーズのレビュー担当が行う** ［要確認］。ライブラリと違う判断をした項目は、理由を本節に追記する。
+- 本表の「参照先」はライブラリの一般的な挙動に基づく観点の出典であり、ソースでの裏取りは**実装フェーズのレビュー担当が行う** ［要確認］（Phase 2 ではレビュー担当の知識に基づく照合までを行い、判定記録に記入した。ソースでの確認は U13）。ライブラリと違う判断をした項目は、理由を本節に追記する。
 - 使い方: Phase 2 の完了条件として、レビュー担当が全項目に「満たす／対象外（理由）」を記入する（10.5・11 章）。各項目の「テスト」欄が空でないものは自動テストを必須とする。
 
 **A. state（CSRF・ログイン CSRF 対策）**
@@ -504,7 +512,7 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 |---|---|---|---|
 | E1 | トークンエンドポイントへ POST（`application/x-www-form-urlencoded`）、`grant_type=authorization_code`、client_secret は本文（またはBasic 認証）で送り、URL クエリに載せない | league・google/auth（POST 本文で送信） | 送信内容の検査 |
 | E2 | 応答は HTTP 200 かつ JSON として解釈できること。`access_token`（空でない文字列）、`token_type` が `Bearer`（大文字小文字無視）、`expires_in`（正の整数、異常に大きい値は上限で丸める）を必須とし、欠けたら失敗扱い | league（AccessToken 生成時に access_token 必須を検査）、google/auth | 各フィールド欠落・型違いで失敗 |
-| E3 | `scope` に `https://www.googleapis.com/auth/youtube` が含まれることを確認。含まれなければトークンを取り消してエラー（6.2） | google/auth（付与スコープの確認） | スコープ不足で revoke が呼ばれる |
+| E3 | `scope` に `https://www.googleapis.com/auth/youtube` が含まれることを確認。含まれなければトークンを取り消してエラー（6.2） | — （google/auth は付与スコープを確認しないとみられる ［要確認］。本設計の方が厳しい） | スコープ不足で revoke が呼ばれる |
 | E4 | `refresh_token` が返っても保存せず破棄。`id_token` は要求しない（OIDC を使わないため nonce・ID トークン署名検証は**対象外**。Socialite・google/auth の ID トークン検証は本設計に該当しない旨を記録） | Socialite（userinfo/id_token 利用）との違い | DB・セッションに refresh_token が無い |
 | E5 | `expires_at = 取得時刻 + expires_in − 安全余裕（60 秒）` | google/auth（期限前の余裕を持った判定） | 境界時刻で期限切れ扱い |
 
@@ -546,6 +554,61 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 | J2 | OAuth 開始・コールバックにレート制限（8.1）、コールバックは GET のみ | — | 既存ケース |
 | J3 | 認可 URL のパラメータは `http_build_query`（RFC 3986 エンコード）で組み立て、文字列連結しない | league（クエリ組み立て） | 認可 URL の解析で全パラメータが期待どおり |
 
+**判定記録（Phase 2）**
+
+判定は実装者の記入を Phase 2 の最終レビューで確定した。「参照ライブラリでの裏取り」欄は最終セキュリティレビュー担当の**知識に基づく照合**であり、各ライブラリのソースを読んで確かめたものではない（「?」は担当者自身が不確かとした箇所）。全項目で本実装はライブラリと同等以上で、「満たさない」は無い。ソースでの裏取りは残課題として U13 に記録する（未記入または「満たさない」が残る間は Phase 2 を完了としない — 10.5・11 章）。
+
+| # | 判定（満たす・対象外） | 根拠（テスト名またはファイル・理由） | 参照ライブラリでの裏取り（S = Socialite、L = league/oauth2-client、G = google/auth・google/apiclient。「?」は不確か） |
+|---|---|---|---|
+| A1 | 満たす | `OwnerSessionTest::test_begin_generates_fresh_43_char_state`（32 バイトの CSPRNG・base64url 43 文字・毎回異なる） | S: `Str::random(40)`／L: `bin2hex(random_bytes(16))`（128 ビット）／G: アプリ側で生成。本実装は 256 ビット CSPRNG で同等以上 |
+| A2 | 満たす | 静的: state は `OwnerSession`（暗号化 DB セッション）にのみ保存。`OwnerAuthStartTest::test_start_stores_state_only_in_session`（Cookie・本文に出ない） | S: セッションの `state`／L・G: アプリ側の責務。同等 |
+| A3 | 満たす | `OwnerCallbackValidationTest::test_bad_state_is_400_without_token_request`（欠落／空／不一致／配列。`hash_equals`） | S: `strlen>0 && ===`（`hash_equals` ではない）／L: アプリ側の責務（ドキュメント例は `!==`）／G: なし。本実装は時間一定比較・配列拒否でより厳しい |
+| A4 | 満たす | `OwnerSessionTest::test_pull_pending_is_one_time`、`OwnerCallbackValidationTest::test_replayed_callback_is_400`（照合前に pull） | S: セッションから pull／L: ドキュメント例は失敗時のみ unset（?）／G: なし。本実装は照合前に pull し L より厳しい |
+| A5 | 満たす | `OwnerCallbackValidationTest::test_state_older_than_10_minutes_is_400`（`OwnerSession::STATE_TTL_SECONDS` = 600） | いずれも期限なし（セッションの寿命に従う）。本実装は 600 秒でより厳しい |
+| A6 | 満たす | 静的: state 省略モード・設定が無い。`OwnerSecurityTest::test_no_stateless_mode_exists`（`app/` と関連設定に `stateless` が 0 件） | S: `stateless()` あり／L・G: state の組み込み機能なし。本実装は省略モードなしで S より厳しい |
+| B1 | 満たす | `PkceTest::test_verifier_is_43_unreserved_chars_and_random` | S: `Str::random(96)`（PKCE 時）／L: 64 文字（2.7 以降）／G: `generateCodeVerifier` 64〜128 文字（?）。本実装は 32 バイト由来の 43 文字で RFC 7636 の範囲内・同等 |
+| B2 | 満たす | `PkceTest::test_challenge_matches_rfc7636_appendix_b`、`GoogleOAuthTest::test_authorization_url_parameters`（`code_challenge_method=S256` 固定） | S: S256／L: S256・plain を選択可／G: S256。本実装は S256 固定で L より厳しい |
+| B3 | 満たす | `OwnerSessionTest::test_pull_pending_is_one_time`、`OwnerCallbackLoginTest::test_success_logs_in_and_redirects_to_edit`（交換後に pending 無し） | S: トークン取得時にセッションから pull／L・G: アプリ側の責務。同等 |
+| C1 | 満たす | `OwnerAuthStartTest::test_redirect_uri_ignores_forged_host`（`config('services.google.redirect')` のみ） | S: 設定値を `url()` で絶対化（ホストはリクエスト由来）／L・G: オプションの値。本実装は設定の絶対 URL のみで S より厳しい |
+| C2 | 満たす | `GoogleOAuthTest::test_is_configured_rejects_blank_and_http_in_production`、`OwnerCallbackLoginTest::test_redirect_uri_is_identical_in_both_requests`。GCP 登録値との完全一致は人手確認（README） | いずれも両リクエストに同じ値を送るが https は強制しない。本実装は本番で https 必須でより厳しい |
+| C3 | 満たす | `OwnerAuthStartTest::test_external_return_url_is_ignored`、`OwnerCallbackLoginTest::test_success_logs_in_and_redirects_to_edit`（戻り先は `proposals.edit` ルートのみ） | いずれもアプリ側の責務。本実装は固定の内部ルートで同等以上 |
+| D1 | 満たす | `OwnerCallbackValidationTest::test_replayed_callback_is_400`（2 回目はトークン要求なし）、`GoogleOAuthTest::test_invalid_grant_is_not_retried` | いずれも 1 回の呼び出しで 1 回交換。再送防止は state 次第（照合するのは S のみ）。同等 |
+| D2 | 満たす | `GoogleOAuthTest::test_timeout_is_not_retried` | S・L: 再試行なし（Guzzle 既定）／G: apiclient の再試行設定は既定で無効（?）。同等 |
+| D3 | 満たす | `OwnerCallbackLoginTest::test_success_logs_in_and_redirects_to_edit`（302・本文に code 無し・`Referrer-Policy: no-referrer`） | いずれもアプリ側の責務。本実装は対応済み |
+| D4 | 満たす | `OwnerCallbackValidationTest::test_malformed_code_or_error_with_code_is_400`（`OwnerAuthController::CODE_PATTERN`） | いずれも code の形式を検査しない。本実装はより厳しい |
+| D5 | 満たす（返る場合のみ） | `OwnerCallbackValidationTest::test_wrong_iss_is_400_and_correct_iss_passes`。Google が `iss` を返すかは人手確認 | いずれも RFC 9207 の `iss` を検査しない（?）。本実装はより厳しい |
+| E1 | 満たす | `GoogleOAuthTest::test_exchange_posts_form_body`（`asForm()` の POST 本文。URL クエリに秘密なし） | いずれも client_secret を POST 本文で送る。同等 |
+| E2 | 満たす | `GoogleOAuthTest::test_exchange_rejects_invalid_token_responses`（データプロバイダ） | L: `access_token` のみ必須で `token_type`・`expires_in` は検査しない／S・G: デコードした JSON を検査せず使う。本実装はより厳しい |
+| E3 | 満たす | `OwnerCallbackLoginTest::test_insufficient_scope_revokes_and_explains`。応答に `scope` が無い場合も不足扱い（下記の理由 5） | いずれも付与スコープを検査しない（G は ?。旧版の本表は G が確認するとしていたが、おそらくしない）。本実装はより厳しい |
+| E4 | 満たす（ID トークン検証は対象外） | `GoogleOAuthTest::test_refresh_token_is_dropped`、`OwnerCallbackLoginTest::test_session_holds_only_owner_fields`、`OwnerSecurityTest::test_no_token_in_any_table_cache_or_log`。OIDC を使わないため id_token・nonce・署名検証は対象外 | S（Google）: userinfo を使う／G: ID トークンを JWKS で検証／L: なし。OIDC を使わないため対象外。ライブラリは refresh_token を保持するが本実装は破棄する |
+| E5 | 満たす | `GoogleOAuthTest::test_expires_at_has_60s_margin`・`test_expires_at_is_capped_at_3600`、`OwnerSessionTest::test_current_is_null_at_expiry_boundary`、`OwnerEditAccessTest::test_expired_owner_is_sent_back_to_preview_at_boundary` | apiclient: `isAccessTokenExpired` は 30 秒の余裕／L・S: 余裕なし（?）。本実装は 60 秒＋3600 秒上限でより厳しい |
+| F1 | 満たす | `OwnerCallbackValidationTest::test_error_description_is_never_shown` | L: `IdentityProviderException` で包む／S: 特別な扱いなし。本実装は固定文言で同等以上 |
+| F2 | 満たす | `GoogleOAuthTest::test_token_error_logs_only_status_and_code` | L: 例外に応答本文を保持／S: Guzzle の `ClientException`（メッセージに本文を含む）がそのまま伝わる。本実装はステータス・コードのみでより厳しい |
+| F3 | 満たす | `OwnerLogoutTest::test_revoke_failure_still_logs_out`（取り消し失敗は画面で案内し、ログはステータスのみ） | G: `revokeToken` が bool を返す／S・L: 取り消し機能なし。同等 |
+| G1 | 満たす | `OwnerCallbackLoginTest::test_session_id_changes_on_login`（`regenerate(true)` で旧セッション行も削除） | Laravel の標準的な手順。ライブラリはアプリ側の責務。本実装は対応済み |
+| G2 | 満たす | `OwnerLogoutTest::test_logout_revokes_and_invalidates_session`、`test_csrf_token_changes_on_logout`、`test_session_id_changes_on_logout` | Laravel の標準的な手順。ライブラリはアプリ側の責務。本実装は対応済み |
+| G3 | 満たす | `OwnerSecurityTest::test_no_token_in_any_table_cache_or_log`（database セッション＋暗号化・database キャッシュで全テーブルとログを検査） | いずれもトークンを永続化しない。同等 |
+| H1 | 満たす | `OwnerSecurityTest::test_tls_verification_is_never_disabled`（`app/` のソース検査） | いずれも Guzzle の TLS 検証を有効のまま使う。同等 |
+| H2 | 満たす | `GoogleOAuthTest::test_endpoints_are_https_constants`（`GoogleOAuth`／`YouTubeReader` の `const`） | G: エンドポイント定数／S: ハードコード／L: プロバイダクラス。同等 |
+| H3 | 満たす | `GoogleOAuthTest::test_timeout_is_not_retried`、`YouTubeOwnerClientTest::test_connection_error_is_transient`（全呼び出しに `connectTimeout(5)->timeout(15)`） | いずれも Guzzle 既定でタイムアウトなし（?）。本実装は 5 秒／15 秒でより厳しい |
+| H4 | 満たす | `GoogleOAuthTest::test_redirect_response_is_failure`（トークン・取り消しとも `withoutRedirecting()`） | いずれも Guzzle 既定でリダイレクトを追従（?）。本実装はより厳しい |
+| H5 | 満たす | `GoogleOAuthTest::test_revoke_posts_token_in_body` | G: POST 本文／S・L: 対象外（取り消しなし）。同等 |
+| I1 | 満たす | `OwnerSecurityTest::test_secrets_never_reach_logs`（トークン 500・接続例外・channels 401・取り消し 400・ログアウト時の取り消し 400）、`OwnerSecurityTest::test_secret_parameters_are_sensitive`。8.8 のマスク用ラッパーは作らず `#[\SensitiveParameter]`＋ログはステータス・コードのみで代替（下記の理由 6） | 意図的にトークンをログしないが、S・L は例外メッセージに応答本文が入りうる。本実装はより厳しい |
+| I2 | 満たす | `OwnerSecurityTest::test_debug_in_production_logs_warning`・`test_boot_runs_the_debug_check`（`AppServiceProvider::warnAboutDebugInProduction()`）。本番の `APP_DEBUG=false` はデプロイ時の人手確認 | アプリ・デプロイ側の事項でライブラリは対象外 |
+| I3 | 対象外（記録のみ） | Web サーバーのアクセスログはホスティング側の管理。コールバック URL の code は一回限り・短命で、A4・D1 により再利用できない。README の運用メモに記載、プライバシーポリシーへの反映は Phase 4。本番でアクセスログに残るかは人手確認 | アプリ・デプロイ側の事項でライブラリは対象外 |
+| I4 | 満たす | `OwnerSecurityTest::test_client_secret_never_reaches_html_or_frontend`（S4・S5・不一致・callback-invalid・ログアウト後の HTML、`resources/js`・`.env.example` に `VITE_*GOOGLE*` 無し） | アプリ・デプロイ側の事項でライブラリは対象外 |
+| J1 | 満たす | `GoogleOAuthTest::test_authorization_url_parameters`（`scope` は youtube のみ・`include_granted_scopes=false`。応答の余分なスコープは使わない） | いずれも設定したスコープを送る。S（Google）は既定で openid・profile・email を加える。本実装は youtube のみでより厳しい |
+| J2 | 満たす | `OwnerAuthStartTest::test_oauth_routes_are_rate_limited`・`test_callback_is_get_only` | アプリ・デプロイ側の事項でライブラリは対象外 |
+| J3 | 満たす | `GoogleOAuthTest::test_authorization_url_parameters`（`parse_str` で全パラメータ一致・RFC 3986） | L: `http_build_query`（RFC 3986）／S: `http_build_query`（RFC 1738、?）／G: Guzzle `Query::build`。同等 |
+
+ライブラリと違う判断をした項目の理由:
+1. **state の 10 分期限（A5）**: Socialite・league は state に期限を持たせない（セッションの寿命に従う）。本設計は放置されたログイン手続きを短く無効にするため 600 秒で拒否する。拒否時は「もう一度ログインしてください」とプレビューへのリンクを出す。
+2. **トークン交換の再試行なし（D1・D2）**: 認可コードは一回限りで、再送は `invalid_grant` になるか、成功していた場合はトークンを二重に発行させるだけになる。タイムアウト・5xx でも再試行せず再ログインを案内する。
+3. **トークン・取り消しのリダイレクト非追従（H4）**: Guzzle の既定はリダイレクトを追従するが、client_secret・認可コード・トークンを含む POST 本文を別ホストへ再送させないため `withoutRedirecting()` とし、3xx は失敗扱いにする。
+4. **再ログイン時に古いトークンを取り消さない上書き（ログアウト時は取り消す）**: 同じ Google アカウント・同じクライアントの再ログインでは、古いトークンの取り消しが同じ付与（grant）ごと新しいトークンも無効にしうるため、セッション内の古いトークンは取り消さずに上書きする（古いトークンは最長 1 時間で失効し、どこにも保存されない）。ログアウト時はセッションのトークンを（期限切れでも）取り消す。
+5. **`scope` 欠落を不足扱い（E3）**: RFC 6749 では要求どおりなら `scope` を省略できるが、Google は付与スコープを返すため、欠落は想定外として不足扱いにし、トークンを取り消して案内する（安全側）。
+6. **マスク用ラッパーを作らない（I1）**: 8.8 のマスク用ラッパーの代わりに、秘密を受け取る引数すべてに `#[\SensitiveParameter]` を付け（例外トレースから除外）、ログは「何が・HTTP ステータス・形式を検証した `error`／`reason` コード」だけを記録する。応答本文・URL・例外メッセージは記録しない。テストで固有文字列がログに出ないことを確認する。
+
 ---
 
 ## 7. 再生リスト作成処理
@@ -556,8 +619,12 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 - cron（毎分）で裏で進める案は、トークンをセッション外に持つ必要があり要件違反のため不採用。
 
 ### 7.2 開始（`POST /p/{key}/creation`）
-1. `RequireOwnerSession` を通過。入力（編集後のリスト・名前・説明・公開範囲）を検証（8.2。本数は 1〜99）。
+1. `RequireOwnerSession` を通過（S6 の表示・開始・ステップ・再開・中止はすべてチャンネル主のログイン＋チャンネル一致が必要）。入力（編集後のリスト・名前・説明・公開範囲）を検証（8.2。本数は 1〜99）。
+   - **JSON で呼ばれる経路**（ステップ等、`expectsJson()`）では、`RequireOwnerSession` は画面へのリダイレクトではなく、未ログイン・期限切れに 401 JSON（`RequireOwnerSession::NOTICE`）、チャンネル不一致に 403 JSON を返す（Phase 2 の `RequireOwnerSession` は HTML 画面用のリダイレクト／不一致画面のみなので、Phase 3 で追加する）。
 2. 作成前の最終確認として videos.list で全動画の存在と公開状態を再取得（owner_read）。消えた動画は除外せず、画面に戻して確認させる。
+   - **チャンネル主自身の限定公開動画**（Y11。S5 で追加したもの）は、公開動画と同じ API キーの確認では落とさず、**チャンネル主のトークン**で videos.list を呼び、`snippet.channelId` がログイン中のチャンネルと一致し `status.privacyStatus` が `unlisted` であるものだけを受け付ける。それ以外の非公開・他チャンネルの限定公開は拒否する。
+   - 限定公開動画の ID は `proposal_items` にも、プレビュー（S4）・共有画面など第三者が見られる画面にも**決して書かない／出さない**（作成の記録 `playlist_creation_items` にのみ置き、表示はログイン中の該当チャンネル主の S6 だけ）。
+   - 最終確認やステップで Google が 401 を返したら（トークン失効・取り消し）、`OwnerSession` のログインを消して（`forget()`）再ログインを求める（JSON では 401＋`RequireOwnerSession::NOTICE`。Phase 2 の `RequireOwnerSession::ownerApiFailureJson()` を使う）。
 3. トランザクションで
    - `playlist_creations`（UNIQUE proposal_id）の存在確認。既に存在すれば何もせず進捗画面へリダイレクト（**二重作成防止その 1: DB 一意制約**）。
    - **書込枠の予約**（5.4）。足りなければロールバックし、編集画面に「本日の残り: 動画あと N 本」とリセット時刻を表示（作成は始まらない）。
@@ -582,7 +649,7 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 |---|---|---|---|
 | Google の `quotaExceeded` | `paused(quota_exceeded)` | 保持（日付が変われば失効） | 翌 PT 日以降。リセット時刻を表示 |
 | アプリの書込上限で確定できない | `paused(quota_budget)` | 保持 | 空きができるかリセット後。再予約できたら再開 |
-| 401／セッション期限切れ | `paused(auth_expired)` | 保持 | 「再ログインして続きから」。ログイン後 `/p/{key}/creation` へ戻る（戻り先をセッションに保存） |
+| 401／セッション期限切れ | `paused(auth_expired)`。Google の 401 ではセッションのログインを消す（`forget()`、7.2） | 保持 | 「再ログインして続きから」。ログイン後 `/p/{key}/creation` へ戻る（戻り先をセッションに保存） |
 | タブを閉じた・回線断 | 変化なし | 保持 | URL を開き直して「続きから」 |
 | 利用者の一時停止ボタン | `paused(user)`（表示用） | 保持 | 「続きから」 |
 | 利用者の「残りを中止」 | 未送信を `skipped` → `completed` | 解放 | 不可（失敗分の再試行のみ可） |
@@ -599,6 +666,7 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 | public | 「作成済み」＋再生リストへのリンク | 同左 |
 | unlisted / private | 「作成済み」のみ（リンク・ID は HTML に出さない） | 「作成済み」＋リンク |
 - 理由: 共有 URL は誰でも開けるため、限定公開・非公開の再生リスト ID を第三者に渡さない。
+- 同じ理由で、チャンネル主が追加した**自分の限定公開動画**（Y11）の ID・タイトルはプレビューに一切出さない（`proposal_items` に書かないため、プレビューに出る動画は提案時の内容のみ。7.2）。
 
 ### 7.7 進捗に保持するもの
 - 作成内容、各項目状態、YouTube 側 ID、エラー理由、予約量のみ。**トークンは保持しない**。
@@ -612,14 +680,18 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 |---|---|
 | チャンネル取得（キャッシュ無し時のみ消費） | 5 回/分・30 回/時/IP |
 | 動画 URL 追加 | 30 回/分/IP |
-| 提案保存 | 5 回/10 分・30 回/日/IP、全体 500 件/日 |
+| 提案保存（**保存に成功した回だけ**数える。Y17） | 5 回/10 分・30 回/日/IP、全体 500 件/日 |
+| 提案保存の POST（成否を問わずすべて。Y17） | 20 回/10 分/IP |
+| チャンネル主の限定公開動画の読み込み（Y11） | 5 回/10 分/チャンネル |
 | OAuth 開始・コールバック | 10 回/分/IP |
 | 作成開始・失敗分再試行 | 5 回/時/チャンネル |
 | 作成ステップ | 2 回/秒/セッション（ブラウザは 1 秒間隔） |
 | 問い合わせ送信 | 3 回/10 分・10 回/日/IP、全体 50 件/日 |
 | 全ページ共通 | 120 回/分/IP |
 - レート制限キーは IP をハッシュ化して cache に置くだけ（TTL 付き）。DB のアプリテーブルには保存しない。
-- 超過時は 429 と日本語メッセージ。
+- 超過時は 429 と日本語メッセージ。提案保存（上の 2 行）の超過は、自サイトのフォームからなら入力を残したまま提案作成画面へ戻す。
+- 提案保存の成功回数の制限は保存前に判定し、保存に成功したときだけ数える（検証エラー・ハニーポット・削除済み/非公開動画による失敗では減らない）。成功回数を数える制限は同時送信でわずかに超えうるが、POST 全体の 20 回/10 分で上限が決まる ［ユーザー決定: Y17］。チャンネル入力（チャンネル取得）の制限は変えない。
+- 匿名の読取予算（`QUOTA_READ_BUDGET`）に対し、IP ごと・チャンネルごとの日次上限は設けない ［ユーザー決定: Y18］。上表の短時間の制限は維持し、読取予算の日次の使い切りが頻発するようなら見直す。
 - 共用サーバーの前段がリバースプロキシの場合、`TrustProxies` の設定次第で全員同じ IP になる ［要確認: CORESERVER の構成］。Phase 0 で `REMOTE_ADDR` を確認する。
 
 ### 8.2 入力上限・検証
@@ -679,21 +751,21 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 ### 9.1 必要なページ・表示
 | 要件 | 対応 |
 |---|---|
-| ホームページ（ログイン不要で閲覧可、機能説明） | S1。アプリ名、提案→作成の流れ、youtube スコープで何をするか（再生リストの作成と動画追加のみ）を明記 |
-| プライバシーポリシー | S7 `/privacy`。YouTube API Services を使う旨、[Google プライバシーポリシー](https://policies.google.com/privacy) へのリンク、取得するデータ（提案内容、YouTube の公開動画情報、ログイン中のチャンネル ID とアクセストークン）、保存場所と期間（4.3: 提案・取り込んだ動画情報は 30 日、トークンはセッションのみ）、Cookie（セッションのみ）、第三者提供なし、承認取り消し方法、**問い合わせフォームの扱い**（運営者へメール送信のみ・DB 保存なし・返信用アドレスは任意・メールボックスで対応後 90 日以内に削除）、削除依頼の方法（問い合わせフォーム、7 日以内に対応） |
+| ホームページ（ログイン不要で閲覧可、機能説明） | S1。アプリ名、提案→作成の流れ、youtube スコープで何をするか（「チャンネルの確認・自分の限定公開動画の表示・再生リストの作成と動画の追加」にのみ使う）を明記。S4 のログイン欄も同じ内容 |
+| プライバシーポリシー | S7 `/privacy`。YouTube API Services を使う旨、[Google プライバシーポリシー](https://policies.google.com/privacy) へのリンク、取得するデータ（提案内容、YouTube の公開動画情報、ログイン中のチャンネル ID とアクセストークン、チャンネル主が読み込んだ自分の限定公開動画の一覧（セッションに 10 分のみ））、保存場所と期間（4.3: 提案・取り込んだ動画情報は 30 日、トークンはセッションのみ）、Cookie（セッションのみ）、第三者提供なし、承認取り消し方法、**問い合わせフォームの扱い**（運営者へメール送信のみ・DB 保存なし・返信用アドレスは任意・メールボックスで対応後 90 日以内に削除）、削除依頼の方法（問い合わせフォーム、7 日以内に対応） |
 | 利用規約 | S7 `/terms`。[YouTube 利用規約](https://www.youtube.com/t/terms) へのリンクと「本サービスの利用は YouTube 利用規約への同意を含む」旨、提案内容の責任、30 日削除、無保証 |
 | 利用前の同意 | 提案保存ボタン・ログインボタンの近くに「利用規約・プライバシーポリシーに同意のうえ」の文言とリンク（Developer Policies III.A.2 ［事実: A.6］） |
 | 書込操作の明示 | 作成ボタンに「あなたのチャンネルに再生リストを作成します」と明記し、押下で初めて書込（III.E.3 ［事実: A.6］） |
 | 取り消し案内 | 6.6 |
 | 出典表示 | YouTube 由来のデータ（一覧・プレビュー）の近くに「データ提供: YouTube」と元動画・チャンネルへのリンク |
-| ブランド表記 | アプリ名は仮称「**List Maker**」（YouTube を名称に含めない。審査申請前に正式名を確定）。YouTube のロゴは使わない。説明文で「YouTube の再生リストを作成するツール」と記述するのは可 ［設計判断・審査で要確認］ |
+| ブランド表記 | アプリ名は「**List Maker**」（Y10。YouTube を名称に含めない）。YouTube のロゴは使わない。説明文で「YouTube の再生リストを作成するツール」と記述するのは可 ［設計判断・審査で要確認］ |
 - フッタ全ページ: プライバシー・規約・YouTube 利用規約・お問い合わせ（S8 フォームへのリンク）。
 
 ### 9.2 OAuth 審査
 - **GCP プロジェクトは本ツール専用**。未審査の新規ユーザー 100 人上限はプロジェクトの生涯で数えられリセットできず ［事実: A.3］、審査・クオータもプロジェクト単位のため、既存サービスと共用すると互いに影響する。Developer Policies も 1 つの API クライアントにつき 1 つのプロジェクトを求めている ［事実: A.6］。
 - 当面: 公開ステータス「本番」・未審査。未確認アプリ警告が出る（「詳細→移動」で続行可）、新規ユーザー累計 100 人上限 ［事実: A.3］。テストユーザー登録はしない。S4 のログインボタン近くに「確認されていないアプリの警告が表示されます」の案内と画像付き説明を置く。
 - 審査時に必要: ログイン不要のホームページ、同一ドメインのプライバシーポリシー（同意画面からリンク）、Search Console でのドメイン所有確認、英語のデモ動画（同意画面に正しいアプリ名、アドレスバーに OAuth クライアント ID が見える状態でログイン〜作成の流れ）、スコープごとの用途説明 ［事実: A.4］。審査は最大 10 日程度 ［事実: A.4］。
-- 審査用に英語版のホーム・プライバシーポリシー要旨を用意するか ［未決: U4］。
+- ページは日本語のみとし、英語はデモ動画だけにする ［ユーザー決定: Y13］。審査で英語ページが求められて却下された場合に英語ページを追加する。
 
 ### 9.3 30 日ルール
 - API 由来データ（タイトル、サムネ URL、再生時間、チャンネル名）は、取得時刻から 30 日以内に削除される設計 ［ユーザー決定］:
@@ -741,7 +813,7 @@ CONTACT_TO_ADDRESS=
 ### 10.4 Google Cloud セットアップ（README に書く要点）
 1. **本ツール専用の**プロジェクトを新規作成（既存サービスのプロジェクトは使わない）、YouTube Data API v3 を有効化。
 2. API キー作成 → API 制限「YouTube Data API v3 のみ」。アプリケーション制限は、サーバーの送信元 IP が固定と確認できれば IP 制限、できなければ「なし」（ycs の手順と同じ） ［要確認: CORESERVER の送信元 IP］。
-3. OAuth 同意画面: 外部、アプリ名「List Maker」（仮称・YouTube を含めない）、サポートメール、ホームページ・プライバシーポリシー・利用規約 URL（`https://list-maker.alpacasandbag.jp/...`）、承認済みドメイン `alpacasandbag.jp`、スコープに `.../auth/youtube` を追加。公開ステータスを「本番環境」にする（未審査のまま）。
+3. OAuth 同意画面: 外部、アプリ名「List Maker」（Y10・YouTube を含めない）、サポートメール、ホームページ・プライバシーポリシー・利用規約 URL（`https://list-maker.alpacasandbag.jp/...`）、承認済みドメイン `alpacasandbag.jp`、スコープに `.../auth/youtube` を追加。公開ステータスを「本番環境」にする（未審査のまま）。
 4. OAuth クライアント ID（ウェブアプリケーション）: 承認済みリダイレクト URI に `https://list-maker.alpacasandbag.jp/auth/google/callback`、ローカル用に `http://localhost:8000/auth/google/callback`。
 5. Search Console でドメイン所有確認（審査前）。
 6. クオータ使用量の確認場所（API とサービス → 割り当て）とリセット時刻（PT 0 時＝日本時間 16 時〈夏時間〉／17 時〈標準時間〉）。アプリの台帳（quota_usage）と見比べ、見込みのずれを確認する。
@@ -786,11 +858,11 @@ CONTACT_TO_ADDRESS=
 |---|---|---|
 | 0 基盤 | 専用 GCP プロジェクト作成、Laravel 13 プロジェクト、Tailwind/Vite/Alpine(CSP)、SecurityHeaders、ホーム・静的ページの骨組み、deploy.sh/.exclude-list/deploy.env.example、README 初版、`app:prune-expired` の空実装と cron、SMTP の疎通確認 | `https://list-maker.alpacasandbag.jp` にデプロイでき、`php artisan test` が通る。ヘッダがテストで確認できる。プロキシ配下の IP 取得を確認済み。サーバーから運営者アドレスへテストメールが届く |
 | 1 提案者 | ChannelInput/VideoUrl、YouTubeReader、QuotaPolicy/QuotaClock、QuotaLedger（read 記録・予算）、channel_caches／channel_cache_videos（6 時間再利用・差分取り込み・チャンネル単位の 30 日削除と期限切れ記録（channel_cache_expirations）・期限切れ後の全件取り込み・S2 の期限表示）、提案作成 UI（絞り込み・選択保持・99 本上限・並べ替え・URL 追加とバッジ）、提案保存、完了画面、プレビュー（最大本数・本日の残り表示）、レート制限、削除バッチ | 実在チャンネルで提案を作り、別ブラウザで URL からプレビューできる。上限・不正入力・対象チャンネル外の既定包含・レート制限・404・30 日削除・差分取り込み（10.5 の各ケース）・QuotaPolicy の Feature/単体テストが通る。実在チャンネルで 6 時間後の 2 回目の取り込み（新規 50 本未満）が 2 ユニット（channels.list 1＋1 ページ）で済むことを台帳で確認 |
-| 2 チャンネル主ログイン | GoogleOAuth（state/PKCE）、セッション保持、チャンネル照合、編集画面（書込なし。必要な枠・本日の残り・不足時の作成ボタン無効とリセット時刻）、ログアウト＋取り消し | 自分のチャンネルでログイン→編集画面、別チャンネルで不一致画面、ログアウトで Google 側の承認が消えることを確認。トークンが DB に残らないテストが通る。残り表示のテストが通る。**6.7 チェックリストの全項目がレビューで「満たす／対象外（理由）」と記録され、テスト欄の自動テストが通る** |
+| 2 チャンネル主ログイン | GoogleOAuth（state/PKCE）、セッション保持、チャンネル照合、編集画面（書込なし。必要な枠・本日の残り・不足時の作成ボタン無効とリセット時刻）、自分の限定公開動画の読み込み（Y11）、チャンネル主による提案削除（Y14）、ログアウト＋取り消し | 自分のチャンネルでログイン→編集画面、別チャンネルで不一致画面、ログアウトで Google 側の承認が消えることを確認。トークンが DB に残らないテストが通る。残り表示のテストが通る。**6.7 チェックリストの全項目がレビューで「満たす／対象外（理由）」と記録され、テスト欄の自動テストが通る** |
 | 3 作成 | playlist_creations、quota_reservations と予約→確定→解放、CreationRunner（position 指定）、ステップ API、進捗画面、再試行・一時停止・再開・残りを中止、二重作成防止、失敗分再試行、プレビューの作成済みリンク表示制御 | 実 API で 3 本／20 本の作成が成功し、失敗分再試行で並び順が保たれる。途中でタブを閉じて再開できる。枠不足で開始しないこと、日付またぎで再予約されることをテストで確認。同時予約が上限を超えないことを MySQL で確認。作成系・予約系 Feature テストが全て通る。409/`<>`/position と手動並び替え等の［要確認］事項の結果をこの設計書に追記 |
 | 4 公開準備 | 問い合わせフォーム（S8）、`app:delete-proposal`、プライバシーポリシー・規約の本文（問い合わせの扱いを含む）、利用前の同意文、出典表示、未確認アプリ警告の案内、ログ整理、レート制限値の見直し、README 完成、OAuth 同意画面を本番公開 | 9.1 のチェックリストをすべて満たす。フォームから送った問い合わせが運営者に届き DB に残らない。第三者（自分の別アカウント）が警告画面を越えて作成まで完走できる |
-| 5 審査 | 正式アプリ名の確定、Search Console 確認、英語デモ動画、審査申請、指摘対応 | 審査通過（未確認アプリ警告が消える） |
-| 任意 | watch_videos プレビューリンク（≤50 本、ID 検証済みのみ）、チャンネル主による提案削除、CAPTCHA 有効化、放置作成の予約を無操作で解放 | 必要に応じて |
+| 5 審査 | Search Console 確認（アプリ名は List Maker で確定済み。Y10）、英語デモ動画、審査申請、指摘対応 | 審査通過（未確認アプリ警告が消える） |
+| 任意 | watch_videos プレビューリンク（≤50 本、ID 検証済みのみ）、CAPTCHA 有効化、英語ページ（審査で求められた場合。Y13） | 必要に応じて |
 
 ---
 
@@ -808,6 +880,15 @@ CONTACT_TO_ADDRESS=
 | Y7 | チャンネル動画一覧は**差分取り込み**: uploads を playlistItems.list で新しい順に 50 件ずつ読み、キャッシュ済み（30 日以内）の動画 ID に行き当たったページで打ち切って新規分だけ追加。50 件以上新しければ次ページへ。取り込み済みの内容は再取得しない。期限切れで消えた後は全件取り込みで再取得される（Y9）。並びが新しい順でない動画の取りこぼし（5.3 既知の制限）は受け入れる（期限切れ後の全件取り込みで解消） |
 | Y8 | OAuth/HTTP は外部ライブラリを使わず直接実装する（D4 を維持）。代わりに Socialite・league/oauth2-client・google/apiclient（google/auth）の安全対策を確認項目として列挙し（6.7）、実装レビューの観点に含める |
 | Y9 | 一覧キャッシュの 30 日期限は**チャンネル単位**で管理する。全件取り込み（初回または期限切れ後）の完了時点を基準に 30 日でそのチャンネルのキャッシュ（channel_caches と channel_cache_videos の全行。差分で後から足した行も含む）をまとめて削除。期限内は差分取り込み、期限切れ後の初回は全件取り込み（そこから新たに 30 日）。期限切れで削除したチャンネルは ID と削除日時だけを記録し（API データは持たない）、次回取り込み時に「前回の一覧は 30 日の保存期限で削除されたため、全件を取り込み直しています」と表示。期限内は「この一覧は○月○日に取り込み、○月○日に削除されます」と表示。行単位削除と needs_rescan による全走査は廃止（第 3 改訂） |
+| Y10 | （U1）アプリ名は「List Maker」で確定（仮称を外す） |
+| Y11 | （U2、ユーザー決定 #9）チャンネル主はログイン後の S5 で**自分の限定公開動画**を追加できる。一覧はボタン操作でだけ読み込む専用エンドポイント（チャンネル主本人のみ、同一オリジンの fetch のみ、チャンネルごとに 5 回/10 分、owner_read を使う）から取得し、そのチャンネル主のセッションに 10 分だけ置く。共有キャッシュ（channel_caches 等）には決して置かない。非公開動画は対象外 |
+| Y12 | （U3、ユーザー決定 #10）動画数上限は当面 99 本のまま。クオータ増加申請は利用状況を見て決める |
+| Y13 | （U4、ユーザー決定 #11）ページは日本語のみ。英語は審査用のデモ動画だけ。審査で却下されたら英語ページを追加する |
+| Y14 | （U5、ユーザー決定 #12）チャンネル主は自分のチャンネル宛ての提案を 30 日の期限前に削除できる。S5 の「この提案を削除」→ 確認ページ → CSRF 付き POST → 提案と明細を 1 トランザクションで削除 →「削除しました」ページ（そのタブの下書きを消す）。削除後のキーは存在しないキーと同じ 404。運営による削除（`app:delete-proposal`）は従来どおり |
+| Y15 | （U11、ユーザー決定 #15）放置された作成の予約は当日中保持する（無操作での解放はしない） |
+| Y16 | （U12）差分取り込みの取りこぼしは、チャンネル単位の 30 日期限（Y9）後の全件取り込みで解消されるため、追加の対策（`CHANNEL_SYNC_KNOWN_RUN` の増加や定期的な全件読み直し）はしない |
+| Y17 | （ユーザー決定 #19）提案保存の 5 回/10 分・30 回/日/IP・全体 500 件/日は**保存に成功した回だけ**数える（検証エラー・ハニーポット・削除済み/非公開動画による失敗では減らない）。別に提案保存の POST 全体を 20 回/10 分/IP に制限する。チャンネル入力フォームの制限は変えない |
+| Y18 | （ユーザー決定 #20）匿名の読取予算に IP ごと・チャンネルごとの日次上限は設けない。短時間の制限（8.1）は維持し、日次の使い切りが頻発するようなら見直す |
 
 ### 12.2 設計判断（要件に明記がなく監督者・設計者が決めたもの）
 | # | 判断 | 理由 |
@@ -828,7 +909,7 @@ CONTACT_TO_ADDRESS=
 | D14 | playlistItems.insert で `snippet.position` を指定（前にある done 件数）。追加ユニットなし | 失敗分の再試行でも提案の並び順を保つ（監督者判断） |
 | D15 | ログイン不要のプレビューでは作成済み再生リストのリンクを public のみ表示。unlisted/private はログイン中の該当チャンネル主にのみ表示 | 限定公開・非公開の ID を第三者に渡さない（監督者判断） |
 | D16 | GCP プロジェクトは本ツール専用。既存サービスと共用しない | 審査・未審査 100 人上限・クオータがプロジェクト単位（監督者判断） |
-| D17 | アプリ名は仮称「List Maker」。審査申請前に確定。YouTube を名称に含めない | ブランド誤認の回避（監督者判断） |
+| D17 | アプリ名は「List Maker」（Y10 で確定）。YouTube を名称に含めない | ブランド誤認の回避（監督者判断） |
 | D18 | 問い合わせはメール送信のみで DB 非保存。返信用アドレスは任意で本文にのみ記載、件名固定・Reply-To 無し。レート制限・ハニーポット・文字数上限。CORESERVER の SMTP。プライバシーポリシーに記載。メールボックスでは対応後 90 日以内に削除 | 個人情報を溜めない。ヘッダインジェクション防止（監督者判断。90 日は設計者判断） |
 | D19 | 予約を確保できないときは `paused(quota_budget)` として Google 側の `quota_exceeded` と区別。失敗した書込も 50 消費として計上 | 原因に応じた案内。見込みを安全側に |
 | D20 | 差分取り込みの打ち切りは「1 ページ内で既知 ID が 3 件連続（`CHANNEL_SYNC_KNOWN_RUN`）」で判定し、そのページの残りの新規は追加してから止める | 先頭付近の軽い並びの揺らぎ（プレミア公開等）での取りこぼしを減らす。追加コストは通常 0〜1 ページ |
@@ -839,19 +920,20 @@ CONTACT_TO_ADDRESS=
 ### 12.3 未決事項
 | # | 事項 | 決める人／時期 |
 |---|---|---|
-| U1 | アプリの正式名（仮称 List Maker のままでよいか） | ユーザー／Phase 5（審査申請）前 |
-| U2 | チャンネル主ログイン後に自分の非公開・限定公開動画も追加できるようにするか（OAuth で uploads を読む） | ユーザー／v1 後 |
-| U3 | 99 本を超える需要があるか。あるならクオータ増加申請（API Compliance Audit）を行い `QUOTA_WRITE_LIMIT` を上げる | ユーザー／利用状況を見て |
-| U4 | 審査用の英語ページをどこまで用意するか | Phase 5 前 |
-| U5 | チャンネル主が届いた提案を削除できる機能の要否 | Phase 4 |
+| U1 | （決定済み → Y10）アプリの正式名 | — |
+| U2 | （決定済み → Y11）チャンネル主が自分の限定公開動画を追加できるようにするか | — |
+| U3 | （決定済み → Y12：当面 99 本）99 本を超える需要があればクオータ増加申請（API Compliance Audit）を行い `QUOTA_WRITE_LIMIT` を上げる | ユーザー／利用状況を見て |
+| U4 | （決定済み → Y13）審査用の英語ページ | — |
+| U5 | （決定済み → Y14）チャンネル主による提案削除 | — |
 | U6 | ［要確認］CORESERVER の送信元 IP 固定可否（API キーの IP 制限）とリバースプロキシ有無 | Phase 0 |
 | U7 | ［要確認］CORESERVER の SMTP 設定（ホスト・ポート・暗号化・認証）、送信元ドメインの SPF/DKIM、Laravel 13 の `MAIL_SCHEME` 名称 | Phase 0 |
 | U8 | ［要確認］YouTube 側の制約: 再生リスト名・説明の上限と `<>` 可否、連続 insert の 409、同一動画の重複追加可否、uploads の公開範囲、`X-Goog-Api-Key` ヘッダ対応、PKCE 対応、`snippet.position` 指定に手動並び替え設定が必要か、**uploads プレイリストの並び順（プレミア公開・非公開→公開の古い動画・公開日時を過去にした動画がどこに入るか）**、コールバックの `iss` パラメータの有無 | Phase 1〜3 で実測し本書に追記 |
-| U12 | 差分取り込みの取りこぼし（5.3 既知の制限）が実運用で目立つ場合、`CHANNEL_SYNC_KNOWN_RUN` を増やすか、期限内でも数日に 1 回は全件を読み直すか | 運用開始後 |
-| U13 | 6.7 の参照先（各ライブラリの該当処理）のソースでの裏取りと、ライブラリと異なる判断をした項目の理由の追記 | 実装レビュー担当／Phase 2 |
+| U12 | （解決済み → Y16）差分取り込みの取りこぼしへの追加対策 | — |
+| U13 | （Phase 2 で実施・注記あり）6.7 の参照先の裏取りと、ライブラリと異なる判断をした項目の理由の追記。判定記録の「参照ライブラリでの裏取り」欄はレビュー担当の知識に基づく照合で記入済み・理由も追記済み。**注記**: 各ライブラリのソースを読んでの確認は未実施で、「?」の付いた箇所（L の state 削除、G の verifier 長・再試行設定・付与スコープ確認、S の RFC 1738、タイムアウト・リダイレクト既定など）は必要になった時点で確かめる | 必要時（任意） |
 | U9 | ［要確認］Laravel 13 の正確な PHP 要件、スケルトン既定の Tailwind/Vite バージョン | Phase 0 |
 | U10 | アプリ台帳と Google 側実使用量のずれが大きい場合、`QUOTA_WRITE_LIMIT` の安全余裕を見直すか | 運用開始後 |
-| U11 | 放置された作成（タブを閉じたまま）の予約を当日中保持し続けて他の利用者が困るなら、無操作 N 分で解放するか | 運用開始後 |
+| U11 | （決定済み → Y15）放置された作成の予約の扱い | — |
+| U14 | 作成中（Phase 3 の playlist_creations が進行中）の提案をチャンネル主が削除した場合の扱い（削除を拒むか、作成記録ごと消すか） | Phase 3 |
 
 ---
 

@@ -7,6 +7,9 @@
 @section('title', 'List Maker（仮称）')
 
 @section('content')
+    @if (session()->has('owner_notice'))
+        <p class="mb-4 rounded bg-amber-50 p-2 text-sm text-amber-900" role="status">{{ session('owner_notice') }}</p>
+    @endif
     <h1 class="text-2xl font-bold">List Maker（仮称）</h1>
     <p class="mt-4">YouTube の再生リストを、ファンが提案してチャンネル主が作成するためのツールです</p>
 
@@ -16,7 +19,7 @@
         <li>チャンネル主が内容を確認して作成する</li>
     </ol>
 
-    <p class="mt-8">Google ログインで許可いただく権限は、あなたのチャンネルへの再生リストの作成と動画の追加にのみ使います。</p>
+    <p class="mt-8">Google ログインで許可いただく YouTube の権限は、チャンネルの確認・自分の限定公開動画の表示・再生リストの作成と動画の追加にのみ使います。</p>
 
     <form method="GET" action="{{ route('channels.open') }}" class="mt-8">
         <label for="q" class="block font-semibold">提案したいチャンネル</label>

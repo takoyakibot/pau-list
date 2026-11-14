@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\LimitRequestBody;
+use App\Http\Middleware\RejectCrossSiteRequest;
 use App\Http\Middleware\RequireSameOriginFetch;
 use App\Http\Middleware\SecurityHeaders;
 use App\Support\ProposalFormRedirect;
@@ -24,8 +25,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prepend(SecurityHeaders::class);
         $middleware->append(LimitRequestBody::class);
         $middleware->appendToGroup('web', 'throttle:global');
-        // Reject cross-site lookups before any rate limiter counts them.
+        // Reject cross-site lookups and login starts before any rate limiter counts them.
         $middleware->prependToPriorityList(before: ThrottleRequests::class, prepend: RequireSameOriginFetch::class);
+        $middleware->prependToPriorityList(before: ThrottleRequests::class, prepend: RejectCrossSiteRequest::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->render(function (ThrottleRequestsException $e, Request $request) {

@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Http\Controllers\OwnerEditController;
 use App\Session\PrivacyDatabaseSessionHandler;
+use App\Support\OwnerSession;
 use App\Support\QuotaPolicy;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -30,6 +32,27 @@ class AppServiceProvider extends ServiceProvider
         $this->validateQuotaConfig($this->app->runningInConsole());
         $this->configureRateLimiting();
         $this->configureSessions();
+        $this->warnAboutDebugInProduction();
+        $this->warnAboutInsecureSessionCookie();
+    }
+
+    /** Debug pages expose configuration and stack traces (spec 6.7 I2). */
+    public function warnAboutDebugInProduction(): void
+    {
+        if ($this->app->isProduction() && config('app.debug')) {
+            Log::warning('APP_DEBUG is enabled in production');
+        }
+    }
+
+    /**
+     * The session carries the owner's access token: in production its cookie must be Secure
+     * (SESSION_SECURE_COOKIE=true; config/session.php defaults to true, this catches an explicit false).
+     */
+    public function warnAboutInsecureSessionCookie(): void
+    {
+        if ($this->app->isProduction() && config('session.secure') !== true) {
+            Log::warning('SESSION_SECURE_COOKIE is not true in production');
+        }
     }
 
     /**
@@ -49,11 +72,15 @@ class AppServiceProvider extends ServiceProvider
     {
         RateLimiter::for('global', fn (Request $request) => Limit::perMinute(120)->by($request->ip()));
         RateLimiter::for('video-lookup', fn (Request $request) => Limit::perMinute(30)->by($request->ip()));
-        RateLimiter::for('proposal-store', fn (Request $request) => [
-            Limit::perMinutes(10, 5)->by('m:'.$request->ip()),
-            Limit::perDay(30)->by('d:'.$request->ip()),
-            Limit::perDay(500)->by('all'),
-        ]);
+        // Login start and callback share one limit (spec 8.1, 6.7 J2).
+        RateLimiter::for('oauth', fn (Request $request) => Limit::perMinute(10)->by('oauth:'.$request->ip()));
+        // The owner's unlisted list spends owner_read: 5 per 10 minutes per owner channel (IP when logged out).
+        RateLimiter::for('owner-unlisted', fn (Request $request) => Limit::perMinutes(10, 5)
+            ->by('owner-unlisted:'.(app(OwnerSession::class)->current()?->channelId ?? 'ip:'.$request->ip()))
+            ->response(fn () => response()->json(['message' => OwnerEditController::UNLISTED_THROTTLED], 429)));
+        // Every proposal POST, whatever its outcome (#19(1)). Successful saves have their own limits
+        // (App\Support\ProposalStoreLimits: 5 per 10 minutes and 30 per day per IP, 500 per day overall).
+        RateLimiter::for('proposal-post', fn (Request $request) => Limit::perMinutes(10, 20)->by('proposal-post:'.$request->ip()));
     }
 
     /**

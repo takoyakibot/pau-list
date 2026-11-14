@@ -14,9 +14,12 @@ use App\Services\YouTube\QuotaLedger;
 use App\Services\YouTube\ReadBudgetExceeded;
 use App\Services\YouTube\YouTubeApiException;
 use App\Support\ChannelFetchThrottle;
+use App\Support\OwnerSession;
 use App\Support\ProposalKey;
+use App\Support\ProposalStoreLimits;
 use App\Support\QuotaPolicy;
 use Illuminate\Database\QueryException;
+use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -93,10 +96,21 @@ class ProposalController extends Controller
         ]);
     }
 
-    public function store(StoreProposalRequest $request, string $channelId, ProposalCreator $creator): RedirectResponse
-    {
+    public function store(
+        StoreProposalRequest $request,
+        string $channelId,
+        ProposalCreator $creator,
+        ProposalStoreLimits $limits,
+    ): RedirectResponse {
         if ($request->isHoneypotHit()) {
             return redirect()->route('home');
+        }
+
+        // Success-only limits (#19(1)): refused before any YouTube call; rendered like the route
+        // limiter's 429 (back to the form with the input kept).
+        $retryAfter = $limits->retryAfter($request);
+        if ($retryAfter !== null) {
+            throw new ThrottleRequestsException('Too Many Attempts.', null, ['Retry-After' => (string) $retryAfter]);
         }
 
         // Errors always return to the propose screen explicitly: with Referrer-Policy no-referrer,
@@ -125,6 +139,16 @@ class ProposalController extends Controller
             return $fail('保存に失敗しました。時間をおいて再度お試しください');
         }
 
+        // The proposal is already saved: a failing limiter (cache/database trouble) must not turn that into
+        // a 500 that hides the share URL. Logged like the save failure above (SQLSTATE only, no bindings).
+        try {
+            $limits->hit($request);
+        } catch (\Throwable $e) {
+            Log::error('Proposal save limiter failed', [
+                'sqlstate' => $e instanceof QueryException ? (string) $e->getCode() : 'none',
+            ]);
+        }
+
         // Never log the raw key or the full hash.
         Log::info('Proposal saved', [
             'key_hash_prefix' => substr($created->proposal->key_hash, 0, 8),
@@ -144,7 +168,7 @@ class ProposalController extends Controller
     {
         $proposal = ProposalKey::isWellFormed($key)
             && hash_equals((string) session('proposal_key_shown'), ProposalKey::hash($key))
-            ? $this->findLive($key)
+            ? Proposal::findLiveOr503($key)
             : null;
 
         if ($proposal === null) {
@@ -160,9 +184,10 @@ class ProposalController extends Controller
     /**
      * S4: public preview. Unknown and expired keys return the same 404.
      */
-    public function show(string $key, QuotaLedger $ledger): Response
+    public function show(string $key, QuotaLedger $ledger, OwnerSession $owners): Response
     {
-        $proposal = $this->findLive($key) ?? abort(404);
+        $proposal = Proposal::findLiveOrAbort($key);
+        $owner = $owners->current();
         $items = $proposal->items()->get();
 
         return response()->view('proposals.show', [
@@ -171,17 +196,9 @@ class ProposalController extends Controller
             'totalSeconds' => (int) $items->sum('duration_seconds'),
             'hasUnknownDuration' => $items->contains(fn ($item) => $item->duration_seconds === null),
             'remaining' => $ledger->remainingToday(),
+            'key' => $key,
+            'ownerMatches' => $owner !== null && $owner->channelId === $proposal->channel_id,
+            'ownerChannelTitle' => $owner?->channelTitle,
         ]);
-    }
-
-    private function findLive(string $key): ?Proposal
-    {
-        try {
-            return Proposal::findLiveByKey($key);
-        } catch (QueryException $e) {
-            // The exception message contains SQL bindings (the full key hash): never report it as is.
-            Log::error('Proposal lookup failed (database)', ['sqlstate' => (string) $e->getCode()]);
-            abort(503);
-        }
     }
 }

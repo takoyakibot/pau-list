@@ -12,7 +12,7 @@ class PagesTest extends TestCase
 
     public static function publicPages(): array
     {
-        return [['/'], ['/privacy'], ['/terms'], ['/contact']];
+        return [['/'], ['/privacy'], ['/terms'], ['/contact'], ['/logged-out']];
     }
 
     #[DataProvider('publicPages')]
@@ -43,7 +43,7 @@ class PagesTest extends TestCase
     {
         $this->get('/')
             ->assertSee('List Maker')
-            ->assertSee('再生リストの作成と動画の追加')
+            ->assertSee('Google ログインで許可いただく YouTube の権限は、チャンネルの確認・自分の限定公開動画の表示・再生リストの作成と動画の追加にのみ使います。')
             ->assertDontSee('YouTube List Maker');
     }
 
@@ -52,7 +52,7 @@ class PagesTest extends TestCase
         // スケルトンの /up（外部 CDN を読む）と local ディスクの storage/{path} 配信は使わない
         $uris = collect(app('router')->getRoutes()->getRoutes())->map->uri()->sort()->values()->all();
 
-        $this->assertSame(['/', 'channels', 'channels/{channelId}/proposals', 'channels/{channelId}/propose', 'channels/{channelId}/videos/lookup', 'contact', 'p/{key}', 'p/{key}/shared', 'privacy', 'terms'], $uris);
+        $this->assertSame(['/', 'auth/google', 'auth/google/callback', 'channels', 'channels/{channelId}/proposals', 'channels/{channelId}/propose', 'channels/{channelId}/videos/lookup', 'contact', 'deleted', 'logged-out', 'logout', 'owner/videos/unlisted', 'p/{key}', 'p/{key}/delete', 'p/{key}/deletion', 'p/{key}/edit', 'p/{key}/shared', 'privacy', 'terms'], $uris);
         $this->get('/up')->assertNotFound();
         $this->get('/storage/anything.txt')->assertNotFound();
     }
