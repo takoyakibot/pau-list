@@ -5,6 +5,10 @@ namespace Tests\Feature;
 use App\Services\YouTube\GoogleOAuth;
 use App\Services\YouTube\OAuthFailed;
 use Carbon\CarbonImmutable;
+use GuzzleHttp\Psr7\Response as Psr7Response;
+use Illuminate\Http\Client\Factory;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
@@ -230,6 +234,69 @@ class GoogleOAuthTest extends TestCase
             $this->assertStringNotContainsString('VERIFIER-456', $trace);
             $this->assertNull($e->getPrevious());
         }
+    }
+
+    private static function requestException(int $status): RequestException
+    {
+        return new RequestException(new Response(new Psr7Response($status, [], '{"error":"x","error_description":"BODY-SECRET ya29.leak"}')));
+    }
+
+    public function test_request_exception_during_exchange_is_connection_failure(): void
+    {
+        $this->captureLogs();
+        Http::fake([GoogleOAuth::TOKEN_URL => fn () => throw self::requestException(502)]);
+        $this->expectReason('connection', fn () => app(GoogleOAuth::class)->exchangeCode('CODE-123', 'VERIFIER-456'));
+        $all = implode("\n", $this->logged);
+        $this->assertStringContainsString('"status":502', $all);
+        foreach (['BODY-SECRET', 'ya29', 'CODE-123', 'VERIFIER-456', 'error_description'] as $secret) {
+            $this->assertStringNotContainsString($secret, $all);
+        }
+    }
+
+    public function test_request_exception_during_revoke_returns_false(): void
+    {
+        $this->captureLogs();
+        Http::fake([GoogleOAuth::REVOKE_URL => fn () => throw self::requestException(500)]);
+        $this->assertFalse(app(GoogleOAuth::class)->revoke('ya29.revoke-me'));
+        $all = implode("\n", $this->logged);
+        $this->assertStringContainsString('google oauth revoke failed {"status":500}', $all);
+        $this->assertStringNotContainsString('BODY-SECRET', $all);
+        $this->assertStringNotContainsString('ya29', $all);
+    }
+
+    public function test_expires_in_within_margin_is_malformed(): void
+    {
+        foreach ([1, 60] as $expiresIn) {
+            Http::swap(new Factory);
+            Http::preventStrayRequests();
+            $this->fakeToken(['expires_in' => $expiresIn]);
+            $this->expectReason('malformed', fn () => app(GoogleOAuth::class)->exchangeCode('c', 'v'));
+        }
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        $this->fakeToken(['expires_in' => 61]);
+        $this->assertEquals(now()->addSecond()->getTimestamp(), app(GoogleOAuth::class)->exchangeCode('c', 'v')->expiresAt->getTimestamp());
+    }
+
+    public static function badAccessTokens(): array
+    {
+        return [
+            'space' => ['ya29 token'], 'newline' => ["ya29\ntoken"], 'non-ascii' => ['ya29.トークン'],
+            'control' => ["ya29\x01"], 'too long' => [str_repeat('a', 4097)],
+        ];
+    }
+
+    #[DataProvider('badAccessTokens')]
+    public function test_exchange_rejects_access_token_with_bad_characters(string $accessToken): void
+    {
+        $this->fakeToken(['access_token' => $accessToken]);
+        $this->expectReason('malformed', fn () => app(GoogleOAuth::class)->exchangeCode('c', 'v'));
+    }
+
+    public function test_access_token_at_4096_chars_is_accepted(): void
+    {
+        $this->fakeToken(['access_token' => str_repeat('a', 4096)]);
+        $this->assertSame(4096, strlen(app(GoogleOAuth::class)->exchangeCode('c', 'v')->accessToken));
     }
 
     public function test_revoke_posts_token_in_body(): void

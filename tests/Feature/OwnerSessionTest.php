@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Support\OwnerLogin;
 use App\Support\OwnerSession;
+use App\Support\PendingLogin;
 use Carbon\CarbonImmutable;
 use Tests\TestCase;
 
@@ -87,6 +88,15 @@ class OwnerSessionTest extends TestCase
         $this->assertNull($s->tokenForRevoke());
         $this->assertFalse(session()->has(OwnerSession::OWNER_KEY));
         $this->assertFalse(session()->has(OwnerSession::PENDING_KEY));
+    }
+
+    public function test_proposal_key_parameters_are_sensitive(): void
+    {
+        $begin = (new \ReflectionMethod(OwnerSession::class, 'begin'))->getParameters()[0];
+        $this->assertNotEmpty($begin->getAttributes(\SensitiveParameter::class));
+        foreach ((new \ReflectionMethod(PendingLogin::class, '__construct'))->getParameters() as $p) {
+            $this->assertSame(in_array($p->getName(), ['state', 'verifier', 'proposalKey'], true), $p->getAttributes(\SensitiveParameter::class) !== [], $p->getName());
+        }
     }
 
     public function test_matches_compares_channel_id(): void

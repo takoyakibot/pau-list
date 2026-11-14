@@ -4,6 +4,7 @@ namespace App\Services\YouTube;
 
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -28,6 +29,9 @@ class GoogleOAuth
     public const MAX_EXPIRES_IN = 3600;
 
     public const EXPIRY_MARGIN = 60;
+
+    /** Printable ASCII only, bounded: the token is later sent in an Authorization header. */
+    private const ACCESS_TOKEN_PATTERN = '/^[\x21-\x7E]{1,4096}$/D';
 
     private const LOGGABLE_CODE = '/^[A-Za-z0-9_.-]{1,64}$/D';
 
@@ -71,6 +75,9 @@ class GoogleOAuth
             ]);
         } catch (ConnectionException) {
             throw $this->tokenFailure(OAuthFailed::CONNECTION, null);
+        } catch (RequestException $e) {
+            // A transfer error with a partial response; its message embeds the body, so only the status is kept.
+            throw $this->tokenFailure(OAuthFailed::CONNECTION, $e->response->status());
         }
 
         $status = $response->status();
@@ -96,6 +103,10 @@ class GoogleOAuth
             $response = $this->client()->post(self::REVOKE_URL, ['token' => $token]);
         } catch (ConnectionException) {
             Log::warning('google oauth revoke failed', ['status' => null]);
+
+            return false;
+        } catch (RequestException $e) {
+            Log::warning('google oauth revoke failed', ['status' => $e->response->status()]);
 
             return false;
         }
@@ -125,9 +136,10 @@ class GoogleOAuth
         $accessToken = $json['access_token'] ?? null;
         $tokenType = $json['token_type'] ?? null;
         $expiresIn = self::positiveInt($json['expires_in'] ?? null);
-        if (! is_string($accessToken) || $accessToken === ''
+        if (! is_string($accessToken) || preg_match(self::ACCESS_TOKEN_PATTERN, $accessToken) !== 1
             || ! is_string($tokenType) || strcasecmp($tokenType, 'Bearer') !== 0
-            || $expiresIn === null) {
+            // A lifetime inside the safety margin would create a login that is already expired.
+            || $expiresIn === null || $expiresIn <= self::EXPIRY_MARGIN) {
             return null;
         }
 

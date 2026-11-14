@@ -8,7 +8,7 @@ final readonly class PendingLogin
     public function __construct(
         #[\SensitiveParameter] public string $state,
         #[\SensitiveParameter] public string $verifier,
-        public string $proposalKey,
+        #[\SensitiveParameter] public string $proposalKey,
         public int $issuedAt,
     ) {}
 

@@ -21,7 +21,7 @@ final class OwnerSession
 
     public function __construct(private readonly Session $session) {}
 
-    public function begin(string $proposalKey): PendingLogin
+    public function begin(#[\SensitiveParameter] string $proposalKey): PendingLogin
     {
         $pending = new PendingLogin(
             Pkce::base64url(random_bytes(32)),
