@@ -193,10 +193,21 @@ class ProposeScreenTest extends TestCase
     {
         $id = $this->setUpChannel();
         $res = $this->get(route('channels.propose', $id))->assertOk();
-        foreach (['x-data="proposer"', 'name="title"', 'maxlength="150"', 'maxlength="1000"', 'maxlength="500"', 'maxlength="30"',
-            'name="website"', 'name="video_ids[]"', 'action="'.route('proposals.store', $id).'"'] as $s) {
+        foreach (['x-data="proposer"', 'name="title"', 'name="description"', 'name="comment"', 'name="proposer_name"',
+            'name="website"', 'name="video_ids[]"', 'action="'.route('proposals.store', $id).'"',
+            ':disabled="isSubmitDisabled"', 'x-show="titleOver"', 'x-show="descriptionOver"', 'x-show="commentOver"',
+            'x-show="proposerNameOver"', 'x-show="anyOver"', ':class="titleCounterClass"'] as $s) {
             $res->assertSee($s, false);
         }
+        // maxlength counts UTF-16 units (an emoji is 2): the code-point counters and the server rule decide instead
+        $this->assertSame(0, preg_match('/<(input|textarea)[^>]*name="(title|description|comment|proposer_name)"[^>]*maxlength/', $res->getContent()));
+        foreach (['再生リスト名（必須）', '再生リストの説明（任意）', 'チャンネル主へのコメント（任意）', 'ニックネーム（任意）',
+            '再生リスト名 は 150 文字以内で入力してください', '再生リストの説明 は 1000 文字以内で入力してください',
+            'チャンネル主へのコメント は 500 文字以内で入力してください', 'ニックネーム は 30 文字以内で入力してください',
+            '文字数の上限を超えている項目があるため保存できません'] as $s) {
+            $res->assertSee($s);
+        }
+        $res->assertDontSee('提案者の名前');
         $res->assertSee('同意したものとみなされます');
         $res->assertSee('この画面の操作には JavaScript が必要です');
         $this->assertNoInlineCode($res->getContent());

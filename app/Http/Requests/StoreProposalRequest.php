@@ -73,7 +73,7 @@ class StoreProposalRequest extends FormRequest
     {
         return [
             'title' => '再生リスト名',
-            'description' => '説明',
+            'description' => '再生リストの説明',
             'comment' => 'チャンネル主へのコメント',
             'proposer_name' => 'ニックネーム',
         ];

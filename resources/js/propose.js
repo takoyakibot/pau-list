@@ -1,7 +1,7 @@
 import { toggleVideo, addVideo, removeVideo, moveVideo, restoreSelection, markUnavailable, selectionFromOldIds } from './lib/selection.js';
 import { filterVideos } from './lib/filter.js';
 import { loadSelection, saveSelection, clearSelection } from './lib/storage.js';
-import { countChars } from './lib/text.js';
+import { countChars, isOverLimit } from './lib/text.js';
 import { safeStorage } from './lib/safe-storage.js';
 
 const LIMITS = { title: 150, description: 1000, comment: 500, proposerName: 30 };
@@ -12,6 +12,10 @@ function readJson(el, name) {
   } catch {
     return null;
   }
+}
+
+function counterClass(over) {
+  return over ? 'font-semibold text-red-700' : 'text-gray-600';
 }
 
 function formatDate(iso) {
@@ -78,6 +82,16 @@ document.addEventListener('alpine:init', () => {
     get descriptionCounter() { return `${this.descriptionCount} / ${LIMITS.description}`; },
     get commentCounter() { return `${this.commentCount} / ${LIMITS.comment}`; },
     get proposerNameCounter() { return `${this.proposerNameCount} / ${LIMITS.proposerName}`; },
+    get titleOver() { return isOverLimit(this.title, LIMITS.title); },
+    get descriptionOver() { return isOverLimit(this.description, LIMITS.description); },
+    get commentOver() { return isOverLimit(this.comment, LIMITS.comment); },
+    get proposerNameOver() { return isOverLimit(this.proposerName, LIMITS.proposerName); },
+    get anyOver() { return this.titleOver || this.descriptionOver || this.commentOver || this.proposerNameOver; },
+    get titleCounterClass() { return counterClass(this.titleOver); },
+    get descriptionCounterClass() { return counterClass(this.descriptionOver); },
+    get commentCounterClass() { return counterClass(this.commentOver); },
+    get proposerNameCounterClass() { return counterClass(this.proposerNameOver); },
+    get isSubmitDisabled() { return this.submitting || this.anyOver; },
     get hasLimitMessage() { return this.limitMessage !== ''; },
     get hasUrlMessage() { return this.urlMessage !== ''; },
     get hasSelection() { return this.selected.length > 0; },
@@ -151,7 +165,11 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    onSubmit() {
+    onSubmit(event) {
+      if (this.anyOver) {
+        event.preventDefault();
+        return;
+      }
       this.submitting = true;
     },
   }));

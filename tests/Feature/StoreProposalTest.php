@@ -135,6 +135,8 @@ class StoreProposalTest extends TestCase
             ->assertSessionHasErrors(['comment' => 'チャンネル主へのコメント は 500 文字以内で入力してください']);
         $this->store(['title' => 't', 'video_ids' => [self::A], 'proposer_name' => str_repeat('a', 31)])
             ->assertSessionHasErrors(['proposer_name' => 'ニックネーム は 30 文字以内で入力してください']);
+        $this->store(['title' => 't', 'video_ids' => [self::A], 'description' => str_repeat('a', 1001)])
+            ->assertSessionHasErrors(['description' => '再生リストの説明 は 1000 文字以内で入力してください']);
         $this->assertSame(0, Proposal::count());
         $this->assertNoApiCalls();
     }

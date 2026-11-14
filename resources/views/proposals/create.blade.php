@@ -116,33 +116,39 @@
             @endif
 
             <section class="space-y-4">
+                {{-- No maxlength: browsers count UTF-16 units (an emoji is 2). The counters count characters like the server. --}}
                 <label class="block text-sm">
-                    <span class="block font-semibold">タイトル（必須）</span>
-                    <input type="text" name="title" x-model="title" maxlength="150" required class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
-                    <span class="block text-xs text-gray-600" x-text="titleCounter"></span>
+                    <span class="block font-semibold">再生リスト名（必須）</span>
+                    <input type="text" name="title" x-model="title" required class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                    <span class="block text-xs" :class="titleCounterClass" x-text="titleCounter"></span>
+                    <span class="block text-xs text-red-700" x-show="titleOver" x-cloak>再生リスト名 は 150 文字以内で入力してください</span>
                 </label>
                 <label class="block text-sm">
-                    <span class="block font-semibold">説明（任意）</span>
-                    <textarea name="description" x-model="description" maxlength="1000" rows="3" class="mt-1 w-full rounded border border-gray-300 px-3 py-2"></textarea>
-                    <span class="block text-xs text-gray-600" x-text="descriptionCounter"></span>
+                    <span class="block font-semibold">再生リストの説明（任意）</span>
+                    <textarea name="description" x-model="description" rows="3" class="mt-1 w-full rounded border border-gray-300 px-3 py-2"></textarea>
+                    <span class="block text-xs" :class="descriptionCounterClass" x-text="descriptionCounter"></span>
+                    <span class="block text-xs text-red-700" x-show="descriptionOver" x-cloak>再生リストの説明 は 1000 文字以内で入力してください</span>
                 </label>
                 <label class="block text-sm">
-                    <span class="block font-semibold">コメント（任意）</span>
-                    <textarea name="comment" x-model="comment" maxlength="500" rows="3" class="mt-1 w-full rounded border border-gray-300 px-3 py-2"></textarea>
-                    <span class="block text-xs text-gray-600" x-text="commentCounter"></span>
+                    <span class="block font-semibold">チャンネル主へのコメント（任意）</span>
+                    <textarea name="comment" x-model="comment" rows="3" class="mt-1 w-full rounded border border-gray-300 px-3 py-2"></textarea>
+                    <span class="block text-xs" :class="commentCounterClass" x-text="commentCounter"></span>
+                    <span class="block text-xs text-red-700" x-show="commentOver" x-cloak>チャンネル主へのコメント は 500 文字以内で入力してください</span>
                 </label>
                 <label class="block text-sm">
-                    <span class="block font-semibold">提案者の名前（任意）</span>
-                    <input type="text" name="proposer_name" x-model="proposerName" maxlength="30" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
+                    <span class="block font-semibold">ニックネーム（任意）</span>
+                    <input type="text" name="proposer_name" x-model="proposerName" class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
                     <span class="block text-xs text-gray-600">実名は書かないでください</span>
-                    <span class="block text-xs text-gray-600" x-text="proposerNameCounter"></span>
+                    <span class="block text-xs" :class="proposerNameCounterClass" x-text="proposerNameCounter"></span>
+                    <span class="block text-xs text-red-700" x-show="proposerNameOver" x-cloak>ニックネーム は 30 文字以内で入力してください</span>
                 </label>
                 <input type="text" name="website" class="hidden" tabindex="-1" autocomplete="off" aria-hidden="true">
             </section>
 
             <div class="space-y-2">
                 <p class="text-xs text-gray-600">保存すると、<a class="underline" href="{{ route('terms') }}" target="_blank" rel="noopener">利用規約</a> と <a class="underline" href="{{ route('privacy') }}" target="_blank" rel="noopener">プライバシーポリシー</a> に同意したものとみなされます</p>
-                <button type="submit" :disabled="submitting" class="rounded bg-gray-900 px-4 py-2 text-white disabled:opacity-50">提案を保存する</button>
+                <p class="text-sm text-red-700" role="alert" x-show="anyOver" x-cloak>文字数の上限を超えている項目があるため保存できません</p>
+                <button type="submit" :disabled="isSubmitDisabled" class="rounded bg-gray-900 px-4 py-2 text-white disabled:opacity-50">提案を保存する</button>
             </div>
         </form>
     </div>
