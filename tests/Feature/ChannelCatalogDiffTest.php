@@ -189,7 +189,7 @@ class ChannelCatalogDiffTest extends TestCase
         $this->assertSame(3, $r->channel->videos()->count());
     }
 
-    public function test_channel_without_rows_reads_only_first_page(): void
+    public function test_channel_without_rows_keeps_paging_like_a_full_import(): void
     {
         $this->importThenAdvance(0);
         $this->fakeUploads($this->uu, [$this->fresh(0, 50), $this->fresh(50, 5)]);
@@ -197,8 +197,21 @@ class ChannelCatalogDiffTest extends TestCase
         $r = $this->catalog()->load($this->id);
 
         $this->assertSame(CatalogStatus::Synced, $r->status);
-        $this->assertSame(1, $this->playlistRequests());
-        $this->assertSame(50, $r->channel->videos()->count());
+        $this->assertSame(2, $this->playlistRequests());
+        $this->assertSame(55, $r->channel->videos()->count());
+    }
+
+    public function test_channel_without_rows_stops_at_the_page_cap(): void
+    {
+        config(['youtube.channel.fetch_max_videos' => 100]);
+        $this->importThenAdvance(0);
+        $this->fakeUploads($this->uu, [$this->fresh(0, 50), $this->fresh(50, 50), $this->fresh(100, 5)]);
+
+        $r = $this->catalog()->load($this->id);
+
+        $this->assertSame(CatalogStatus::Synced, $r->status);
+        $this->assertSame(2, $this->playlistRequests());
+        $this->assertSame(100, $r->channel->videos()->count());
     }
 
     public function test_known_limitation_new_id_below_stop_point_is_missed_until_reimport(): void

@@ -233,6 +233,7 @@ class ChannelVideoCatalog
     /**
      * Differential import: read newest first and stop on the page where
      * `sync_known_run` known IDs appear in a row (or all known rows, if fewer).
+     * Without any known rows it reads like a full import (until the end or the page cap).
      *
      * @return array{new: array<string, PlaylistItem>, remove: list<string>}|null null when the deadline passed
      */
@@ -259,7 +260,9 @@ class ChannelVideoCatalog
             $pages++;
 
             $run = 0;
-            $stop = $threshold === 0;
+            // With no known rows (threshold 0) nothing can stop the read: page on to the end or the
+            // page cap, like a full import. A page with no known run always leads to the next page.
+            $stop = false;
             foreach ($page->items as $item) {
                 $isKnown = isset($known[$item->videoId]);
                 if ($item->privacyStatus !== 'public') {
@@ -336,6 +339,8 @@ class ChannelVideoCatalog
                     'meta_fetched_at' => $now,
                     'last_synced_at' => $now,
                 ]);
+            // MySQL reports changed (not matched) rows; last_synced_at = now always differs from the
+            // stored value (the reuse window is hours), so 0 only means the row is gone or expired.
             if ($updated === 0) {
                 return false;
             }
