@@ -3,7 +3,10 @@
 namespace App\Providers;
 
 use App\Support\QuotaPolicy;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use InvalidArgumentException;
 
@@ -23,6 +26,18 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->validateQuotaConfig($this->app->runningInConsole());
+        $this->configureRateLimiting();
+    }
+
+    private function configureRateLimiting(): void
+    {
+        RateLimiter::for('global', fn (Request $request) => Limit::perMinute(120)->by($request->ip()));
+        RateLimiter::for('video-lookup', fn (Request $request) => Limit::perMinute(30)->by($request->ip()));
+        RateLimiter::for('proposal-store', fn (Request $request) => [
+            Limit::perMinutes(10, 5)->by('m:'.$request->ip()),
+            Limit::perDay(30)->by('d:'.$request->ip()),
+            Limit::perDay(500)->by('all'),
+        ]);
     }
 
     /**

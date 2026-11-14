@@ -3,10 +3,13 @@
 namespace Tests\Feature;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\AssertsNoInlineCode;
 use Tests\TestCase;
 
 class PagesTest extends TestCase
 {
+    use AssertsNoInlineCode;
+
     public static function publicPages(): array
     {
         return [['/'], ['/privacy'], ['/terms'], ['/contact']];
@@ -42,14 +45,6 @@ class PagesTest extends TestCase
             ->assertSee('List Maker')
             ->assertSee('再生リストの作成と動画の追加')
             ->assertDontSee('YouTube List Maker');
-    }
-
-    private function assertNoInlineCode(string $html): void
-    {
-        $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\bsrc=)[^>]*>/i', $html);
-        $this->assertDoesNotMatchRegularExpression('/<style\b/i', $html);
-        $this->assertDoesNotMatchRegularExpression('/\sstyle\s*=/i', $html);
-        $this->assertDoesNotMatchRegularExpression('/\son[a-z]+\s*=/i', $html);
     }
 
     public function test_only_spec_routes_are_registered(): void
