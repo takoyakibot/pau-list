@@ -59,7 +59,7 @@ class DeployScriptTest extends TestCase
 
     public static function unsafeRemotePaths(): array
     {
-        return [['relative/x'], ['/'], ['/a b'], ['/srv/app;rm -rf ~']];
+        return [['relative/x'], ['/'], ['/a b'], ['/srv/app;rm -rf ~'], ['/..'], ['/home/u/..'], ['/.'], ['/home/u/../v'], ['/home/./u']];
     }
 
     #[DataProvider('unsafeRemotePaths')]

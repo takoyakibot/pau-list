@@ -56,7 +56,12 @@ class AppServiceProvider extends ServiceProvider
         TrustProxies::withHeaders(Request::HEADER_X_FORWARDED_FOR | Request::HEADER_X_FORWARDED_PROTO);
     }
 
-    /** "*" trusts any sender's X-Forwarded-For (anyone could pick their rate-limit key); a typo trusts nothing. */
+    /**
+     * Warns about values that trust more than one known proxy: "*" (production only) and Symfony's keywords, which
+     * TrustProxies passes through: REMOTE_ADDR is replaced by the sender itself (trusts every sender, like "*") and
+     * PRIVATE_SUBNETS / private_ranges by every private network range. Any other entry that is not an IP address or
+     * CIDR range (a typo, a host name) matches no sender, so it trusts nothing; it is warned about too.
+     */
     public function warnAboutTrustedProxies(mixed $value): void
     {
         if (! filled($value)) {
@@ -70,7 +75,18 @@ class AppServiceProvider extends ServiceProvider
 
             return;
         }
-        foreach (self::proxyEntries($value) as $entry) {
+        $entries = self::proxyEntries($value);
+        if (in_array('REMOTE_ADDR', $entries, true)) {
+            Log::warning('TRUSTED_PROXIES trusts every sender (REMOTE_ADDR)');
+
+            return;
+        }
+        if (in_array('PRIVATE_SUBNETS', $entries, true) || in_array('private_ranges', $entries, true)) {
+            Log::warning('TRUSTED_PROXIES trusts every private network range (PRIVATE_SUBNETS)');
+
+            return;
+        }
+        foreach ($entries as $entry) {
             if (! self::isIpOrCidr($entry)) {
                 Log::warning('TRUSTED_PROXIES has an entry that is not an IP address or CIDR range');
 

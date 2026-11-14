@@ -29,3 +29,4 @@ database/database.sqlite
 .npmrc
 .phpunit.cache
 .phpunit.result.cache
+/public/.well-known

@@ -30,9 +30,9 @@ fi
 : "${REMOTE_PATH:?deploy.env に REMOTE_PATH を設定してください}"
 SITE_URL="${SITE_URL:-}"
 
-# rsync の転送先なので、空白・; などを含む値や / そのものは受け付けない（--delete-after で消えるため）
-if ! [[ "$REMOTE_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]] || [[ "$REMOTE_PATH" =~ ^/+$ ]]; then
-  echo "❌ REMOTE_PATH は / で始まる絶対パス（英数字と . _ / - のみ、/ だけは不可）にしてください"
+# rsync の転送先なので、空白・; などを含む値や / そのもの、. / .. の区間（親や / に解決されうる）は受け付けない（--delete-after で消えるため）
+if ! [[ "$REMOTE_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]] || [[ "$REMOTE_PATH" =~ ^/+$ ]] || [[ "$REMOTE_PATH/" =~ /\.{1,2}/ ]]; then
+  echo "❌ REMOTE_PATH は / で始まる絶対パス（英数字と . _ / - のみ、/ だけ・. や .. の区間は不可）にしてください"
   exit 1
 fi
 

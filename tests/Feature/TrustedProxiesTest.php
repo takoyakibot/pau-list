@@ -122,6 +122,26 @@ class TrustedProxiesTest extends TestCase
         }
     }
 
+    public function test_symfony_keywords_are_warned_as_what_they_trust(): void
+    {
+        // Symfony replaces REMOTE_ADDR by the sender itself (trusts every sender, like *) and PRIVATE_SUBNETS /
+        // private_ranges by every private range: they are not typos that trust nothing.
+        $provider = new AppServiceProvider($this->app);
+        $this->assertSame(
+            ['TRUSTED_PROXIES trusts every sender (REMOTE_ADDR)'],
+            $this->warnings(fn () => $provider->warnAboutTrustedProxies('REMOTE_ADDR')),
+        );
+        foreach (['PRIVATE_SUBNETS', '10.0.0.1, private_ranges'] as $value) {
+            $this->assertSame(
+                ['TRUSTED_PROXIES trusts every private network range (PRIVATE_SUBNETS)'],
+                $this->warnings(fn () => $provider->warnAboutTrustedProxies($value)),
+                $value,
+            );
+        }
+        AppServiceProvider::trustProxiesFrom('REMOTE_ADDR');
+        $this->assertSame('203.0.113.7', $this->ipSeenFrom('198.51.100.9'));
+    }
+
     public function test_env_example_does_not_suggest_the_wildcard(): void
     {
         $lines = file(base_path('.env.example'));
