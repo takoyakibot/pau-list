@@ -116,3 +116,65 @@ test('network failures back off and stop after 5', async () => {
   assert.equal(h.runner.statusText, '通信に失敗しました。「続きから」で再開できます');
   assert.equal(h.runner.showResume, true);
 });
+
+// ---- final review (UX m3, m6) ----
+
+test('a running creation whose loop is not running (reload) says it only advances while the page is open', () => {
+  const h = harness();
+  h.runner.load({ progress: progress('adding'), autostart: false, urls: URLS, titles: [] });
+  assert.equal(h.runner.running, false);
+  assert.equal(h.runner.statusText, 'この画面を開いている間だけ進みます。「続きから」で再開できます');
+  assert.equal(h.runner.showResume, true);
+
+  // Running (autostart) or paused/completed: no such hint.
+  const a = harness();
+  a.runner.load({ progress: progress('adding'), autostart: true, urls: URLS, titles: [] });
+  assert.equal(a.runner.statusText, '');
+  const p = harness();
+  p.runner.load({ progress: progress('paused', { message: '一時停止中です。「続きから」で再開できます' }), autostart: false, urls: URLS, titles: [] });
+  assert.equal(p.runner.statusText, '一時停止中です。「続きから」で再開できます');
+  const c = harness();
+  c.runner.load({ progress: progress('completed'), autostart: false, urls: URLS, titles: [] });
+  assert.equal(c.runner.statusText, '');
+});
+
+test('「残りを中止」 needs a second click to confirm; the first only arms it', async () => {
+  const h = harness();
+  h.runner.load({ progress: progress('adding'), autostart: true, urls: URLS, titles: [] });
+  assert.equal(h.runner.abortLabel, '残りを中止');
+  assert.equal(h.runner.showAbortWarning, false);
+
+  await h.runner.onAbort();
+  assert.equal(h.requests.filter((r) => r.url === URLS.abort).length, 0);
+  assert.equal(h.runner.running, true); // nothing stopped yet
+  assert.equal(h.runner.abortLabel, '中止する（確定）');
+  assert.equal(h.runner.showAbortWarning, true);
+
+  // Cancelling disarms without sending.
+  h.runner.onAbortCancel();
+  assert.equal(h.runner.showAbortWarning, false);
+  assert.equal(h.runner.abortLabel, '残りを中止');
+
+  await h.runner.onAbort();
+  const aborting = h.runner.onAbort();
+  await h.flush();
+  assert.equal(h.requests.filter((r) => r.url === URLS.abort).length, 1);
+  h.requests.at(-1).resolve({ status: 200, body: progress('completed', { skipped: 2 }) });
+  await aborting;
+  assert.equal(h.runner.progress.status, 'completed');
+  assert.equal(h.runner.showAbortWarning, false);
+  assert.equal(h.runner.abortLabel, '残りを中止');
+});
+
+test('another button disarms a pending abort confirmation', async () => {
+  const h = harness();
+  h.runner.load({ progress: progress('paused', { pause_reason: 'user' }), autostart: false, urls: URLS, titles: [] });
+  await h.runner.onAbort();
+  assert.equal(h.runner.showAbortWarning, true);
+  const resuming = h.runner.onResume();
+  assert.equal(h.runner.showAbortWarning, false);
+  await h.flush();
+  h.requests.at(-1).resolve({ status: 200, body: progress('adding') });
+  await resuming;
+  assert.equal(h.requests.filter((r) => r.url === URLS.abort).length, 0);
+});

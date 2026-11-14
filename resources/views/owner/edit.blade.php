@@ -79,7 +79,7 @@
                 <p class="text-xs text-gray-600">{{ \App\Http\Controllers\OwnerEditController::UNLISTED_NOTE }}</p>
                 <p class="text-sm text-amber-800" role="alert" x-show="hasUnlistedMessage" x-text="unlistedMessage"></p>
                 {{-- 401 (login expired): reloading this page sends the owner to the preview's login link; the draft is kept. --}}
-                <p class="text-sm" x-show="needsRelogin"><a class="font-semibold underline" :href="reloginHref">もう一度ログインする</a></p>
+                <p class="text-sm" x-show="unlistedNeedsRelogin"><a class="font-semibold underline" :href="reloginHref">もう一度ログインする</a></p>
             </div>
 
             <div x-show="hasVideos" x-cloak class="space-y-2">
@@ -136,6 +136,8 @@
                     <option value="public">公開</option>
                 </select>
             </label>
+            {{-- Security M1: a public playlist exposes the owner's unlisted videos in it to anyone who opens it. --}}
+            <p class="text-sm text-amber-800" role="status" x-show="hasPublicUnlistedNote" x-cloak x-text="publicUnlistedNote"></p>
         </section>
 
         <section class="space-y-2 text-sm">
@@ -155,7 +157,7 @@
             <p class="text-xs text-gray-600">押すとあなたの YouTube チャンネルに再生リストが作成されます（書き込み操作）</p>
             <p class="text-sm text-red-700" role="alert" x-show="hasCreateMessage" x-cloak x-text="createMessage"></p>
             {{-- 401 from the start API (login expired): reloading sends the owner to the preview's login link; the draft is kept. --}}
-            <p class="text-sm" x-show="needsRelogin" x-cloak><a class="font-semibold underline" :href="reloginHref">もう一度ログインする</a></p>
+            <p class="text-sm" x-show="createNeedsRelogin" x-cloak><a class="font-semibold underline" :href="reloginHref">もう一度ログインする</a></p>
         </div>
 
         <p class="text-xs text-gray-600">データ提供: YouTube</p>

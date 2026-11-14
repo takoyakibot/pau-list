@@ -61,7 +61,7 @@ class CreationController extends Controller
             ], 403);
         }
 
-        $progress = CreationProgress::toArray($creation, $ledger->remainingToday());
+        $progress = CreationProgress::toArray($creation, $ledger->remainingToday(), ownerLoggedIn: true);
         $titles = $creation->items()->pluck('title', 'position');
 
         return response()->view('owner.creation', [
@@ -141,7 +141,7 @@ class CreationController extends Controller
             return response()->json(['redirect' => $result->redirect ?? 'edit', 'message' => $result->message]);
         }
 
-        $progress = CreationProgress::toArray($fresh, $ledger->remainingToday());
+        $progress = CreationProgress::toArray($fresh, $ledger->remainingToday(), ownerLoggedIn: true);
 
         return response()->json(array_merge($progress, [
             'next_delay_ms' => $result->nextDelayMs,
@@ -197,7 +197,7 @@ class CreationController extends Controller
             return response()->json(['message' => self::NOT_STARTED], 404);
         }
 
-        return response()->json(CreationProgress::toArray($fresh, $ledger->remainingToday()));
+        return response()->json(CreationProgress::toArray($fresh, $ledger->remainingToday(), ownerLoggedIn: true));
     }
 
     /**

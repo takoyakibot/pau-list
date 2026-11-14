@@ -151,6 +151,25 @@ export function startFailure(httpStatus, body) {
   return { message: START_FAILED, relogin: false, unavailableIds: [] };
 }
 
+// A failed load of the owner's unlisted videos: 401 asks for login; 429/503 carry a server message.
+export function unlistedFailure(httpStatus, body, fallback) {
+  return { message: bodyMessage(body) ?? fallback, relogin: httpStatus === 401 };
+}
+
+// One 「もう一度ログインする」 link per action that failed with 401 (create / unlisted), never both for one failure.
+export function withRelogin(flags, action, needed) {
+  if (action !== 'create' && action !== 'unlisted') return flags;
+  return { ...flags, [action]: needed === true };
+}
+
+// A public playlist shows its videos to everyone who opens it, and the shared proposal page links to it.
+export const PUBLIC_UNLISTED_NOTE = '公開の再生リストに限定公開の動画が含まれています。再生リストを見た人（共有された提案ページの再生リストへのリンクから開いた人を含む）は、これらの動画も見られます';
+
+export function publicUnlistedNote(privacy, items) {
+  return privacy === 'public' && Array.isArray(items) && items.some((x) => x !== null && typeof x === 'object' && x.unlisted === true)
+    ? PUBLIC_UNLISTED_NOTE : '';
+}
+
 // Rows of videos the final check found deleted or private get `unavailable: true`; every other row loses it.
 export function markUnavailable(items, ids) {
   const set = new Set(Array.isArray(ids) ? ids : []);

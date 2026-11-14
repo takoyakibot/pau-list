@@ -7,7 +7,7 @@ import { loadDraft, saveDraft, clearDraft } from './lib/draft.js';
 import {
   normalizePrivacy, remainingFrom, creationQuota, shortageText, isCreateDisabled as createDisabled,
   restoreDraftItems, sanitizeUnlisted, mergeUnlisted, upgradePlaceholders, unlistedResultMessage, rowActionLabel, isBlankTitle,
-  creationRequestBody, startFailure, markUnavailable,
+  creationRequestBody, startFailure, markUnavailable, unlistedFailure, withRelogin, publicUnlistedNote,
   TITLE_REQUIRED, DRAFT_RESTORED, TITLE_MAX, DESCRIPTION_MAX,
 } from './lib/owner-edit.js';
 
@@ -78,7 +78,7 @@ document.addEventListener('alpine:init', () => {
     unlistedBusy: false,
     unlistedLoaded: false,
     unlistedMessage: '',
-    needsRelogin: false,
+    relogin: { create: false, unlisted: false },
     createMessage: '',
     restoredMessage: '',
     storage: null,
@@ -158,6 +158,10 @@ document.addEventListener('alpine:init', () => {
     get hasUrlMessage() { return this.urlMessage !== ''; },
     get hasUnlistedMessage() { return this.unlistedMessage !== ''; },
     get hasCreateMessage() { return this.createMessage !== ''; },
+    get createNeedsRelogin() { return this.relogin.create; },
+    get unlistedNeedsRelogin() { return this.relogin.unlisted; },
+    get publicUnlistedNote() { return publicUnlistedNote(this.privacy, this.items); },
+    get hasPublicUnlistedNote() { return this.publicUnlistedNote !== ''; },
     get canLoadUnlisted() { return this.unlistedUrl !== '' && !this.unlistedLoaded; },
     // Reloading S5 sends an expired owner back to the preview with its login link; the draft survives.
     get reloginHref() { return window.location.pathname; },
@@ -224,7 +228,7 @@ document.addEventListener('alpine:init', () => {
       if (this.isCreateDisabled) return;
       this.createBusy = true;
       this.createMessage = '';
-      this.needsRelogin = false;
+      this.relogin = withRelogin(this.relogin, 'create', false);
       try {
         const res = await fetch(this.creationUrl, {
           method: 'POST',
@@ -244,7 +248,7 @@ document.addEventListener('alpine:init', () => {
         }
         const failure = startFailure(res.status, body);
         this.createMessage = failure.message;
-        if (failure.relogin) this.needsRelogin = true;
+        this.relogin = withRelogin(this.relogin, 'create', failure.relogin);
         this.items = markUnavailable(this.items, failure.unavailableIds);
       } catch {
         this.createMessage = NETWORK_FAILED;
@@ -287,19 +291,16 @@ document.addEventListener('alpine:init', () => {
       if (!this.canLoadUnlisted || this.unlistedBusy) return;
       this.unlistedBusy = true;
       this.unlistedMessage = '';
-      this.needsRelogin = false;
+      this.relogin = withRelogin(this.relogin, 'unlisted', false);
       try {
         const res = await fetch(this.unlistedUrl, { headers: JSON_HEADERS, credentials: 'same-origin' });
         let body = null;
         try { body = await res.json(); } catch { body = null; }
-        if (res.status === 401) {
-          this.unlistedMessage = serverMessage(body, UNLISTED_FAILED);
-          this.needsRelogin = true;
-          return;
-        }
         if (!res.ok) {
-          // 429 and 503 carry a Japanese message from the server.
-          this.unlistedMessage = serverMessage(body, UNLISTED_FAILED);
+          // 401 asks for login; 429 and 503 carry a Japanese message from the server.
+          const failure = unlistedFailure(res.status, body, UNLISTED_FAILED);
+          this.unlistedMessage = failure.message;
+          this.relogin = withRelogin(this.relogin, 'unlisted', failure.relogin);
           return;
         }
         const unlisted = sanitizeUnlisted(body);

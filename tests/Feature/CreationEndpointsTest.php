@@ -129,6 +129,9 @@ class CreationEndpointsTest extends TestCase
             'ログインの有効期限が切れたため一時停止しました。もう一度ログインして「続きから」を押してください',
             CreationProgress::message($c->refresh(), app(QuotaLedger::class)->remainingToday()),
         );
+        // After logging in again (S6 and every JSON answer need the login), the line says what to do now.
+        $this->actAsOwner($this->channelId);
+        $this->act($key, 'pause')->assertOk()->assertJson(['status' => 'paused', 'message' => 'ログインし直しました。「続きから」を押してください']);
     }
 
     public function test_expired_session_gets_401_json_and_creation_is_untouched(): void

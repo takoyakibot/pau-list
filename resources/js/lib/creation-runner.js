@@ -8,6 +8,8 @@ export const ITEM_LABELS = Object.freeze({
 
 export const NETWORK_FAILED = '通信に失敗しました。「続きから」で再開できます';
 export const PAGE_EXPIRED = 'ページの有効期限が切れました。ページを再読み込みしてください';
+// A running creation on a page whose step loop is not running (opened again, not right after 「作成」).
+export const IDLE_HINT = 'この画面を開いている間だけ進みます。「続きから」で再開できます';
 
 const RUNNING = ['pending', 'creating_playlist', 'adding'];
 const PLAYLIST_URL = /^https:\/\/www\.youtube\.com\/playlist\?list=[A-Za-z0-9_-]+$/;

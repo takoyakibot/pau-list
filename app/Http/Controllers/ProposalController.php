@@ -196,6 +196,8 @@ class ProposalController extends Controller
             $creation === null => null,
             $creation->status !== PlaylistCreation::COMPLETED => 'creating',
             $creation->youtube_playlist_id !== null => 'created',
+            // Stopped while a playlists.insert was unsettled: a playlist may exist on YouTube (CreationProgress::MAYBE_CREATED).
+            $creation->playlist_attempted_at !== null => 'unknown',
             default => 'not_created',
         };
         // Spec 7.6: a public playlist is linked for anyone; unlisted/private only for the logged-in owner of the

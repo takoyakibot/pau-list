@@ -2,7 +2,7 @@
 // through `deps` so the step loop can be tested in node with a fake fetch and fake timers.
 import {
   isTerminal, nextDelay, processed, progressText, classify, networkDelay, buttonsFor, sanitizeProgress, rowsFor,
-  NETWORK_FAILED, PAGE_EXPIRED,
+  NETWORK_FAILED, PAGE_EXPIRED, IDLE_HINT,
 } from './creation-runner.js';
 
 const ACTION_FAILED = '操作できませんでした。時間をおいて再度お試しください';
@@ -69,6 +69,8 @@ export function createCreationRunner(deps = BROWSER) {
     localMessage: '',
     actionMessage: '',
     needsRelogin: false,
+    // 「残りを中止」 is two clicks: the first arms it (and shows the warning), the second sends it.
+    abortArmed: false,
 
     init() {
       let data = null;
@@ -91,18 +93,25 @@ export function createCreationRunner(deps = BROWSER) {
     get totalCount() { return this.progress.total; },
     get processedCount() { return processed(this.progress); },
     get progressLabel() { return progressText(this.progress); },
-    get statusText() { return this.localMessage || this.progress.message; },
+    get statusText() {
+      if (this.localMessage || this.progress.message) return this.localMessage || this.progress.message;
+      // Running on the server but not stepping here (opened again): it only advances while this page runs it.
+      return this.ready && !this.running && this.buttons.pause ? IDLE_HINT : '';
+    },
     get hasStatusText() { return this.statusText !== ''; },
     get hasActionMessage() { return this.actionMessage !== ''; },
     get remainingToday() { return this.progress.remaining_today; },
     get playlistUrl() { return this.progress.playlist_url; },
     get hasPlaylist() { return this.progress.playlist_url !== null; },
     get isCompleted() { return this.progress.status === 'completed'; },
+    get showRemakeHint() { return this.isCompleted && !this.hasPlaylist; },
     get buttons() { return buttonsFor(this.progress); },
     get showPause() { return this.buttons.pause; },
     // Also after the loop stopped on network failures while the creation itself is still running.
     get showResume() { return this.buttons.resume || (!this.running && this.buttons.pause); },
     get showAbort() { return this.buttons.abort; },
+    get showAbortWarning() { return this.abortArmed && this.showAbort; },
+    get abortLabel() { return this.showAbortWarning ? '中止する（確定）' : '残りを中止'; },
     get showRetry() { return this.buttons.retry; },
     get showRecreate() { return this.buttons.recreate; },
     get retryLabel() { return `失敗分を再試行（必要な枠: 動画 ${this.progress.failed} 本）`; },
@@ -245,16 +254,26 @@ export function createCreationRunner(deps = BROWSER) {
       }
     },
     async onPause() {
+      this.abortArmed = false;
       this.stopLoop();
       await this.send('pause');
     },
     async onResume() {
       if (this.busy) return;
+      this.abortArmed = false;
       if (this.progress.status === 'paused' && !(await this.send('resume'))) return;
       if (!isTerminal(this.progress.status)) this.startLoop();
     },
+    onAbortCancel() {
+      this.abortArmed = false;
+    },
     async onAbort() {
       if (this.busy) return;
+      if (!this.showAbortWarning) {
+        this.abortArmed = true;
+        return;
+      }
+      this.abortArmed = false;
       const wasRunning = this.running;
       this.stopLoop();
       const ok = await this.send('abort');
@@ -262,10 +281,12 @@ export function createCreationRunner(deps = BROWSER) {
     },
     async onRetry() {
       if (this.busy) return;
+      this.abortArmed = false;
       if ((await this.send('retry')) && !isTerminal(this.progress.status)) this.startLoop();
     },
     async onRecreate() {
       if (this.busy) return;
+      this.abortArmed = false;
       if ((await this.send('recreate')) && !isTerminal(this.progress.status)) this.startLoop();
     },
   };

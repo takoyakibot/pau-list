@@ -28,7 +28,7 @@
          Every URL in this page is relative to /p/{key}/creation: the raw key is never written here. --}}
     <div id="creation-runner" x-data="creationRunner" data-runner="{{ json_encode($runner, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}" class="mt-6 space-y-6">
         <section class="space-y-2" aria-label="進捗">
-            <progress class="w-full" max="{{ $progress['total'] }}" value="{{ $processed }}" :max="totalCount" :value="processedCount"></progress>
+            <progress class="w-full" aria-label="作成の進み具合" max="{{ $progress['total'] }}" value="{{ $processed }}" :max="totalCount" :value="processedCount"></progress>
             <p class="text-sm" x-text="progressLabel">{{ \App\Services\Creation\CreationProgress::progressText($progress) }}</p>
             <p class="rounded bg-gray-50 p-2 text-sm font-semibold" role="status" x-show="hasStatusText" x-text="statusText" @if (($progress['message'] ?? null) === null) x-cloak @endif>{{ $progress['message'] }}</p>
             <p class="text-sm" x-show="needsRelogin" x-cloak><a class="font-semibold underline" :href="reloginHref">もう一度ログインする</a></p>
@@ -41,10 +41,13 @@
             <div class="flex flex-wrap gap-2">
                 <button type="button" class="rounded border border-gray-400 px-3 py-1 text-sm" x-show="showPause" :disabled="busy" @click="onPause">一時停止</button>
                 <button type="button" class="rounded bg-gray-900 px-3 py-1 text-sm text-white disabled:opacity-50" x-show="showResume" :disabled="busy" @click="onResume">続きから</button>
-                <button type="button" class="rounded border border-red-700 px-3 py-1 text-sm text-red-700" x-show="showAbort" :disabled="busy" @click="onAbort">残りを中止</button>
+                {{-- Two clicks (UX m6): the first arms it and shows the warning, the second sends it. --}}
+                <button type="button" class="rounded border border-red-700 px-3 py-1 text-sm text-red-700" x-show="showAbort" :disabled="busy" @click="onAbort" x-text="abortLabel">残りを中止</button>
+                <button type="button" class="rounded border border-gray-400 px-3 py-1 text-sm" x-show="showAbortWarning" :disabled="busy" @click="onAbortCancel">中止しない</button>
                 <button type="button" class="rounded bg-gray-900 px-3 py-1 text-sm text-white disabled:opacity-50" x-show="showRetry" :disabled="busy" @click="onRetry" x-text="retryLabel">失敗分を再試行（必要な枠: 動画 {{ $progress['failed'] }} 本）</button>
                 <button type="button" class="rounded bg-gray-900 px-3 py-1 text-sm text-white disabled:opacity-50" x-show="showRecreate" :disabled="busy" @click="onRecreate">見つからなかったので作り直す</button>
             </div>
+            <p class="text-sm text-red-700" role="alert" x-show="showAbortWarning">{{ \App\Services\Creation\CreationProgress::ABORT_WARNING }}</p>
             <p class="text-sm text-red-700" role="alert" x-show="hasActionMessage" x-text="actionMessage"></p>
         </section>
 
@@ -81,6 +84,8 @@
         <section class="border-t border-gray-200 pt-4 text-sm" x-show="isCompleted" @unless ($completed) x-cloak @endunless>
             <p><a class="text-red-700 underline" href="delete">この提案を削除</a></p>
             <p class="mt-1 text-xs text-gray-600">提案と作成の記録を削除します。YouTube に作成した再生リストは残ります</p>
+            {{-- Not created (or unknown): this proposal cannot be created again; deleting it is the way to start over (UX m5). --}}
+            <p class="mt-2" x-show="showRemakeHint" @unless ($completed && $progress['playlist_url'] === null) x-cloak @endunless>{{ \App\Services\Creation\CreationProgress::REMAKE_HINT }}</p>
         </section>
     </div>
 

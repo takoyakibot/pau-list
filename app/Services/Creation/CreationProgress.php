@@ -14,6 +14,17 @@ final class CreationProgress
 {
     public const MAYBE_CREATED = 'YouTube に作りかけの再生リストが残っている可能性があります。YouTube Studio で確認してください';
 
+    /** A completed creation without a playlist (not created / unknown): the proposal cannot be created again (S4, S6). */
+    public const REMAKE_HINT = '作り直すには、「この提案を削除」で提案を削除してから、もう一度提案を作成してください';
+
+    /** Shown next to the armed 「残りを中止」 (S6). */
+    public const ABORT_WARNING = '中止すると、まだ追加していない動画は追加されません。元に戻せません（失敗した動画の再試行だけはできます）';
+
+    public const AUTH_EXPIRED = 'ログインの有効期限が切れたため一時停止しました。もう一度ログインして「続きから」を押してください';
+
+    /** paused(auth_expired) seen by an owner who has logged in again. */
+    public const LOGGED_IN_AGAIN = 'ログインし直しました。「続きから」を押してください';
+
     /** Item status labels (S6; resources/js/lib/creation-runner.js has the same map). */
     public const ITEM_LABELS = [
         'pending' => '待機中',
@@ -37,7 +48,7 @@ final class CreationProgress
      *               playlist_url: ?string, message: ?string, remaining_today: string,
      *               items: list<array{position: int, status: string, error: ?string}>}
      */
-    public static function toArray(PlaylistCreation $c, RemainingToday $r): array
+    public static function toArray(PlaylistCreation $c, RemainingToday $r, bool $ownerLoggedIn = false): array
     {
         $items = $c->items()->get(['position', 'status', 'last_error']);
         $count = fn (string $status) => $items->where('status', $status)->count();
@@ -50,7 +61,7 @@ final class CreationProgress
             'skipped' => $count(PlaylistCreationItem::SKIPPED),
             'total' => $items->count(),
             'playlist_url' => $c->playlistUrl(),
-            'message' => self::message($c, $r),
+            'message' => self::message($c, $r, $ownerLoggedIn),
             'remaining_today' => $r->sentence(),
             'items' => $items->map(fn (PlaylistCreationItem $i) => [
                 'position' => $i->position,
@@ -60,14 +71,17 @@ final class CreationProgress
         ];
     }
 
-    /** The state text shown in S6's status line; null while it is simply running. */
-    public static function message(PlaylistCreation $c, RemainingToday $r): ?string
+    /**
+     * The state text shown in S6's status line; null while it is simply running. $ownerLoggedIn: the request
+     * carries the owner's login (after a Google 401 the owner had to log in again to see S6).
+     */
+    public static function message(PlaylistCreation $c, RemainingToday $r, bool $ownerLoggedIn = false): ?string
     {
         if ($c->status === PlaylistCreation::PAUSED) {
             return match ($c->pause_reason) {
                 PlaylistCreation::PAUSE_QUOTA_EXCEEDED => 'YouTube 側の本日の上限に達したため一時停止しました。リセット後に「続きから」を押してください（次にリセットされるのは 日本時間 '.$r->resetLabel().' です）',
                 PlaylistCreation::PAUSE_QUOTA_BUDGET => '本日の作成枠が足りないため一時停止しました。'.$r->sentence(),
-                PlaylistCreation::PAUSE_AUTH => 'ログインの有効期限が切れたため一時停止しました。もう一度ログインして「続きから」を押してください',
+                PlaylistCreation::PAUSE_AUTH => $ownerLoggedIn ? self::LOGGED_IN_AGAIN : self::AUTH_EXPIRED,
                 default => '一時停止中です。「続きから」で再開できます',
             };
         }

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   TERMINAL, isTerminal, nextDelay, processed, progressText, ITEM_LABELS, itemLabel, classify, networkDelay, buttonsFor,
-  sanitizeProgress, rowsFor, NETWORK_FAILED, PAGE_EXPIRED,
+  sanitizeProgress, rowsFor, NETWORK_FAILED, PAGE_EXPIRED, IDLE_HINT,
 } from '../../resources/js/lib/creation-runner.js';
 
 test('isTerminal', () => {
@@ -97,6 +97,7 @@ test('rowsFor merges titles by position', () => {
 });
 
 test('fixed texts', () => {
+  assert.equal(IDLE_HINT, 'この画面を開いている間だけ進みます。「続きから」で再開できます');
   assert.equal(NETWORK_FAILED, '通信に失敗しました。「続きから」で再開できます');
   assert.equal(PAGE_EXPIRED, 'ページの有効期限が切れました。ページを再読み込みしてください');
 });

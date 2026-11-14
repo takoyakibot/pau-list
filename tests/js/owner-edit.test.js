@@ -5,6 +5,7 @@ import {
   restoreDraftItems, mergeUnlisted, upgradePlaceholders, sanitizeUnlisted, unlistedResultMessage,
   rowActionLabel, isBlankTitle, TITLE_REQUIRED, DRAFT_RESTORED,
   creationRequestBody, startFailure, markUnavailable, START_FAILED, PAGE_EXPIRED,
+  unlistedFailure, withRelogin, publicUnlistedNote, PUBLIC_UNLISTED_NOTE,
 } from '../../resources/js/lib/owner-edit.js';
 
 test('creationQuota: within remaining', () => {
@@ -133,4 +134,35 @@ test('markUnavailable flags only the given ids and clears the others', () => {
   assert.deepEqual(out, [{ id: 'aaaaaaaaaaa' }, { id: 'bbbbbbbbbbb', unavailable: true }]);
   assert.deepEqual(items[0], { id: 'aaaaaaaaaaa', unavailable: true });
   assert.deepEqual(markUnavailable(items, []), [{ id: 'aaaaaaaaaaa' }, { id: 'bbbbbbbbbbb' }]);
+});
+
+// ---- final review (UX I1, security M1) ----
+
+test('unlistedFailure: 401 asks for login, other failures carry the server message', () => {
+  assert.deepEqual(unlistedFailure(401, { message: 'm' }, 'fb'), { message: 'm', relogin: true });
+  assert.deepEqual(unlistedFailure(401, null, 'fb'), { message: 'fb', relogin: true });
+  assert.deepEqual(unlistedFailure(429, { message: 'limit' }, 'fb'), { message: 'limit', relogin: false });
+  assert.deepEqual(unlistedFailure(503, null, 'fb'), { message: 'fb', relogin: false });
+});
+
+test('withRelogin keeps one login link per failing action', () => {
+  const none = { create: false, unlisted: false };
+  const a = withRelogin(none, 'unlisted', true);
+  assert.deepEqual(a, { create: false, unlisted: true });
+  const b = withRelogin(a, 'create', true);
+  assert.deepEqual(b, { create: true, unlisted: true });
+  // Retrying one action clears only its own link.
+  assert.deepEqual(withRelogin(b, 'unlisted', false), { create: true, unlisted: false });
+  assert.deepEqual(none, { create: false, unlisted: false }); // not mutated
+  assert.deepEqual(withRelogin(none, 'other', true), none);
+});
+
+test('publicUnlistedNote: only a public playlist with an unlisted video', () => {
+  const items = [{ id: 'aaaaaaaaaaa' }, { id: 'bbbbbbbbbbb', unlisted: true }];
+  assert.equal(publicUnlistedNote('public', items), PUBLIC_UNLISTED_NOTE);
+  assert.equal(publicUnlistedNote('unlisted', items), '');
+  assert.equal(publicUnlistedNote('private', items), '');
+  assert.equal(publicUnlistedNote('public', [{ id: 'aaaaaaaaaaa' }]), '');
+  assert.equal(publicUnlistedNote('public', null), '');
+  assert.equal(PUBLIC_UNLISTED_NOTE, '公開の再生リストに限定公開の動画が含まれています。再生リストを見た人（共有された提案ページの再生リストへのリンクから開いた人を含む）は、これらの動画も見られます');
 });

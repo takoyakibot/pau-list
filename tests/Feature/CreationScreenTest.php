@@ -170,4 +170,44 @@ class CreationScreenTest extends TestCase
         $this->get("/p/$key/creation")->assertOk()
             ->assertSee('YouTube 側の本日の上限に達したため一時停止しました。リセット後に「続きから」を押してください（次にリセットされるのは 日本時間 11月15日 17時 です）');
     }
+
+    // ---- final review (UX m4, m5, m6, m7) ----
+
+    public function test_auth_expired_pause_tells_a_logged_in_owner_to_press_resume(): void
+    {
+        $key = $this->createProposal();
+        $this->makeCreation(2, ['status' => PlaylistCreation::PAUSED, 'pause_reason' => PlaylistCreation::PAUSE_AUTH, 'youtube_playlist_id' => 'PLx'], 100, $key);
+
+        $res = $this->actAsOwner($this->channelId)->get("/p/$key/creation")->assertOk()
+            ->assertSee('ログインし直しました。「続きから」を押してください')
+            ->assertDontSee('ログインの有効期限が切れたため');
+        $this->assertSame('ログインし直しました。「続きから」を押してください', $this->runner($res)['progress']['message']);
+    }
+
+    public function test_progress_bar_label_and_two_step_abort_markup(): void
+    {
+        $key = $this->createProposal();
+        $this->makeCreation(2, ['status' => PlaylistCreation::ADDING, 'youtube_playlist_id' => 'PLx'], 100, $key);
+
+        $this->actAsOwner($this->channelId)->get("/p/$key/creation")->assertOk()
+            ->assertSee('aria-label="作成の進み具合"', false)
+            ->assertSee('@click="onAbort" x-text="abortLabel"', false)
+            ->assertSee('@click="onAbortCancel"', false)
+            ->assertSee('x-show="showAbortWarning"', false)
+            ->assertSee('中止すると、まだ追加していない動画は追加されません。元に戻せません（失敗した動画の再試行だけはできます）');
+    }
+
+    public function test_completed_without_playlist_points_to_deleting_and_starting_over(): void
+    {
+        $hint = '作り直すには、「この提案を削除」で提案を削除してから、もう一度提案を作成してください';
+        $key = $this->createProposal();
+        $this->makeCreation(1, ['status' => PlaylistCreation::COMPLETED, 'completed_at' => now()], key: $key);
+        $html = $this->actAsOwner($this->channelId)->get("/p/$key/creation")->assertOk()->assertSee($hint)->getContent();
+        $this->assertMatchesRegularExpression('/<p class="mt-2" x-show="showRemakeHint"\s*>/', $html); // visible without JS
+
+        // With a playlist the hint stays hidden (x-cloak) until the script decides.
+        $key2 = $this->createProposal();
+        $this->makeCreation(1, ['status' => PlaylistCreation::COMPLETED, 'youtube_playlist_id' => 'PLx', 'completed_at' => now()], key: $key2);
+        $this->get("/p/$key2/creation")->assertOk()->assertSee('x-show="showRemakeHint"  x-cloak', false);
+    }
 }

@@ -332,6 +332,39 @@ class PreviewScreenTest extends TestCase
             ->assertDontSee('本日の残り:');
     }
 
+    public function test_unknown_status_when_a_playlist_insert_was_never_settled(): void
+    {
+        $maybe = 'YouTube に作りかけの再生リストが残っている可能性があります。YouTube Studio で確認してください';
+        $hint = '作り直すには、「この提案を削除」で提案を削除してから、もう一度提案を作成してください';
+        $key = $this->makeProposal();
+        $this->makeCreationFor($key, ['status' => PlaylistCreation::COMPLETED, 'privacy_status' => 'public', 'playlist_attempted_at' => now()->subMinutes(5), 'completed_at' => now()]);
+
+        // Anyone: the status only.
+        $this->get(route('proposals.show', $key))->assertOk()
+            ->assertSee('状態: 再生リストが作成されたか確認できませんでした')
+            ->assertDontSee('状態: 再生リストは作成されませんでした')
+            ->assertDontSee($maybe)
+            ->assertDontSee($hint);
+
+        // The channel's owner: what to check, and the way to start over.
+        $this->actAsOwner($this->channelId, '自分')->get(route('proposals.show', $key))->assertOk()
+            ->assertSee('状態: 再生リストが作成されたか確認できませんでした')
+            ->assertSee($maybe)
+            ->assertSee($hint)
+            ->assertSee('href="'.route('proposals.delete', $key).'"', false);
+    }
+
+    public function test_not_created_status_shows_the_owner_how_to_start_over(): void
+    {
+        $key = $this->makeProposal();
+        $this->makeCreationFor($key, ['status' => PlaylistCreation::COMPLETED, 'privacy_status' => 'public', 'completed_at' => now()]);
+        $this->actAsOwner($this->channelId, '自分')->get(route('proposals.show', $key))->assertOk()
+            ->assertSee('状態: 再生リストは作成されませんでした')
+            ->assertSee('作り直すには、「この提案を削除」で提案を削除してから、もう一度提案を作成してください')
+            ->assertSee('href="'.route('proposals.delete', $key).'"', false)
+            ->assertDontSee('YouTube Studio で確認してください');
+    }
+
     public function test_owner_unlisted_videos_never_appear_on_preview(): void
     {
         $key = $this->makeProposal();
