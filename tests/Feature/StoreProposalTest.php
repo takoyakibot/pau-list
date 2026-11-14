@@ -13,6 +13,7 @@ use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\FakesYouTube;
 use Tests\TestCase;
@@ -195,29 +196,97 @@ class StoreProposalTest extends TestCase
         $this->assertNoApiCalls();
     }
 
-    public function test_rate_limited_after_5_in_10_minutes(): void
+    private function assertThrottledBackToForm($res): void
     {
-        Http::fake();
-        // validation failures count too (controller ruling)
-        for ($i = 0; $i < 5; $i++) {
-            $this->store(['title' => '', 'video_ids' => [self::A]])->assertStatus(302);
-        }
-        // throttled: back to the form with the input kept (not a dead-end 429 page)
-        $this->store(['title' => '残す', 'comment' => 'c', 'video_ids' => [self::A, self::B], 'website' => ''])
-            ->assertRedirect(route('channels.propose', $this->id))
+        $res->assertRedirect(route('channels.propose', $this->id))
             ->assertSessionHasErrors(['save' => '保存の操作が集中しています。しばらく待ってから再度お試しください（入力内容は残っています）'])
             ->assertSessionHasInput('title', '残す')
             ->assertSessionHasInput('comment', 'c')
             ->assertSessionHasInput('video_ids', [self::A, self::B]);
         $this->assertFalse(session()->hasOldInput('_token'));
         $this->assertFalse(session()->hasOldInput('website'));
+    }
+
+    public function test_only_successful_saves_count_toward_5_in_10_minutes(): void
+    {
+        $this->fakeVideos([$this->videoResource(self::A, $this->id), $this->videoResource(self::B, $this->id)]);
+        // user decision #19(1): failures never use up the success limit
+        for ($i = 0; $i < 3; $i++) {
+            $this->store(['title' => '', 'video_ids' => [self::A]])->assertSessionHasErrors('title');
+            $this->store(['title' => 't', 'video_ids' => [self::A, 'ccccccccccc']])->assertSessionHasErrors('video_ids');
+            $this->store(['title' => 't', 'video_ids' => [self::A], 'website' => 'x'])->assertRedirect(route('home'));
+        }
+        for ($i = 0; $i < 5; $i++) {
+            $this->store(['title' => 't', 'video_ids' => [self::A]])->assertSessionHasNoErrors();
+        }
+        $this->assertSame(5, Proposal::count());
+
+        // the 6th success-to-be is refused before saving: back to the form with the input kept
+        $this->assertThrottledBackToForm(
+            $this->store(['title' => '残す', 'comment' => 'c', 'video_ids' => [self::A, self::B], 'website' => '']),
+        );
+        $this->assertSame(5, Proposal::count());
         // a cross-site POST gets the plain 429 page (no input injected into the visitor's form)
         $this->post(route('proposals.store', $this->id), ['title' => 'x', 'video_ids' => [self::A]], ['Sec-Fetch-Site' => 'cross-site'])
-            ->assertStatus(429);
+            ->assertStatus(429)->assertHeader('Retry-After');
         // JSON clients keep the JSON 429
-        $this->postJson(route('proposals.store', $this->id), ['title' => 'x'])->assertStatus(429)->assertJsonStructure(['message']);
+        $this->postJson(route('proposals.store', $this->id), ['title' => 'x', 'video_ids' => [self::A]])
+            ->assertStatus(429)->assertJsonStructure(['message']);
+        $this->assertSame(5, Proposal::count());
+
         $this->travel(11)->minutes();
-        $this->store(['title' => '', 'video_ids' => [self::A]])->assertStatus(302);
+        $this->store(['title' => 't', 'video_ids' => [self::A]])->assertSessionHasNoErrors();
+        $this->assertSame(6, Proposal::count());
+    }
+
+    public function test_only_successful_saves_count_toward_30_per_day(): void
+    {
+        $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
+        for ($n = 0; $n < 30; $n++) {
+            if ($n > 0 && $n % 5 === 0) {
+                $this->travel(11)->minutes();
+            }
+            $this->store(['title' => '', 'video_ids' => [self::A]])->assertSessionHasErrors('title');
+            $this->store(['title' => 't', 'video_ids' => [self::A]])->assertSessionHasNoErrors();
+        }
+        $this->travel(11)->minutes();
+        $this->store(['title' => 't', 'video_ids' => [self::A]])->assertSessionHasErrors('save');
+        $this->assertSame(30, Proposal::count());
+        $this->travel(1)->days();
+        // a day later the channel meta is stale and refetched at save
+        $this->fakeChannel($this->id, ['title' => 'チャンネル A', 'handle' => '@a']);
+        $this->store(['title' => 't', 'video_ids' => [self::A]])->assertSessionHasNoErrors();
+        $this->assertSame(31, Proposal::count());
+    }
+
+    public function test_500_successful_saves_per_day_across_all_ips(): void
+    {
+        $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
+        RateLimiter::increment('proposal-store:all', 86400, 499);
+        $this->store(['title' => 't', 'video_ids' => [self::A]])->assertSessionHasNoErrors();
+        $this->call('POST', route('proposals.store', $this->id), ['title' => 't', 'video_ids' => [self::A]], [], [], ['REMOTE_ADDR' => '198.51.100.7'])
+            ->assertSessionHasErrors('save');
+        $this->assertSame(1, Proposal::count());
+    }
+
+    public function test_every_post_counts_toward_20_in_10_minutes(): void
+    {
+        Http::fake();
+        // validation failures and honeypot hits all use up this limit
+        for ($i = 0; $i < 10; $i++) {
+            $this->store(['title' => '', 'video_ids' => [self::A]])->assertSessionHasErrors('title');
+            $this->store(['title' => 't', 'video_ids' => [self::A], 'website' => 'x'])->assertRedirect(route('home'));
+        }
+        $this->assertThrottledBackToForm(
+            $this->store(['title' => '残す', 'comment' => 'c', 'video_ids' => [self::A, self::B], 'website' => '']),
+        );
+        $this->postJson(route('proposals.store', $this->id), ['title' => 'x'])->assertStatus(429)->assertHeader('Retry-After');
+        $this->assertNoApiCalls();
+        // per IP
+        $this->call('POST', route('proposals.store', $this->id), ['title' => ''], [], [], ['REMOTE_ADDR' => '198.51.100.7'])
+            ->assertSessionHasErrors('title');
+        $this->travel(11)->minutes();
+        $this->store(['title' => '', 'video_ids' => [self::A]])->assertSessionHasErrors('title');
     }
 
     public function test_description_crlf_counts_as_one_char_and_emoji_title_at_limit_passes(): void

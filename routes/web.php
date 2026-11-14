@@ -36,7 +36,8 @@ Route::get('/channels/{channelId}/videos/lookup', [ChannelController::class, 'vi
 
 Route::post('/channels/{channelId}/proposals', [ProposalController::class, 'store'])
     ->where('channelId', 'UC[A-Za-z0-9_-]{22}')
-    ->middleware('throttle:proposal-store')
+    // Every POST: 20 per 10 minutes per IP. Successful saves are limited in the controller (ProposalStoreLimits).
+    ->middleware('throttle:proposal-post')
     ->name('proposals.store');
 
 Route::get('/p/{key}/shared', [ProposalController::class, 'shared'])

@@ -66,11 +66,9 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('owner-unlisted', fn (Request $request) => Limit::perMinutes(10, 5)
             ->by('owner-unlisted:'.(app(OwnerSession::class)->current()?->channelId ?? 'ip:'.$request->ip()))
             ->response(fn () => response()->json(['message' => OwnerEditController::UNLISTED_THROTTLED], 429)));
-        RateLimiter::for('proposal-store', fn (Request $request) => [
-            Limit::perMinutes(10, 5)->by('m:'.$request->ip()),
-            Limit::perDay(30)->by('d:'.$request->ip()),
-            Limit::perDay(500)->by('all'),
-        ]);
+        // Every proposal POST, whatever its outcome (#19(1)). Successful saves have their own limits
+        // (App\Support\ProposalStoreLimits: 5 per 10 minutes and 30 per day per IP, 500 per day overall).
+        RateLimiter::for('proposal-post', fn (Request $request) => Limit::perMinutes(10, 20)->by('proposal-post:'.$request->ip()));
     }
 
     /**
