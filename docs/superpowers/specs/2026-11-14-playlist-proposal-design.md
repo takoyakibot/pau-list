@@ -218,6 +218,10 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 | estimated_units | int | 50 + 50×本数（QuotaPolicy） |
 | started_at, completed_at, updated_at | datetime | |
 | paused_day_pt | date null | `paused(quota_exceeded)` にした PT 日付。この日のうちは再開させない（7.4）。再開・中止で消す |
+| owner_last_active_at | datetime null | （Phase 4 最終レビュー）ログイン中のチャンネル主の最後の利用（開始・ステップ・操作・S6 の表示・ログアウト）。既存行は `updated_at` から。7 日の削除の起点（4.3・D42） |
+| authorized_data_pruned_at | datetime null | 項目と公開以外の再生リスト ID を削除した日時（D42） |
+| pruned_had_playlist | bool | 削除前に再生リストの ID があったか（S4/S6 の「作成済み」の判定に使う） |
+| done_count / failed_count / skipped_count / total_count | smallint null | 削除時点の項目の件数（削除後の S6 の表示用） |
 
 **playlist_creation_items**
 | カラム | 型 | 備考 |
@@ -258,12 +262,13 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 ### 4.3 保持期限と削除
 | データ | 期限 | 方法 |
 |---|---|---|
-| proposals ＋ items ＋ creations ＋ creation_items ＋ quota_reservations | 提案作成から 30 日（作成済み・未閲覧も同じ） | 日次バッチで `expires_at < now()` を削除。作成行を id 順にロック→当日の書込行をロック→子（予約・作成項目・作成行・提案項目）を明示的に削除してから提案を削除（FK cascade は予備） |
+| proposals ＋ items ＋ creations ＋ creation_items ＋ quota_reservations | 提案作成から 30 日（作成済み・未閲覧も同じ）。ただし creation_items と非公開・限定公開の `youtube_playlist_id` は下の行（7 日）が先に来る | 日次バッチで `expires_at < now()` を削除。作成行を id 順にロック→当日の書込行をロック→子（予約・作成項目・作成行・提案項目）を明示的に削除してから提案を削除（FK cascade は予備） |
+| （Phase 4 最終レビュー）チャンネル主の承認で得たデータ: playlist_creation_items と、公開以外の `youtube_playlist_id` | チャンネル主の最後の利用（`owner_last_active_at`: 作成の開始・ステップ・操作・S6 の表示・ログアウト）から 7 日（Developer Policies III.D.2。D42） | 日次バッチ（`authorized_data` ステップ）で `owner_last_active_at <= now + 24h − 7 日` の作成を、作成行→当日の書込行の順にロックし、最後の利用をロック下で再確認してから項目を削除・ID を NULL にする。件数（`done_count` 等）と `pruned_had_playlist` を残し、未完了なら `completed` にして予約を解放する。公開の再生リストの ID は提案と一緒に 30 日 |
 | channel_caches ＋ channel_cache_videos | **チャンネル単位**: 全件取り込みの完了（cached_since）から 30 日。差分で後から足した行も同時に消える ［ユーザー決定: Y9］ | 日次バッチで `expires_at < now()` のチャンネルを削除（動画行は cascade）し、同一トランザクションで `channel_cache_expirations` に ID と削除日時を記録。取り込み時に期限切れの行を見つけた場合もその場で同じ処理をする。期限切れ後に開かれたら全件取り込みし直す（5.3）。定期取り直しはしない |
 | channel_cache_expirations | 記録から 30 日 | 日次バッチで `expired_at` から 30 日経過した記録を削除。期限切れ後の全件取り込みが完了した時点でも削除する |
 | quota_usage | 90 日 | 日次バッチ（YouTube データを含まない） |
-| sessions | 最終アクセスから `SESSION_LIFETIME`（120 分）操作が無いと使えなくなる | 暗号化された行は Laravel のセッション GC ＋日次の削除（`app:prune-expired`）で消える（Phase 4 で文言を明確化） |
-| cache（レート制限カウンタ、URL 追加の一時キャッシュ等） | 各 TTL（最長でも 1 日） | 日次で期限切れ行を削除（database ストアは自動削除されないため） |
+| sessions | 最終アクセスから `SESSION_LIFETIME`（120 分）操作が無いと使えなくなる。アクセストークンは失効（約 1 時間）後の最初のリクエストでセッションから外す | 毎リクエスト `DropExpiredOwnerData` が期限切れのログイン・10 分を過ぎた限定公開動画の一覧をセッションから外す（ログアウトは除く）。暗号化された行は Laravel のセッション GC ＋毎時の `app:prune-sessions`（日次の `app:prune-expired` でも）で、使えなくなってから約 1 時間以内に消える（D44） |
+| cache（レート制限カウンタ、URL 追加の一時キャッシュ等） | 各 TTL（最長でも 1 日。日次削除のため行は最長 2 日残る） | 日次で期限切れ行を削除（database ストアは自動削除されないため） |
 | アプリログ | 14 日 | `LOG_CHANNEL=daily`, `LOG_DAILY_DAYS=14` |
 | 問い合わせ | アプリでは保存しない。運営者のメールボックスで対応完了後 90 日以内に削除 ［設計判断］ | 運用（10.6） |
 
@@ -273,6 +278,7 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 - チャンネル主は自分のチャンネル宛ての提案を 30 日を待たずに S5 から削除できる（Y14、流れは 2.3 の 7）。提案と動画明細を 1 トランザクションで削除し、削除後のキーは存在しないキーと同じ 404 になる。他のチャンネルでログイン中は 403（不一致画面）、未ログイン・トークン期限切れはプレビューへ戻す。
 - 作成中（`completed` 以外）の提案は削除しない（何も消さずに S6 へ戻し「残りを中止してから削除」と案内）。作成完了後の削除は、作成行・当日の書込行の順にロックし（5.4 のロック順）、予約の未使用分を解放したうえで `quota_reservations` → `playlist_creation_items` → `playlist_creations` → `proposal_items` → `proposals` を 1 トランザクションで明示的に削除する（FK cascade だけに頼らない）。YouTube の再生リストは残る（Y19）。
 - （Phase 4 追記）`app:delete-proposal` は作成の状態にかかわらず提案と作成記録を削除する（予約は解放。チャンネル主自身の削除と違い、作成中でも削除する。D36）。削除処理は `ProposalDeleter` に共通化し、ロック順・削除順は上と同じ。
+- （Phase 4 最終レビュー）`app:delete-proposal --channel=UC…` はチャンネル単位の削除依頼に応じ、`channel_id` または作成の `owner_channel_id` が一致する提案を上と同じ方法で 1 件ずつ削除し、そのチャンネルの channel_caches・channel_cache_videos・channel_cache_expirations も削除する（取り込みと同じチャンネルのロックを取る。期限切れの記録は新たに作らない）。件数だけを表示し、`--force` か対話での確認が必要。提案の URL・キーは引数を省略すると非表示の入力で受け取る（シェル履歴に残さない）。本人確認が必要なときは運営者がチャンネルの公開の連絡先を通じて確かめる（D43）。
 
 ---
 
@@ -793,8 +799,9 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
   - 30 日ルールとの整合: 差分で後から足した行は取得が `cached_since` より後なので、`cached_since + 30 日` で消えるまでの保持は 30 日より短い。全件取り込み時の行とチャンネル情報（取り込みのたびに上書き）もちょうど 30 日以内に消える。したがって**どの行も保持は取得から 30 日以下**で、全データが 30 日以内という条件を満たす。
   - 期限切れの記録（channel_cache_expirations）はチャンネル ID と削除日時のみで、タイトル・サムネ等の API データを持たない。この記録も 30 日で削除する。
   - 提案: 保存時に取り直したスナップショットを持ち、提案作成から 30 日で削除。作成スナップショットは作成前に取り直した値で、提案と同時に削除（作成は提案より後なので取得から 30 日を超えない）。
+  - （Phase 4 最終レビュー）作成スナップショットのうちチャンネル主の承認で得たデータ（項目と、公開以外の再生リスト ID）は、さらに短く、チャンネル主の最後の利用・ログアウトから 7 日で削除する（4.3、D42）。
 - サムネイル画像はダウンロード保存せず YouTube の URL を表示するだけ。
-- 作成された再生リスト自体はチャンネル主の YouTube 上の資産であり、本サービスは保持しない（ID は提案とともに 30 日で削除）。
+- 作成された再生リスト自体はチャンネル主の YouTube 上の資産であり、本サービスは保持しない（ID は公開なら提案とともに 30 日、それ以外はチャンネル主の最後の利用から 7 日で削除）。
 
 ---
 
@@ -822,6 +829,7 @@ MAIL_MAILER=smtp, MAIL_HOST, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD, MAIL_SCHEM
 CONTACT_TO_ADDRESS=
 TRUSTED_PROXIES=
 ```
+- （Phase 4 最終レビュー）`OPERATOR_CONTACT`: 問い合わせフォームが使えないときの削除依頼の窓口として /contact・/privacy に表示する公開の連絡先。サーバーの `.env` にだけ書き、リポジトリには個人の連絡先を書かない（空なら「運営者の連絡先（README で設定）」と表示）。
 - （Phase 4 追記）`LOG_LEVEL` は `warning` から `info` に変更（8.8 の記録項目が info のため。D37）。`TRUSTED_PROXIES` は空なら信頼しない（8.1・D34）。`CONTACT_TO_ADDRESS` は `filled()` で判定し、空文字は未設定扱い。
 - 動画数上限（`PROPOSAL_MAX_ITEMS`）は**置かない**。`QUOTA_WRITE_LIMIT` から導出（5.2）。
 - `MAIL_SCHEME`（旧 `MAIL_ENCRYPTION`）の名称と CORESERVER の SMTP ホスト・ポート・認証方式 ［要確認: Phase 0］。送信元アドレスはサブドメインと同じドメインにし、SPF/DKIM で迷惑メール判定を避ける ［要確認］。
@@ -830,7 +838,7 @@ TRUSTED_PROXIES=
 ```
 * * * * * cd <REMOTE_PATH> && /usr/local/php84/bin/php artisan schedule:run >> storage/logs/cron.log 2>&1
 ```
-スケジュール: `app:prune-expired`（日次 04:00 JST: 提案一式・期限切れチャンネルのキャッシュ（チャンネル行と全動画行をまとめて削除し `channel_cache_expirations` に記録）・30 日経過の期限切れ記録・quota_usage・期限切れ cache/sessions）。作成処理・予約の失効・動画データの取り直しは cron に依存しない（失効は日付比較で判定）。
+スケジュール: `app:prune-expired`（日次 04:00 JST: 提案一式・7 日使われていない作成のチャンネル主のデータ・期限切れチャンネルのキャッシュ（チャンネル行と全動画行をまとめて削除し `channel_cache_expirations` に記録）・30 日経過の期限切れ記録・quota_usage・期限切れ cache/sessions）、`app:prune-sessions`（毎時: 期限切れのセッション行）。作成処理・予約の失効・動画データの取り直しは cron に依存しない（失効は日付比較で判定）。
 
 ### 10.4 Google Cloud セットアップ（README に書く要点）
 1. **本ツール専用の**プロジェクトを新規作成（既存サービスのプロジェクトは使わない）、YouTube Data API v3 を有効化。
@@ -949,14 +957,17 @@ TRUSTED_PROXIES=
 | D31 | （Phase 3 最終レビュー）ロック順は常に 作成行 → 当日の書込行 → 項目行（中止・再生リスト恒久エラーの完了・期限切れ削除も同じ）。`playlist_creation_items` の status 単独インデックスは置かない | InnoDB の範囲更新で他の作成の行までロックしない・デッドロック回避 |
 | D32 | （Phase 3 最終レビュー）照合の読取（playlists.list／playlistItems.list）が Google の `quotaExceeded` なら `paused(quota_exceeded)`、401 なら `paused(auth_expired)`、一時エラーはバックオフで再読取、それ以外の失敗が 5 回続いたら `needs_check`（`reconcile_failures`、読取に成功したら 0 に戻す）。`paused_day_pt` の無い `paused(quota_exceeded)` は再開できる。1 ステップの途中で PT の日付が変わっても、送信直前の確定で当日分を再予約する | 照合で止まり続けない・誤った一時停止をしない |
 | D33 | （Phase 3 最終レビュー）作成開始は書込行のロック内で提案の存在を確かめ、削除済みなら 404（何も作らない）。S6 の開き直しでは「この画面を開いている間だけ進みます」と案内し、「残りを中止」は 2 回押しで確定。作成されなかった（または不明の）提案は「この提案を削除」してから作り直すよう S4・S6 で案内する。S4 の状態は 未作成／作成中／作成済み／再生リストは作成されませんでした／再生リストが作成されたか確認できませんでした の 5 つ | 競合時の 500 防止と、行き止まりをなくす |
-| D34 | （Phase 4）レート制限のキーは `ClientKey`（app.key による IP の HMAC、IPv6 は /64）に統一し、`ProposalStoreLimits`・`ChannelFetchThrottle`・`ContactLimits` も同じキーを使う。`TRUSTED_PROXIES` は設定の差し込み口だけ用意し、空なら信頼しない（`*`・不正な値は警告ログ。信頼する転送ヘッダは For と Proto のみ） | 生の IP を cache に置かない。IPv6 のアドレス替えで制限を逃れさせない。プロキシ構成（#7）が未確認のため既定は安全側 |
+| D34 | （Phase 4）レート制限のキーは `ClientKey`（app.key による IP の HMAC、IPv6 は /64）に統一し、`ProposalStoreLimits`・`ChannelFetchThrottle`・`ContactLimits` も同じキーを使う。`TRUSTED_PROXIES` は設定の差し込み口だけ用意し、空なら信頼しない（`*`・不正な値は警告ログ。最終レビューで Symfony のキーワード `REMOTE_ADDR`（全送信元を信頼）・`PRIVATE_SUBNETS`／`private_ranges`（全プライベート帯を信頼）も警告。信頼する転送ヘッダは For と Proto のみ） | 生の IP を cache に置かない。IPv6 のアドレス替えで制限を逃れさせない。プロキシ構成（#7）が未確認のため既定は安全側 |
 | D35 | （Phase 4）問い合わせの入力はセッションにも置かない（失敗時はリダイレクトせずフォームを直接描画）。制限は送信を試みた回（成功・失敗）とハニーポットだけ数え、ハニーポットは全体の 50 件に数えない | 本文・アドレスをサーバーに残さない。失敗の連打で SMTP を叩かせない。ボットに全体枠を止めさせない |
 | D36 | （Phase 4）運営の削除（`app:delete-proposal`）は作成中でも提案と作成記録を削除し、予約を解放する（チャンネル主の削除は作成中は不可のまま。Y19） | 削除依頼は 7 日以内に確実に応じる必要がある。作成途中のブラウザは次のステップが 404 で止まる |
 | D37 | （Phase 4）本番の `LOG_LEVEL` は `info` | 8.8 で記録する作成の開始・完了、制限超過、問い合わせ送信などが info のため（warning では残らない） |
 | D38 | （Phase 4）未確認アプリの案内は文章のみ（画像なし）。CAPTCHA の差し込み口（8.4）は Phase 4 では作らない。#18 の GitHub Actions の SHA 固定と SecurityHeaders の no-store 上書きは対象外（デプロイ・秘密を使うジョブが無い／キャッシュを使う画面が無い） | 必要になった時点で足せる。現状では効果が無い |
-| D39 | （Phase 4）Laravel 標準の `XSRF-TOKEN` Cookie は残し、プライバシーポリシーにセッション Cookie と併せて記載する。セッションは「120 分操作が無いと使えなくなり、暗号化された行はセッション GC／日次の削除で消える」と書く | 標準の CSRF 対策で害が無い。実際の挙動どおりに書く |
+| D39 | （Phase 4）Laravel 標準の `XSRF-TOKEN` Cookie は残し、プライバシーポリシーにセッション Cookie と併せて記載する。セッションは「120 分操作が無いと使えなくなり、暗号化された行はセッション GC／日次の削除で消える」と書く（最終レビューで毎時の削除に変更。D44） | 標準の CSRF 対策で害が無い。実際の挙動どおりに書く |
 | D40 | （Phase 4）ホーム・S4 のスコープの用途の文言は「チャンネルの確認・自分の限定公開動画の表示・再生リストの作成と動画の追加」のまま（作成結果の確認の読み取りは作成の一部）とし、プライバシーポリシーで確認のための読み取りを開示する。Google の画面に広い権限（YouTube アカウントの管理）が表示されることを案内で予告する | 審査の用途説明と画面の文言を一致させる。権限の表示に驚いて離脱させない |
 | D41 | （Phase 4）利用規約の責任の制限は、故意・重過失を除く | 消費者契約法上、全部免責は無効になりうるため |
+| D42 | （Phase 4 最終レビュー）チャンネル主の承認で得たデータ（playlist_creation_items、公開以外の `youtube_playlist_id`）は、チャンネル主の最後の利用（`owner_last_active_at`: 作成の開始・ステップ・操作・S6 の表示。ログアウト＝アプリからの取り消しもその時点を最後の利用とする）から 7 日で日次バッチが削除する。件数・作成済みかどうか（`done_count`・`failed_count`・`skipped_count`・`total_count`・`pruned_had_playlist`）と `authorized_data_pruned_at` を残し、S4/S6 は作成の結果を表示し続ける。未完了（一時停止・要確認・放置された実行中）も対象で、`completed` にして予約を解放する（以後は操作できない）。公開の再生リスト ID と、チャンネル主が入力した名前・説明・公開設定は提案と一緒に 30 日 | Developer Policies III.D.2（承認の取り消し・利用停止から 7 日以内の削除）。Google 側で取り消された場合はアプリから検知できないため、最後の利用を起点にする |
+| D43 | （Phase 4 最終レビュー）削除依頼は提案の URL かチャンネルの URL／ID で受け付け、チャンネル単位は `app:delete-proposal --channel` で提案・作成・取り込んだ一覧をまとめて削除する。本人確認が必要なら運営者がチャンネルの公開の連絡先で確かめる。フォームが使えない（全体の上限など）ときの窓口は `OPERATOR_CONTACT`（リポジトリに個人の連絡先を書かない） | チャンネルの持ち主がデータ全体の削除を求められるようにする。仕組み（ログイン経由の本人確認）を増やさない |
+| D44 | （Phase 4 最終レビュー）毎リクエスト（ログアウトを除く）期限切れのログイン・古い限定公開動画の一覧をセッションから外し、セッション行の削除を毎時（`app:prune-sessions`）にする。プライバシーポリシーには「トークンは失効後に使えなくなり次のアクセスでセッションから外す。120 分操作が無いセッションは使えなくなり、その行は約 1 時間以内に消える」と書く | 使えなくなったトークンを日次まで残さない。ログアウトでは失効直後のトークンも取り消せるようにする |
 
 ### 12.3 未決事項
 | # | 事項 | 決める人／時期 |
