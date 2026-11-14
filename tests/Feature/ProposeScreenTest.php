@@ -217,6 +217,21 @@ class ProposeScreenTest extends TestCase
         $this->assertNoInlineCode($res->getContent());
     }
 
+    public function test_cards_link_to_youtube_and_consent_is_near_save(): void
+    {
+        $id = $this->setUpChannel();
+        $html = $this->get(route('channels.propose', $id))->assertOk()->getContent();
+        // the link sits in the <li>, outside the checkbox <label>, so clicking it does not toggle the selection
+        $this->assertMatchesRegularExpression(
+            '#<template x-for="video in filtered"[^>]*>\s*<li[^>]*>\s*<label[^>]*>.*?</label>\s*<a class="shrink-0 text-xs underline" :href="watchHref" rel="noopener noreferrer" target="_blank">YouTube で見る</a>\s*</li>#s',
+            $html,
+        );
+        $this->assertStringContainsString('データ提供: YouTube', $html);
+        // the consent sentence sits right next to the save button, in the same block
+        $this->assertMatchesRegularExpression('#<div class="space-y-2">\s*<p class="text-xs text-gray-600">保存すると、.*?</p>\s*(<p[^>]*>[^<]*</p>\s*)?<button type="submit"[^>]*>提案を保存する</button>\s*</div>#s', $html);
+        $this->assertNoInlineCode($html);
+    }
+
     public function test_unavailable_ids_are_passed_to_js(): void
     {
         $id = $this->setUpChannel();

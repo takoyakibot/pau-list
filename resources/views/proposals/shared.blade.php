@@ -15,6 +15,7 @@
         data-expires-at="{{ $proposal->expires_at->utc()->format('Y-m-d\TH:i:s\Z') }}">
         <h1 class="text-2xl font-bold">提案を保存しました</h1>
         <p class="mt-2 text-sm">{{ $proposal->channel_title }} への提案「{{ $proposal->title }}」（{{ $proposal->item_count }} 本）</p>
+        <p class="text-xs text-gray-600">データ提供: YouTube</p>
 
         <section class="mt-6 space-y-2">
             <label for="share-url" class="block font-semibold">共有 URL</label>

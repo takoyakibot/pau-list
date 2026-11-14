@@ -67,6 +67,14 @@ class SharedScreenTest extends TestCase
         $this->get(route('proposals.shared', $key))->assertRedirect($url);
     }
 
+    public function test_shared_page_has_attribution(): void
+    {
+        $this->followingRedirects()
+            ->post(route('proposals.store', $this->id), ['title' => 't', 'video_ids' => ['aaaaaaaaaaa']])
+            ->assertOk()
+            ->assertSee('<p class="text-xs text-gray-600">データ提供: YouTube</p>', false);
+    }
+
     public function test_direct_access_without_flash_redirects_to_preview(): void
     {
         $key = ProposalKey::generate();

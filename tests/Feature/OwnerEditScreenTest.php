@@ -265,4 +265,16 @@ class OwnerEditScreenTest extends TestCase
         $this->assertSame('creation', $this->editorPayload($res->getContent())['creationUrl']);
         $this->assertMatchesRegularExpression('/<p[^>]*role="alert"[^>]*x-text="createMessage"/', $res->getContent());
     }
+
+    public function test_cards_link_to_youtube(): void
+    {
+        $this->cacheChannel([['aaaaaaaaaaa', 'Video A', '2026-11-01 00:00:00']]);
+        $html = $this->edit($this->createProposal())->assertOk()->getContent();
+        $this->assertMatchesRegularExpression(
+            '#<template x-for="video in filtered"[^>]*>\s*<li[^>]*>\s*<label[^>]*>.*?</label>\s*<a class="shrink-0 text-xs underline" :href="watchHref" rel="noopener noreferrer" target="_blank">YouTube で見る</a>\s*</li>#s',
+            $html,
+        );
+        $this->assertStringContainsString('データ提供: YouTube', $html);
+        $this->assertNoInlineCode($html);
+    }
 }

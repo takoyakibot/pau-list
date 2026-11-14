@@ -194,12 +194,33 @@ class PreviewScreenTest extends TestCase
             ->assertSee('href="'.e(route('owner.login', ['p' => $key])).'"', false)
             ->assertSee('チャンネル主の方: Google でログインして作成へ')
             ->assertSeeText('利用規約・プライバシーポリシーに同意のうえログインしてください')
-            ->assertSee('確認されていないアプリの警告が表示されます。「詳細」→「List Maker（安全ではないページ）に移動」で続行できます')
-            ->assertSee('YouTube の管理権限を求めますが、使うのはチャンネルの確認・自分の限定公開動画の表示・再生リストの作成と動画の追加だけです')
             ->assertSee('href="'.route('terms').'"', false)->assertSee('href="'.route('privacy').'"', false)
             ->assertDontSee('ログイン中:')
             ->assertDontSee('href="'.route('proposals.edit', $key).'"', false);
         $this->assertNoInlineCode($res->getContent());
+    }
+
+    public function test_login_area_has_consent_flow_and_scope(): void
+    {
+        $key = $this->makeProposal();
+        $html = $this->get(route('proposals.show', $key))->assertOk()->getContent();
+        $this->assertSame(1, preg_match('#<section[^>]*aria-labelledby="owner-heading"[^>]*>(.*?)</section>#s', $html, $m));
+        $section = $m[1];
+        $login = strpos($section, 'href="'.e(route('owner.login', ['p' => $key])).'"');
+        $consent = strpos($section, '利用規約</a>・<a class="underline" href="'.route('privacy').'">プライバシーポリシー</a>に同意のうえログインしてください');
+        $this->assertIsInt($login);
+        $this->assertIsInt($consent);
+        $this->assertGreaterThan($login, $consent);
+        foreach ([
+            'Google のアカウント選択画面で、再生リストを作りたいチャンネルを選びます',
+            '『このアプリは Google で確認されていません』と表示されたら、『詳細』を押し、『List Maker（安全ではないページ）に移動』を選びます。本サービスは Google の審査を申請する前のため、この警告が表示されます',
+            'YouTube の権限の確認画面で内容を確認し、『続行』を押します',
+            '使うのはチャンネルの確認・自分の限定公開動画の表示・再生リストの作成と動画の追加だけです（<a class="underline" href="'.route('privacy').'#data">詳しくはプライバシーポリシー</a>）',
+        ] as $s) {
+            $this->assertStringContainsString($s, $html, $s);
+        }
+        $this->assertStringContainsString('/privacy#data"', $html);
+        $this->assertMatchesRegularExpression('#<ol[^>]*>\s*<li>Google のアカウント選択画面#', $html);
     }
 
     public function test_preview_links_to_edit_for_matching_owner_only(): void

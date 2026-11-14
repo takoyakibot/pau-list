@@ -47,6 +47,25 @@ class PagesTest extends TestCase
             ->assertDontSee('YouTube List Maker');
     }
 
+    public function test_home_has_final_name_api_services_note_and_login_flow(): void
+    {
+        $html = $this->get('/')->assertOk()
+            ->assertSee('<title>List Maker</title>', false)
+            ->assertDontSee('（仮称）')
+            ->assertSee('<h1 class="text-2xl font-bold">List Maker</h1>', false)
+            ->assertSee('本サービスは YouTube API Services を使用しています')
+            ->assertSee('ログインの流れ（確認されていないアプリの警告について）')
+            ->assertSee('『このアプリは Google で確認されていません』と表示されたら、『詳細』を押し、『List Maker（安全ではないページ）に移動』を選びます。本サービスは Google の審査を申請する前のため、この警告が表示されます')
+            ->getContent();
+        $this->assertSame(1, preg_match('#<main[^>]*>(.*)</main>#s', $html, $m));
+        $main = $m[1];
+        foreach ([route('privacy'), route('terms'), 'https://www.youtube.com/t/terms', 'https://policies.google.com/privacy'] as $href) {
+            $this->assertStringContainsString('href="'.$href, $main, $href);
+        }
+        $this->assertMatchesRegularExpression('#<a[^>]*href="https://www.youtube.com/t/terms"[^>]*rel="noopener noreferrer" target="_blank"#', $main);
+        $this->assertMatchesRegularExpression('#<section aria-labelledby="home-owner-heading"[^>]*>\s*<h2 id="home-owner-heading"[^>]*>チャンネル主の方へ</h2>.*ログインの流れ#s', $main);
+    }
+
     public function test_only_spec_routes_are_registered(): void
     {
         // スケルトンの /up（外部 CDN を読む）と local ディスクの storage/{path} 配信は使わない
