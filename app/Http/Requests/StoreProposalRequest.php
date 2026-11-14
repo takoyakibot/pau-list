@@ -9,8 +9,11 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 
 class StoreProposalRequest extends FormRequest
 {
-    /** Bidi overrides/isolates and zero-width characters (can hide or reorder text). */
-    private const INVISIBLE = '\x{200B}-\x{200D}\x{202A}-\x{202E}\x{2066}-\x{2069}\x{FEFF}';
+    /**
+     * Bidi overrides/isolates and zero-width characters (can hide or reorder text).
+     * U+200D (ZWJ) is kept because joined emoji need it; a value of only ZWJ counts as empty.
+     */
+    private const INVISIBLE = '\x{200B}\x{200C}\x{202A}-\x{202E}\x{2066}-\x{2069}\x{FEFF}';
 
     public function authorize(): bool
     {
@@ -127,6 +130,6 @@ class StoreProposalRequest extends FormRequest
     {
         $value = preg_replace('/^[\s\x{3000}]+|[\s\x{3000}]+$/u', '', (string) $value);
 
-        return $value === null || $value === '' ? null : $value;
+        return $value === null || preg_match('/^[\s\x{3000}\x{200D}]*$/u', $value) === 1 ? null : $value;
     }
 }

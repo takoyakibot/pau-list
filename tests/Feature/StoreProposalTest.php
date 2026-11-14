@@ -311,11 +311,14 @@ class StoreProposalTest extends TestCase
         $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
         $this->store(['title' => "\u{200B}\u{FEFF}", 'video_ids' => [self::A]])
             ->assertSessionHasErrors(['title' => '再生リスト名を入力してください']);
+        // ZWJ is kept for joined emoji, but a title of only ZWJ (and spaces) counts as empty
+        $this->store(['title' => " \u{200D}\u{200B}\u{200D} ", 'video_ids' => [self::A]])
+            ->assertSessionHasErrors(['title' => '再生リスト名を入力してください']);
         $this->assertNoApiCalls();
 
         $this->store([
             'title' => "a\u{202E}b\u{2066}c\u{2069}d\u{200C}",
-            'description' => "x\u{202A}\ny\u{200D}",
+            'description' => "x\u{202A}\ny\u{200C}",
             'comment' => "\u{2067}c\u{202C}",
             'proposer_name' => "\u{FEFF}n\u{200B}",
             'video_ids' => [self::A],
@@ -343,5 +346,23 @@ class StoreProposalTest extends TestCase
 
             return preg_match('/[0-9a-f]{64}/', $all) === 0 && ! str_contains($all, 'insert');
         })->once();
+    }
+
+    public function test_joined_emoji_survive_intact(): void
+    {
+        $family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"; // 👨‍👩‍👧
+        $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
+        $this->store([
+            'title' => "家族 {$family}",
+            'description' => "{$family}\n説明",
+            'comment' => $family,
+            'proposer_name' => $family,
+            'video_ids' => [self::A],
+        ])->assertSessionHasNoErrors();
+        $p = Proposal::sole();
+        $this->assertSame("家族 {$family}", $p->title);
+        $this->assertSame("{$family}\n説明", $p->description);
+        $this->assertSame($family, $p->comment);
+        $this->assertSame($family, $p->proposer_name);
     }
 }
