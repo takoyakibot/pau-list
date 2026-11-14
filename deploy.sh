@@ -7,7 +7,7 @@
 # 処理内容:
 #   1. ローカルでビルド（npm run build, composer --no-dev）
 #   2. rsync で本番サーバーに転送（.exclude-list の対象は送らない）
-#   3. サーバー側で artisan キャッシュクリア → マイグレーション
+#   3. サーバー側で config:clear → マイグレーション → キャッシュクリア
 #
 # 前提:
 #   - サーバーに composer / node は無いので、ビルド済みの vendor と public/build を丸ごと送る
@@ -88,7 +88,7 @@ rsync -avz --exclude-from=".exclude-list" --delete \
   -e "ssh -i $SSH_KEY -p 22" \
   . "$SERVER:$REMOTE_PATH/"
 
-echo "▶ 3. サーバー側でキャッシュクリアとマイグレーション"
+echo "▶ 3. サーバー側でマイグレーションとキャッシュクリア"
 ssh -i "$SSH_KEY" -p 22 "$SERVER" "bash -s" <<REMOTE_SCRIPT
 set -e
 cd "$REMOTE_PATH"
@@ -110,14 +110,17 @@ mkdir -p storage/framework/cache/data storage/framework/sessions storage/framewo
 chmod -R ug+rwX storage bootstrap/cache
 
 "\$PHP" artisan config:clear
-"\$PHP" artisan cache:clear
-"\$PHP" artisan route:clear
-"\$PHP" artisan view:clear
 
+# CACHE_STORE=database は cache テーブルが必要なので、cache:clear より先にマイグレーションする
+# （初回デプロイでテーブルが無いと cache:clear が失敗し、set -e で migrate まで到達しない）
 echo "--- 未適用のマイグレーション"
 "\$PHP" artisan migrate:status | grep -i pending || echo "（なし）"
 
 "\$PHP" artisan migrate --force
+
+"\$PHP" artisan cache:clear
+"\$PHP" artisan route:clear
+"\$PHP" artisan view:clear
 REMOTE_SCRIPT
 
 echo "▶ 4. ローカルの開発用依存を復元"
