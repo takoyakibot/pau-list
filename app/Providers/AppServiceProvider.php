@@ -7,6 +7,7 @@ use App\Session\PrivacyDatabaseSessionHandler;
 use App\Support\ClientKey;
 use App\Support\OwnerSession;
 use App\Support\QuotaPolicy;
+use App\Support\RateLimitLog;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Http\Request;
@@ -139,7 +140,11 @@ class AppServiceProvider extends ServiceProvider
         // The owner's unlisted list spends owner_read: 5 per 10 minutes per owner channel (IP when logged out).
         RateLimiter::for('owner-unlisted', fn (Request $request) => Limit::perMinutes(10, 5)
             ->by('owner-unlisted:'.(app(OwnerSession::class)->current()?->channelId ?? 'ip:'.ClientKey::for($request)))
-            ->response(fn () => response()->json(['message' => OwnerEditController::UNLISTED_THROTTLED], 429)));
+            ->response(function () {
+                RateLimitLog::exceeded('owner-unlisted');
+
+                return response()->json(['message' => OwnerEditController::UNLISTED_THROTTLED], 429);
+            }));
         // Creation start and the retry of failed items share one limit: 5 per hour per owner channel (IP when logged out).
         RateLimiter::for('creation-start', fn (Request $request) => Limit::perHour(5)
             ->by('creation-start:'.(app(OwnerSession::class)->current()?->channelId ?? 'ip:'.ClientKey::for($request))));

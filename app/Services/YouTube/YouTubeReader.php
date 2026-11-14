@@ -5,9 +5,11 @@ namespace App\Services\YouTube;
 use App\Support\ChannelInput;
 use App\Support\ChannelRef;
 use App\Support\IsoDuration;
+use App\Support\QuotaClock;
 use App\Support\VideoUrl;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -162,6 +164,10 @@ class YouTubeReader
     {
         if ($bucket === QuotaLedger::READ) {
             if (! $this->ledger->tryConsumeRead(1)) {
+                // Once per PT day (the budget's day), not once per refused request.
+                if (Cache::add('log-once:read-budget:'.QuotaClock::todayPt(), true, 86400)) {
+                    Log::warning('Read budget exhausted');
+                }
                 throw new ReadBudgetExceeded('Daily read budget exhausted.');
             }
         } else {

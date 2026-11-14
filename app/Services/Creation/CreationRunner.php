@@ -599,6 +599,9 @@ final class CreationRunner
             'pause_reason' => $reason,
             'paused_day_pt' => $reason === PlaylistCreation::PAUSE_QUOTA_EXCEEDED ? QuotaClock::todayPt() : null,
         ])->save();
+        if (in_array($reason, [PlaylistCreation::PAUSE_QUOTA_EXCEEDED, PlaylistCreation::PAUSE_QUOTA_BUDGET], true)) {
+            Log::warning('Creation paused', ['creation_id' => $c->id, 'reason' => $reason]);
+        }
     }
 
     private function pauseForBudget(PlaylistCreation $c, RemainingToday $remaining): StepResult

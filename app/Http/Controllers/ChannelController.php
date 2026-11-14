@@ -8,6 +8,7 @@ use App\Services\YouTube\YouTubeApiException;
 use App\Services\YouTube\YouTubeReader;
 use App\Support\ChannelFetchThrottle;
 use App\Support\ChannelInput;
+use App\Support\RateLimitLog;
 use App\Support\VideoUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -43,6 +44,7 @@ class ChannelController extends Controller
         if ($id === null) {
             // Only a lookup that needs the YouTube API consumes the per-IP fetch limit.
             if (! $throttle->attempt($request)) {
+                RateLimitLog::exceeded('channel-fetch');
                 abort(429, '', ['Retry-After' => (string) $throttle->retryAfter($request)]);
             }
             try {

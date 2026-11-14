@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\ContactRequest;
 use App\Mail\ContactMessage;
 use App\Support\ContactLimits;
+use App\Support\RateLimitLog;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Response;
@@ -40,7 +41,7 @@ class ContactController extends Controller
         $input = $request->formInput();
         $wait = $limits->retryAfter($request);
         if ($wait !== null) {
-            Log::info('Rate limit exceeded', ['limiter' => 'contact']);
+            RateLimitLog::exceeded('contact');
 
             return $this->form($input, self::LIMITED, 429)->header('Retry-After', (string) $wait);
         }

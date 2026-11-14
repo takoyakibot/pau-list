@@ -11,7 +11,9 @@ use App\Support\OwnerSession;
 use App\Support\QuotaPolicy;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\CreatesProposals;
@@ -203,11 +205,18 @@ class OwnerUnlistedVideosTest extends TestCase
     {
         $this->fakeOwnerUploads([[]]);
         $this->fakeUploads('UU'.str_repeat('z', 22), [[]]);
+        $logs = [];
+        Event::listen(MessageLogged::class, function (MessageLogged $e) use (&$logs) {
+            if ($e->message === 'Rate limit exceeded') {
+                $logs[] = $e->context;
+            }
+        });
         for ($i = 0; $i < 5; $i++) {
             $this->actAsOwner($this->channelId)->fetchUnlisted()->assertOk();
         }
         $this->actAsOwner($this->channelId)->fetchUnlisted()->assertStatus(429)
             ->assertExactJson(['message' => '限定公開の動画の読み込みが続いています。10 分ほど待ってから再度お試しください']);
+        $this->assertSame([['limiter' => 'owner-unlisted']], $logs);
         $this->actAsOwner('UC'.str_repeat('z', 22))->fetchUnlisted()->assertOk();
     }
 }

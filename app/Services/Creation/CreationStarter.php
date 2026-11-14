@@ -173,6 +173,8 @@ class CreationStarter
 
     private function insufficient(WriteLock $lock, int $n): InsufficientWriteQuota
     {
+        Log::info('Write quota insufficient', ['items' => $n, 'free_units' => $lock->free()]);
+
         return new InsufficientWriteQuota(
             new RemainingToday(QuotaPolicy::itemsAffordable($lock->free()), QuotaClock::nextResetJst()),
             $n,
