@@ -2,10 +2,13 @@
 
 namespace Tests\Support;
 
+use App\Models\PlaylistCreation;
 use App\Models\Proposal;
+use App\Models\QuotaReservation;
 use App\Support\OwnerLogin;
 use App\Support\OwnerSession;
 use App\Support\ProposalKey;
+use App\Support\QuotaClock;
 use Carbon\CarbonImmutable;
 
 trait CreatesProposals
@@ -60,5 +63,48 @@ trait CreatesProposals
         return $this->withSession([OwnerSession::OWNER_KEY => OwnerSession::serialize(
             new OwnerLogin($token, $expiresAt ?? now()->toImmutable()->addMinutes(30), $channelId, $title),
         )]);
+    }
+
+    /**
+     * A pending creation (with $items pending items, positions 0..n-1) for a new proposal. With $reserve,
+     * today's active reservation of that many units is created; quota_usage is left untouched.
+     * With $key, the creation belongs to that (already created) proposal.
+     *
+     * @param  array<string, mixed>  $attrs
+     */
+    protected function makeCreation(int $items = 3, array $attrs = [], ?int $reserve = null, ?string $key = null): PlaylistCreation
+    {
+        $proposal = Proposal::where('key_hash', ProposalKey::hash($key ?? $this->createProposal()))->sole();
+        $creation = PlaylistCreation::create(array_merge([
+            'proposal_id' => $proposal->id,
+            'owner_channel_id' => $proposal->channel_id,
+            'title' => $proposal->title,
+            'description' => $proposal->description,
+            'privacy_status' => 'private',
+            'status' => PlaylistCreation::PENDING,
+            'estimated_units' => 50 + 50 * $items,
+            'started_at' => now(),
+        ], $attrs));
+        for ($i = 0; $i < $items; $i++) {
+            $creation->items()->create([
+                'position' => $i,
+                'video_id' => sprintf('v%010d', $i),
+                'title' => '動画 '.$i,
+                'thumbnail_url' => null,
+                'is_outside_channel' => false,
+                'status' => 'pending',
+            ]);
+        }
+        if ($reserve !== null) {
+            QuotaReservation::create([
+                'creation_id' => $creation->id,
+                'day_pt' => QuotaClock::todayPt(),
+                'reserved_units' => $reserve,
+                'consumed_units' => 0,
+                'status' => QuotaReservation::ACTIVE,
+            ]);
+        }
+
+        return $creation;
     }
 }

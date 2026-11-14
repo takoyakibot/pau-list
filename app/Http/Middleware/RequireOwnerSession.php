@@ -15,11 +15,15 @@ use Symfony\Component\HttpFoundation\Response;
  * Owner-only pages under /p/{key}: the proposal must be live (else the usual 404), the owner must be
  * logged in with an unexpired token (else back to the preview), and the logged-in channel must be the
  * proposal's channel (else the mismatch page; spec 2.4 — no way to continue).
+ * JSON requests (`expectsJson()`, spec 7.2) get JSON instead of the redirect / page: 401 with NOTICE when not
+ * (or no longer) logged in, 403 with MISMATCH for another channel. An unknown proposal stays the usual 404.
  * On success the request attributes carry `proposal` and `owner`.
  */
 class RequireOwnerSession
 {
     public const NOTICE = 'ログインの有効期限が切れたか、ログインしていません。もう一度ログインしてください';
+
+    public const MISMATCH = 'ログイン中のチャンネルはこの提案の対象ではありません';
 
     public function __construct(private readonly OwnerSession $owners) {}
 
@@ -53,10 +57,18 @@ class RequireOwnerSession
 
         $owner = $this->owners->current();
         if ($owner === null) {
+            if ($request->expectsJson()) {
+                return self::loginRequiredJson();
+            }
+
             return redirect()->route('proposals.show', $key)->with('owner_notice', self::NOTICE);
         }
 
         if ($owner->channelId !== $proposal->channel_id) {
+            if ($request->expectsJson()) {
+                return response()->json(['message' => self::MISMATCH], 403);
+            }
+
             return response()->view('owner.mismatch', [
                 'key' => $key,
                 'proposal' => $proposal,

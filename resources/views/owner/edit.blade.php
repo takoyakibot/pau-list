@@ -15,7 +15,7 @@
         <p class="mt-6 rounded border border-red-300 bg-red-50 p-3 text-sm">この画面の操作には JavaScript が必要です</p>
     </noscript>
 
-    {{-- No <form>: creating is Phase 3 (POST /p/{key}/creation). The server renders a correct initial state; owner-edit.js takes over. --}}
+    {{-- No <form>: 「作成」 is a JSON POST to the relative `creation` (owner-edit.js). The server renders a correct initial state; owner-edit.js takes over. --}}
     <div id="owner-editor" x-data="ownerEditor" data-editor="{{ json_encode($editor, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}" class="mt-6 space-y-8">
         <section aria-labelledby="items-heading" class="space-y-2">
             <h2 id="items-heading" class="text-lg font-semibold">再生リストに入れる動画（<span x-text="count">{{ $count }}</span> / <span x-text="maxItems">{{ $editor['maxItems'] }}</span>）</h2>
@@ -58,6 +58,7 @@
                             </div>
                             <p class="mt-1 text-xs text-amber-800" x-show="item.outside">対象チャンネル外</p>
                             <p class="mt-1 text-xs text-gray-700" x-show="item.unlisted">限定公開</p>
+                            <p class="mt-1 text-xs font-semibold text-red-700" x-show="item.unavailable">削除または非公開のため作成できません</p>
                         </li>
                     </template>
                 </ol>
@@ -78,7 +79,7 @@
                 <p class="text-xs text-gray-600">{{ \App\Http\Controllers\OwnerEditController::UNLISTED_NOTE }}</p>
                 <p class="text-sm text-amber-800" role="alert" x-show="hasUnlistedMessage" x-text="unlistedMessage"></p>
                 {{-- 401 (login expired): reloading this page sends the owner to the preview's login link; the draft is kept. --}}
-                <p class="text-sm" x-show="needsRelogin"><a class="font-semibold underline" :href="reloginHref">もう一度ログインする</a></p>
+                <p class="text-sm" x-show="unlistedNeedsRelogin"><a class="font-semibold underline" :href="reloginHref">もう一度ログインする</a></p>
             </div>
 
             <div x-show="hasVideos" x-cloak class="space-y-2">
@@ -135,6 +136,8 @@
                     <option value="public">公開</option>
                 </select>
             </label>
+            {{-- Security M1: a public playlist exposes the owner's unlisted videos in it to anyone who opens it. --}}
+            <p class="text-sm text-amber-800" role="status" x-show="hasPublicUnlistedNote" x-cloak x-text="publicUnlistedNote"></p>
         </section>
 
         <section class="space-y-2 text-sm">
@@ -151,8 +154,10 @@
         <div class="space-y-2">
             {{-- The server-side disabled attribute is the no-JS state; owner-edit.js keeps it in sync via :disabled. --}}
             <button type="button" :disabled="isCreateDisabled" @click="onCreate" class="rounded bg-gray-900 px-4 py-2 text-white disabled:opacity-50" id="create-playlist" @disabled($count === 0 || $shortBy > 0)>あなたのチャンネルに再生リストを作成します</button>
-            <p class="text-xs text-gray-600">押すとあなたの YouTube チャンネルに再生リストが作成されます（書き込み操作）。作成機能は準備中で、現在は押しても作成されません</p>
-            <p class="text-sm" role="status" x-show="hasCreateMessage" x-cloak x-text="createMessage"></p>
+            <p class="text-xs text-gray-600">押すとあなたの YouTube チャンネルに再生リストが作成されます（書き込み操作）</p>
+            <p class="text-sm text-red-700" role="alert" x-show="hasCreateMessage" x-cloak x-text="createMessage"></p>
+            {{-- 401 from the start API (login expired): reloading sends the owner to the preview's login link; the draft is kept. --}}
+            <p class="text-sm" x-show="createNeedsRelogin" x-cloak><a class="font-semibold underline" :href="reloginHref">もう一度ログインする</a></p>
         </div>
 
         <p class="text-xs text-gray-600">データ提供: YouTube</p>

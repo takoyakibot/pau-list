@@ -4,6 +4,8 @@ import {
   PRIVACY_VALUES, normalizePrivacy, remainingFrom, creationQuota, shortageText, isCreateDisabled,
   restoreDraftItems, mergeUnlisted, upgradePlaceholders, sanitizeUnlisted, unlistedResultMessage,
   rowActionLabel, isBlankTitle, TITLE_REQUIRED, DRAFT_RESTORED,
+  creationRequestBody, startFailure, markUnavailable, START_FAILED, PAGE_EXPIRED,
+  unlistedFailure, withRelogin, publicUnlistedNote, PUBLIC_UNLISTED_NOTE,
 } from '../../resources/js/lib/owner-edit.js';
 
 test('creationQuota: within remaining', () => {
@@ -103,4 +105,64 @@ test('isBlankTitle treats ASCII and full-width spaces as empty', () => {
   assert.equal(isBlankTitle(' a '), false);
   assert.equal(TITLE_REQUIRED, '再生リスト名を入力してください');
   assert.equal(DRAFT_RESTORED, '前回の編集内容を復元しました（タイトルが表示されない動画は追加し直すと表示されます）');
+});
+
+test('creationRequestBody sends ids, title, description and a normalized privacy', () => {
+  assert.deepEqual(
+    creationRequestBody({ items: [{ id: 'aaaaaaaaaaa', title: 'A' }, { id: 'bbbbbbbbbbb' }], title: 't', description: '', privacy: 'x' }),
+    { video_ids: ['aaaaaaaaaaa', 'bbbbbbbbbbb'], title: 't', description: '', privacy: 'private' },
+  );
+  assert.equal(creationRequestBody({ items: [], title: 't', description: 'd', privacy: 'unlisted' }).privacy, 'unlisted');
+});
+
+test('startFailure maps statuses to a message, relogin and the unavailable ids', () => {
+  assert.deepEqual(startFailure(401, { message: 'm' }), { message: 'm', relogin: true, unavailableIds: [] });
+  assert.deepEqual(startFailure(401, null), { message: START_FAILED, relogin: true, unavailableIds: [] });
+  assert.equal(startFailure(419, { message: 'CSRF token mismatch.' }).message, PAGE_EXPIRED);
+  assert.deepEqual(startFailure(422, { message: 'x', unavailable_ids: ['aaaaaaaaaaa', 'bad', 3] }), { message: 'x', relogin: false, unavailableIds: ['aaaaaaaaaaa'] });
+  for (const s of [409, 429, 503]) {
+    assert.equal(startFailure(s, { message: 'srv' }).message, 'srv');
+    assert.equal(startFailure(s, null).message, START_FAILED);
+  }
+  assert.equal(startFailure(500, { message: 'Server Error' }).message, START_FAILED);
+  assert.equal(startFailure(0, null).message, START_FAILED);
+});
+
+test('markUnavailable flags only the given ids and clears the others', () => {
+  const items = [{ id: 'aaaaaaaaaaa', unavailable: true }, { id: 'bbbbbbbbbbb' }];
+  const out = markUnavailable(items, ['bbbbbbbbbbb']);
+  assert.deepEqual(out, [{ id: 'aaaaaaaaaaa' }, { id: 'bbbbbbbbbbb', unavailable: true }]);
+  assert.deepEqual(items[0], { id: 'aaaaaaaaaaa', unavailable: true });
+  assert.deepEqual(markUnavailable(items, []), [{ id: 'aaaaaaaaaaa' }, { id: 'bbbbbbbbbbb' }]);
+});
+
+// ---- final review (UX I1, security M1) ----
+
+test('unlistedFailure: 401 asks for login, other failures carry the server message', () => {
+  assert.deepEqual(unlistedFailure(401, { message: 'm' }, 'fb'), { message: 'm', relogin: true });
+  assert.deepEqual(unlistedFailure(401, null, 'fb'), { message: 'fb', relogin: true });
+  assert.deepEqual(unlistedFailure(429, { message: 'limit' }, 'fb'), { message: 'limit', relogin: false });
+  assert.deepEqual(unlistedFailure(503, null, 'fb'), { message: 'fb', relogin: false });
+});
+
+test('withRelogin keeps one login link per failing action', () => {
+  const none = { create: false, unlisted: false };
+  const a = withRelogin(none, 'unlisted', true);
+  assert.deepEqual(a, { create: false, unlisted: true });
+  const b = withRelogin(a, 'create', true);
+  assert.deepEqual(b, { create: true, unlisted: true });
+  // Retrying one action clears only its own link.
+  assert.deepEqual(withRelogin(b, 'unlisted', false), { create: true, unlisted: false });
+  assert.deepEqual(none, { create: false, unlisted: false }); // not mutated
+  assert.deepEqual(withRelogin(none, 'other', true), none);
+});
+
+test('publicUnlistedNote: only a public playlist with an unlisted video', () => {
+  const items = [{ id: 'aaaaaaaaaaa' }, { id: 'bbbbbbbbbbb', unlisted: true }];
+  assert.equal(publicUnlistedNote('public', items), PUBLIC_UNLISTED_NOTE);
+  assert.equal(publicUnlistedNote('unlisted', items), '');
+  assert.equal(publicUnlistedNote('private', items), '');
+  assert.equal(publicUnlistedNote('public', [{ id: 'aaaaaaaaaaa' }]), '');
+  assert.equal(publicUnlistedNote('public', null), '');
+  assert.equal(PUBLIC_UNLISTED_NOTE, '公開の再生リストに限定公開の動画が含まれています。再生リストを見た人（共有された提案ページの再生リストへのリンクから開いた人を含む）は、これらの動画も見られます');
 });

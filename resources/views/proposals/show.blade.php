@@ -16,7 +16,24 @@
     </header>
 
     <section class="mt-6 space-y-1 text-sm">
-        <p>状態: 未作成</p>
+        <p>状態: {{ match ($creationStatus) {
+            'creating' => '作成中',
+            'created' => '作成済み',
+            'not_created' => '再生リストは作成されませんでした',
+            'unknown' => '再生リストが作成されたか確認できませんでした',
+            default => '未作成',
+        } }}</p>
+        @if ($ownerMatches && $creationStatus === 'unknown')
+            <p>{{ \App\Services\Creation\CreationProgress::MAYBE_CREATED }}</p>
+        @endif
+        {{-- The owner's way out when nothing (certain) was created: this proposal cannot be created again (UX m5). --}}
+        @if ($ownerMatches && in_array($creationStatus, ['not_created', 'unknown'], true))
+            <p>{{ \App\Services\Creation\CreationProgress::REMAKE_HINT }} <a class="text-red-700 underline" href="{{ route('proposals.delete', $key) }}">この提案を削除</a></p>
+        @endif
+        {{-- Only set when it may be shown to this viewer (spec 7.6: unlisted/private only to the channel's owner). --}}
+        @if ($playlistUrl !== null)
+            <p><a class="font-semibold underline" href="{{ $playlistUrl }}" rel="noopener noreferrer" target="_blank">作成された再生リストを YouTube で見る</a></p>
+        @endif
         <p>作成日 {{ $proposal->created_at->timezone('Asia/Tokyo')->format('n月j日') }}／{{ $proposal->expires_at->timezone('Asia/Tokyo')->format('n月j日') }}までに削除されます</p>
     </section>
 
@@ -54,10 +71,12 @@
         <p class="mt-2 text-xs text-gray-600">データ提供: YouTube</p>
     </section>
 
-    <section class="mt-6 text-sm">
-        @include('partials.max-items')
-        @include('partials.remaining-today', ['remaining' => $remaining, 'itemCount' => $proposal->item_count])
-    </section>
+    @if ($creationStatus === null)
+        <section class="mt-6 text-sm">
+            @include('partials.max-items')
+            @include('partials.remaining-today', ['remaining' => $remaining, 'itemCount' => $proposal->item_count])
+        </section>
+    @endif
 
     @include('partials.owner-login')
 @endsection

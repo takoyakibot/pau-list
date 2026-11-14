@@ -86,4 +86,20 @@ class OwnerEditAccessTest extends TestCase
         $this->actAsOwner($this->channelId)->withHeaders(['Sec-Fetch-Mode' => 'cors', 'Sec-Fetch-Dest' => 'empty'])
             ->get("/p/$key/edit")->assertStatus(400);
     }
+
+    public function test_html_requests_keep_redirect_and_mismatch_page_while_json_gets_json(): void
+    {
+        $key = $this->createProposal();
+        // A form POST (HTML) to an owner route: redirect to the preview, not a 401 JSON.
+        $this->post("/p/$key/deletion")->assertRedirect(route('proposals.show', $key))->assertSessionHas('owner_notice');
+        $this->actAsOwner('UC'.str_repeat('z', 22))->post("/p/$key/deletion")->assertForbidden()
+            ->assertSee('このチャンネルには作成できません')->assertHeader('Content-Type', 'text/html; charset=utf-8');
+
+        // The same route asked for JSON gets JSON.
+        $this->withSession([])->flushSession();
+        $this->postJson("/p/$key/deletion")->assertStatus(401)
+            ->assertExactJson(['message' => 'ログインの有効期限が切れたか、ログインしていません。もう一度ログインしてください']);
+        $this->actAsOwner('UC'.str_repeat('z', 22))->postJson("/p/$key/deletion")->assertForbidden()
+            ->assertExactJson(['message' => 'ログイン中のチャンネルはこの提案の対象ではありません']);
+    }
 }

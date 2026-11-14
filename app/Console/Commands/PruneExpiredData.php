@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\ChannelVideoCatalog;
+use App\Services\YouTube\QuotaLedger;
 use App\Support\QuotaClock;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
@@ -31,14 +32,14 @@ class PruneExpiredData extends Command
 
     private bool $failed = false;
 
-    public function handle(ChannelVideoCatalog $catalog): int
+    public function handle(ChannelVideoCatalog $catalog, QuotaLedger $ledger): int
     {
         $this->failed = false;
         $now = now()->toImmutable();
         $cutoff = $now->addHours(self::LOOKAHEAD_HOURS);
         $timestamp = $now->getTimestamp();
 
-        $this->step('proposals', fn () => $this->pruneProposals($cutoff));
+        $this->step('proposals', fn () => $this->pruneProposals($cutoff, $ledger));
 
         // Per-channel lock path: deletes the channel row and all its video rows and records the expiration.
         $this->step('channel_caches', fn () => $catalog->expireStale($cutoff));
@@ -70,9 +71,15 @@ class PruneExpiredData extends Command
         return $this->failed ? self::FAILURE : self::SUCCESS;
     }
 
-    /** Deletes expired proposals and their items in chunks (items explicitly, not only via FK cascade). */
-    private function pruneProposals(CarbonInterface $cutoff): int
+    /**
+     * Deletes expired proposals in chunks together with their items, creation snapshot and reservations
+     * (explicitly, children first, not only via FK cascade). Lock order of 5.4: the creation rows (FOR UPDATE, in
+     * id order) first, then today's write row, then the children are deleted, so a step or operation running on
+     * one of these creations finishes (or waits) instead of deadlocking.
+     */
+    private function pruneProposals(CarbonInterface $cutoff, QuotaLedger $ledger): int
     {
+
         $deleted = 0;
         do {
             $ids = DB::table('proposals')
@@ -84,11 +91,24 @@ class PruneExpiredData extends Command
             if ($ids === []) {
                 break;
             }
-            $deleted += DB::transaction(function () use ($ids) {
+            if (DB::table('playlist_creations')->whereIn('proposal_id', $ids)->exists()) {
+                $ledger->ensureWriteRow(); // outside the transaction (see QuotaLedger::ensureWriteRow)
+            }
+            $deleted += DB::transaction(function () use ($ids, $ledger) {
+                $creationIds = DB::table('playlist_creations')->whereIn('proposal_id', $ids)->orderBy('id')->pluck('id')->all();
+                if ($creationIds !== []) {
+                    // Locked by primary key, in id order (no gap locks on proposal_id).
+                    $creationIds = DB::table('playlist_creations')->whereIn('id', $creationIds)->orderBy('id')->lockForUpdate()->pluck('id')->all();
+                    $ledger->withWriteLock(function () use ($creationIds) {
+                        DB::table('quota_reservations')->whereIn('creation_id', $creationIds)->delete();
+                        DB::table('playlist_creation_items')->whereIn('creation_id', $creationIds)->delete();
+                        DB::table('playlist_creations')->whereIn('id', $creationIds)->delete();
+                    });
+                }
                 DB::table('proposal_items')->whereIn('proposal_id', $ids)->delete();
 
                 return DB::table('proposals')->whereIn('id', $ids)->delete();
-            });
+            }, 3);
         } while (count($ids) === self::CHUNK);
 
         return $deleted;

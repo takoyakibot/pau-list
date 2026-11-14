@@ -15,11 +15,13 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Sleep;
+use PHPUnit\Framework\Attributes\Group;
+use Tests\Support\FailsQueries;
 use Tests\TestCase;
 
 class PruneExpiredDataTest extends TestCase
 {
-    use RefreshDatabase;
+    use FailsQueries, RefreshDatabase;
 
     protected function setUp(): void
     {
@@ -93,6 +95,78 @@ class PruneExpiredDataTest extends TestCase
         $this->assertSame([$kept->id, $keptEdge->id], Proposal::orderBy('id')->pluck('id')->all());
         $this->assertSame(['aaaaaaaaaaa', 'ddddddddddd'], DB::table('proposal_items')->orderBy('video_id')->pluck('video_id')->all());
         $this->assertSame(0, DB::table('proposal_items')->whereIn('proposal_id', [$edge->id, $gone->id, $older->id])->count());
+    }
+
+    /** A creation with two items and one reservation for the proposal; returns the creation id. */
+    private function creation(Proposal $proposal): int
+    {
+        $creationId = DB::table('playlist_creations')->insertGetId([
+            'proposal_id' => $proposal->id,
+            'owner_channel_id' => $proposal->channel_id,
+            'title' => 't',
+            'description' => '',
+            'privacy_status' => 'private',
+            'status' => 'adding',
+            'estimated_units' => 150,
+            'started_at' => now(),
+            'updated_at' => now(),
+        ]);
+        foreach (['xxxxxxxxxx1', 'xxxxxxxxxx2'] as $i => $videoId) {
+            DB::table('playlist_creation_items')->insert([
+                'creation_id' => $creationId,
+                'position' => $i,
+                'video_id' => $videoId,
+                'title' => 'v',
+                'is_outside_channel' => false,
+                'status' => 'pending',
+            ]);
+        }
+        DB::table('quota_reservations')->insert([
+            'creation_id' => $creationId,
+            'day_pt' => '2026-11-13',
+            'reserved_units' => 150,
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return $creationId;
+    }
+
+    public function test_deletes_creation_records_with_expired_proposal(): void
+    {
+        $gone = $this->creation($this->proposal(now()->subDays(31), 'aaaaaaaaaaa'));
+        $kept = $this->creation($this->proposal(now()->subDays(28), 'bbbbbbbbbbb'));
+
+        $this->artisan('app:prune-expired')->expectsOutput('proposals: 1')->assertSuccessful();
+
+        $this->assertSame([$kept], DB::table('playlist_creations')->pluck('id')->all());
+        $this->assertSame(0, DB::table('playlist_creation_items')->where('creation_id', $gone)->count());
+        $this->assertSame(2, DB::table('playlist_creation_items')->where('creation_id', $kept)->count());
+        $this->assertSame([$kept], DB::table('quota_reservations')->pluck('creation_id')->all());
+    }
+
+    public function test_expired_creations_are_locked_then_the_write_row_then_deleted(): void
+    {
+        $this->creation($this->proposal(now()->subDays(31), 'aaaaaaaaaaa'));
+        $sql = [];
+        DB::listen(function ($q) use (&$sql) {
+            // Identifier quotes differ by driver (SQLite ", MySQL `): compare without them.
+            $sql[] = str_replace(['"', '`'], '', $q->sql);
+        });
+
+        $this->artisan('app:prune-expired')->expectsOutput('proposals: 1')->assertSuccessful();
+
+        // Lock order (5.4, final review race 2): creation rows (in id order) → today's write row → children.
+        $find = fn (callable $match) => array_key_first(array_filter($sql, $match));
+        $lockCreations = $find(fn ($s) => preg_match('/^select\b.*\bfrom playlist_creations where id in\b.*\border by id\b/s', $s) === 1);
+        $lockWrite = $find(fn ($s) => preg_match('/^select\b.*\bfrom quota_usage where day_pt\b/s', $s) === 1);
+        $deleteChildren = $find(fn ($s) => preg_match('/^delete from quota_reservations\b/', $s) === 1);
+        $this->assertNotNull($lockCreations, implode("\n", $sql));
+        $this->assertNotNull($lockWrite, implode("\n", $sql));
+        $this->assertLessThan($lockWrite, $lockCreations);
+        $this->assertLessThan($deleteChildren, $lockWrite);
+        $this->assertSame(0, DB::table('playlist_creations')->count());
     }
 
     private function channel(string $id, CarbonInterface $cachedSince): void
@@ -258,11 +332,12 @@ class PruneExpiredDataTest extends TestCase
         $this->assertSame(['fresh'], DB::table('sessions')->pluck('id')->all());
     }
 
+    #[Group('mysql')]
     public function test_failing_step_does_not_stop_the_others_and_exits_non_zero(): void
     {
         $this->proposal(now()->subDays(31), 'aaaaaaaaaaa');
         DB::table('sessions')->insert(['id' => 'stale', 'user_id' => null, 'payload' => '', 'last_activity' => now()->getTimestamp() - 121 * 60]);
-        Schema::drop('quota_usage');
+        $this->failQueriesOn('quota_usage');
         $logged = [];
         Event::listen(MessageLogged::class, function (MessageLogged $e) use (&$logged) {
             $logged[] = $e->message.' '.json_encode($e->context);
@@ -279,7 +354,7 @@ class PruneExpiredDataTest extends TestCase
         $this->assertCount(1, $logged);
         $this->assertStringContainsString('Prune step failed', $logged[0]);
         $this->assertStringContainsString('"step":"quota_usage"', $logged[0]);
-        $this->assertStringContainsString('"sqlstate":"HY000"', $logged[0]);
+        $this->assertStringContainsString('"sqlstate":"42S02"', $logged[0]);
         $this->assertStringNotContainsStringIgnoringCase('delete from', $logged[0]);
         $this->assertStringNotContainsString('2026-', $logged[0]);
     }

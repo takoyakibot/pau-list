@@ -233,4 +233,14 @@ class YouTubeReaderTest extends TestCase
         ]]);
         $this->assertNull(app(YouTubeReader::class)->uploadsPage('UU'.str_repeat('a', 22), null)->items[0]->thumbnailUrl);
     }
+
+    public function test_video_info_parses_one_resource_and_rejects_a_bad_id(): void
+    {
+        $v = YouTubeReader::videoInfo($this->videoResource('aaaaaaaaaaa', 'UC'.str_repeat('a', 22), ['privacy' => 'unlisted', 'duration' => 'PT2M']));
+        $this->assertSame('aaaaaaaaaaa', $v->id);
+        $this->assertSame('unlisted', $v->privacyStatus);
+        $this->assertSame(120, $v->durationSeconds);
+        $this->assertNull(YouTubeReader::videoInfo($this->videoResource('short', 'UC'.str_repeat('a', 22))));
+        $this->assertNull(YouTubeReader::videoInfo(['snippet' => []]));
+    }
 }

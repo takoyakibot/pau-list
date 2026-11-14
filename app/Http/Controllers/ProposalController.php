@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreProposalRequest;
+use App\Models\PlaylistCreation;
 use App\Models\Proposal;
 use App\Services\CatalogStatus;
 use App\Services\ChannelCacheMissing;
@@ -189,6 +190,22 @@ class ProposalController extends Controller
         $proposal = Proposal::findLiveOrAbort($key);
         $owner = $owners->current();
         $items = $proposal->items()->get();
+        $ownerMatches = $owner !== null && $owner->channelId === $proposal->channel_id;
+        $creation = $proposal->creation;
+        $creationStatus = match (true) {
+            $creation === null => null,
+            $creation->status !== PlaylistCreation::COMPLETED => 'creating',
+            $creation->youtube_playlist_id !== null => 'created',
+            // Stopped while a playlists.insert was unsettled: a playlist may exist on YouTube (CreationProgress::MAYBE_CREATED).
+            $creation->playlist_attempted_at !== null => 'unknown',
+            default => 'not_created',
+        };
+        // Spec 7.6: a public playlist is linked for anyone; unlisted/private only for the logged-in owner of the
+        // channel (the playlist id is otherwise not written into the page).
+        $playlistUrl = $creationStatus === 'created'
+            && ($creation->privacy_status === 'public' || ($ownerMatches && $owner->channelId === $creation->owner_channel_id))
+            ? $creation->playlistUrl()
+            : null;
 
         return response()->view('proposals.show', [
             'proposal' => $proposal,
@@ -197,8 +214,10 @@ class ProposalController extends Controller
             'hasUnknownDuration' => $items->contains(fn ($item) => $item->duration_seconds === null),
             'remaining' => $ledger->remainingToday(),
             'key' => $key,
-            'ownerMatches' => $owner !== null && $owner->channelId === $proposal->channel_id,
+            'ownerMatches' => $ownerMatches,
             'ownerChannelTitle' => $owner?->channelTitle,
+            'creationStatus' => $creationStatus,
+            'playlistUrl' => $playlistUrl,
         ]);
     }
 }
