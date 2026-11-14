@@ -6,3 +6,12 @@ export function safeStorage() {
     return null;
   }
 }
+
+// sessionStorage (per tab): the owner's edit drafts.
+export function safeSessionStorage() {
+  try {
+    return window.sessionStorage ?? null;
+  } catch {
+    return null;
+  }
+}

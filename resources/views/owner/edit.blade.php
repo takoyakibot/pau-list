@@ -2,6 +2,10 @@
 
 @section('title', $proposal->title.' — 再生リストの作成')
 
+@push('vite')
+    @vite('resources/js/owner-edit.js')
+@endpush
+
 @section('content')
     <p class="text-sm">ログイン中: {{ $ownerChannelTitle }}</p>
     <h1 class="mt-2 text-2xl font-bold break-words">{{ $proposal->title }}</h1>
@@ -70,6 +74,8 @@
                 <button type="button" id="load-unlisted" @click="loadUnlisted" :disabled="unlistedBusy" x-show="canLoadUnlisted" class="rounded border border-gray-400 px-3 py-1 text-sm">限定公開の動画も表示する</button>
                 <p class="text-xs text-gray-600">{{ \App\Http\Controllers\OwnerEditController::UNLISTED_NOTE }}</p>
                 <p class="text-sm text-amber-800" role="alert" x-show="hasUnlistedMessage" x-text="unlistedMessage"></p>
+                {{-- 401 (login expired): reloading this page sends the owner to the preview's login link; the draft is kept. --}}
+                <p class="text-sm" x-show="needsRelogin"><a class="font-semibold underline" :href="reloginHref">もう一度ログインする</a></p>
             </div>
 
             <div x-show="hasVideos" x-cloak class="space-y-2">
