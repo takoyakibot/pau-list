@@ -56,4 +56,24 @@ class QuotaLedgerTest extends TestCase
         $this->assertFalse($r->exhausted());
         $this->assertFalse($r->covers(2));
     }
+
+    public function test_non_positive_units_are_rejected(): void
+    {
+        $ledger = app(QuotaLedger::class);
+        foreach ([0, -1] as $n) {
+            try {
+                $ledger->record(QuotaLedger::WRITE, $n);
+                $this->fail('record accepted '.$n);
+            } catch (\InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+            try {
+                $ledger->tryConsumeRead($n);
+                $this->fail('tryConsumeRead accepted '.$n);
+            } catch (\InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+        $this->assertSame(0, $ledger->used(QuotaLedger::WRITE));
+    }
 }

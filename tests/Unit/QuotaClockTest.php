@@ -36,4 +36,12 @@ class QuotaClockTest extends TestCase
         $this->travelTo(CarbonImmutable::parse('2026-11-01 16:00', 'Asia/Tokyo'));
         $this->assertSame('2026-11-01', QuotaClock::todayPt());
     }
+
+    public function test_reset_across_dst_start(): void // 2026-03-08 に夏時間開始
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-03-08 12:00', 'Asia/Tokyo'));
+        $this->assertSame('2026-03-08 17:00', QuotaClock::nextResetJst()->format('Y-m-d H:i'));
+        $this->travelTo(CarbonImmutable::parse('2026-03-08 17:00', 'Asia/Tokyo'));
+        $this->assertSame('2026-03-09 16:00', QuotaClock::nextResetJst()->format('Y-m-d H:i'));
+    }
 }

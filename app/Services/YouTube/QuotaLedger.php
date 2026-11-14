@@ -6,6 +6,7 @@ use App\Support\QuotaClock;
 use App\Support\QuotaPolicy;
 use App\Support\RemainingToday;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 
 class QuotaLedger
 {
@@ -25,6 +26,7 @@ class QuotaLedger
 
     public function record(string $bucket, int $units): void
     {
+        $this->assertPositive($units);
         $this->locked($bucket, function (int $current, callable $add) use ($units) {
             $add($units);
         });
@@ -32,6 +34,7 @@ class QuotaLedger
 
     public function tryConsumeRead(int $units): bool
     {
+        $this->assertPositive($units);
         $budget = (int) config('youtube.quota.read_budget');
 
         return $this->locked(self::READ, function (int $current, callable $add) use ($units, $budget) {
@@ -71,16 +74,30 @@ class QuotaLedger
         $day = QuotaClock::todayPt();
 
         return DB::transaction(function () use ($day, $bucket, $fn) {
-            DB::table('quota_usage')->insertOrIgnore(['day_pt' => $day, 'bucket' => $bucket, 'units' => 0]);
-            $row = DB::table('quota_usage')
+            // Lock first; insert only when the row is missing (avoids the
+            // duplicate-key S-lock deadlock of insert-then-lock on InnoDB).
+            $select = fn () => DB::table('quota_usage')
                 ->where('day_pt', $day)->where('bucket', $bucket)
                 ->lockForUpdate()->first();
+
+            $row = $select();
+            if ($row === null) {
+                DB::table('quota_usage')->insertOrIgnore(['day_pt' => $day, 'bucket' => $bucket, 'units' => 0]);
+                $row = $select();
+            }
 
             $add = fn (int $n) => DB::table('quota_usage')
                 ->where('day_pt', $day)->where('bucket', $bucket)
                 ->increment('units', $n);
 
             return $fn((int) $row->units, $add);
-        });
+        }, 3);
+    }
+
+    private function assertPositive(int $units): void
+    {
+        if ($units <= 0) {
+            throw new InvalidArgumentException('Quota units must be positive.');
+        }
     }
 }
