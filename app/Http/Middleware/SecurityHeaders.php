@@ -37,7 +37,7 @@ class SecurityHeaders
             return self::CSP;
         }
 
-        $url = trim((string) @file_get_contents(public_path('hot')));
+        $url = trim((string) @file_get_contents(Vite::hotFile()));
         $parts = parse_url($url);
         if (! isset($parts['scheme'], $parts['host'])) {
             return self::CSP;

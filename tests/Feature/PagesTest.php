@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Support\AssertsNoInlineCode;
 use Tests\TestCase;
 
@@ -37,6 +38,28 @@ class PagesTest extends TestCase
     {
         $html = $this->get('/no-such-page')->assertNotFound()->getContent();
         $this->assertNoInlineCode($html);
+    }
+
+    public static function errorCodes(): array
+    {
+        return [[401], [403], [404], [405], [413], [419], [429], [500], [503]];
+    }
+
+    #[DataProvider('errorCodes')]
+    public function test_error_views_have_suffixed_title_and_no_inline_code(int $code): void
+    {
+        $html = view("errors.$code", ['exception' => new HttpException($code)])->render();
+        $this->assertMatchesRegularExpression('#<title>[^<]+ - List Maker</title>#', $html);
+        $this->assertNoInlineCode($html);
+    }
+
+    public function test_fallback_error_views_have_suffixed_title(): void
+    {
+        foreach (['4xx' => 422, '5xx' => 502] as $view => $code) {
+            $html = view("errors.$view", ['exception' => new HttpException($code)])->render();
+            $this->assertMatchesRegularExpression('#<title>[^<]+ - List Maker</title>#', $html, $view);
+            $this->assertNoInlineCode($html);
+        }
     }
 
     public function test_home_explains_tool_and_scope_without_youtube_in_name(): void

@@ -48,6 +48,10 @@ class DeployExcludeListTest extends TestCase
         'vendor/autoload.php',
         'config/app.php',
         'artisan',
+        'vendor/example/pkg/docs/guide.md',
+        'vendor/example/pkg/tests/Fixture.php',
+        'vendor/example/pkg/README.md',
+        'vendor/example/pkg/phpunit.xml',
     ];
 
     private ?string $workDir = null;

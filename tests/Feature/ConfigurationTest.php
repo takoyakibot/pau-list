@@ -60,6 +60,15 @@ class ConfigurationTest extends TestCase
         $this->assertStringContainsString('GOOGLE_REDIRECT_URI="${APP_URL}/auth/google/callback"', $env);
     }
 
+    public function test_env_example_has_safe_values(): void
+    {
+        $env = file_get_contents(base_path('.env.example'));
+        foreach (['SESSION_DRIVER=database', 'SESSION_ENCRYPT=true', 'SESSION_SAME_SITE=lax', 'CACHE_STORE=database',
+            'QUEUE_CONNECTION=sync', 'LOG_CHANNEL=daily', 'LOG_DAILY_DAYS=14', 'CAPTCHA_ENABLED=false', 'TRUSTED_PROXIES='] as $line) {
+            $this->assertMatchesRegularExpression('/^'.preg_quote($line, '/').'$/m', $env, $line);
+        }
+    }
+
     public function test_config_keys_exist_with_expected_types(): void
     {
         foreach (['quota.write_limit', 'quota.read_budget', 'quota.google_daily',

@@ -3,21 +3,19 @@
 namespace Tests\Feature;
 
 use App\Http\Middleware\SecurityHeaders;
+use Illuminate\Support\Facades\Vite;
 use Tests\TestCase;
 
 class SecurityHeadersTest extends TestCase
 {
-    private ?string $savedHot = null;
+    private ?string $hotFile = null;
 
     protected function tearDown(): void
     {
-        $hot = public_path('hot');
-        if ($this->savedHot !== null) {
-            file_put_contents($hot, $this->savedHot);
-        } elseif (is_file($hot)) {
-            unlink($hot);
+        if ($this->hotFile !== null && is_file($this->hotFile)) {
+            unlink($this->hotFile);
         }
-        $this->savedHot = null;
+        $this->hotFile = null;
 
         if ($this->app?->maintenanceMode()->active()) {
             $this->app->maintenanceMode()->deactivate();
@@ -26,13 +24,26 @@ class SecurityHeadersTest extends TestCase
         parent::tearDown();
     }
 
+    /**
+     * 実際の public/hot には触れず、一時ファイルを Vite の hot ファイルとして使う（#18）。
+     */
     private function writeHotFile(string $url): void
     {
-        $hot = public_path('hot');
-        if (is_file($hot) && $this->savedHot === null) {
-            $this->savedHot = (string) file_get_contents($hot);
-        }
-        file_put_contents($hot, $url);
+        $this->hotFile = tempnam(sys_get_temp_dir(), 'listmaker-hot-');
+        file_put_contents($this->hotFile, $url);
+        // TestCase::setUp の withoutVite() の代役は useHotFile を無視するので、本物の Vite に戻してから差し替える
+        $this->withVite();
+        Vite::clearResolvedInstance();
+        Vite::useHotFile($this->hotFile);
+    }
+
+    /**
+     * 実際の storage/framework/down を作らないよう、メンテナンスモードは array キャッシュに置く（#18）。
+     */
+    private function activateMaintenanceInMemory(): void
+    {
+        config(['app.maintenance.driver' => 'cache', 'app.maintenance.store' => 'array']);
+        $this->app->maintenanceMode()->activate([]);
     }
 
     public function test_common_headers_on_home(): void
@@ -83,7 +94,7 @@ class SecurityHeadersTest extends TestCase
 
     public function test_maintenance_mode_503_has_security_headers(): void
     {
-        $this->app->maintenanceMode()->activate([]);
+        $this->activateMaintenanceInMemory();
 
         $res = $this->get('/');
 
@@ -113,5 +124,24 @@ class SecurityHeadersTest extends TestCase
         $this->writeHotFile('http://localhost:5173');
 
         $this->get('/')->assertHeader('Content-Security-Policy', SecurityHeaders::CSP);
+    }
+
+    public function test_tests_do_not_touch_real_hot_or_down_files(): void
+    {
+        $hot = public_path('hot');
+        $down = storage_path('framework/down');
+        $before = [file_exists($hot), file_exists($down)];
+
+        $this->app['env'] = 'local';
+        $this->writeHotFile('http://localhost:5173');
+        $this->assertStringContainsString('http://localhost:5173', $this->get('/')->headers->get('Content-Security-Policy'));
+        $this->assertSame([$before[0], $before[1]], [file_exists($hot), file_exists($down)]);
+
+        $this->activateMaintenanceInMemory();
+        $this->get('/')->assertStatus(503);
+        $this->assertSame($before, [file_exists($hot), file_exists($down)]);
+
+        $this->app->maintenanceMode()->deactivate();
+        $this->assertSame($before, [file_exists($hot), file_exists($down)]);
     }
 }

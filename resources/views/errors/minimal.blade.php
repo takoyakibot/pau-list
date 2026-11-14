@@ -1,5 +1,7 @@
 @extends('layouts.app')
 
+@section('title')@yield('error_title', 'エラー'){{ ' - List Maker' }}@endsection
+
 @section('content')
     <div class="flex items-center">
         @if (trim($__env->yieldContent('code')) !== '')
