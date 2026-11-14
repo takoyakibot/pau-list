@@ -61,6 +61,8 @@ class CreationController extends Controller
             ], 403);
         }
 
+        PlaylistCreation::recordOwnerActivity($creation->id);
+
         $progress = CreationProgress::toArray($creation, $ledger->remainingToday(), ownerLoggedIn: true);
         $titles = $creation->items()->pluck('title', 'position');
 
@@ -203,6 +205,8 @@ class CreationController extends Controller
     /**
      * The proposal's creation, or the JSON error: 404 without one, 403 when the creation belongs to another
      * channel than the logged-in owner (spec 6.4: checked again here, not only the proposal's channel).
+     * Records the owner's activity (the 7-day rule of the owner's data, PruneExpiredData) before the step or
+     * operation runs, so the daily batch never deletes the items of a creation being used.
      */
     private function creationOf(Request $request): PlaylistCreation|JsonResponse
     {
@@ -218,6 +222,7 @@ class CreationController extends Controller
         if ($creation->owner_channel_id !== $owner->channelId) {
             return response()->json(['message' => RequireOwnerSession::MISMATCH], 403);
         }
+        PlaylistCreation::recordOwnerActivity($creation->id);
 
         return $creation;
     }

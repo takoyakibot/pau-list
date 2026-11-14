@@ -201,7 +201,8 @@ class ProposalController extends Controller
         $creationStatus = match (true) {
             $creation === null => null,
             $creation->status !== PlaylistCreation::COMPLETED => 'creating',
-            $creation->youtube_playlist_id !== null => 'created',
+            // Also after a non-public playlist id was dropped with the owner's data (7 days after the last use).
+            $creation->playlistCreated() => 'created',
             // Stopped while a playlists.insert was unsettled: a playlist may exist on YouTube (CreationProgress::MAYBE_CREATED).
             $creation->playlist_attempted_at !== null => 'unknown',
             default => 'not_created',

@@ -77,12 +77,15 @@ test('sanitizeProgress keeps only the known shape', () => {
   });
   assert.deepEqual(p, {
     status: 'adding', pause_reason: null, done: 1, failed: 0, skipped: 0, total: 2, playlist_url: 'https://www.youtube.com/playlist?list=PLx',
-    message: '', remaining_today: 'r', items: [{ position: 0, status: 'done', error: '' }, { position: 1, status: 'pending', error: 'e' }],
+    playlist_created: true, message: '', remaining_today: 'r', items: [{ position: 0, status: 'done', error: '' }, { position: 1, status: 'pending', error: 'e' }],
   });
   assert.equal(sanitizeProgress(null), null);
   assert.equal(sanitizeProgress({ status: 3 }), null);
   // Only YouTube playlist URLs are used as links.
   assert.equal(sanitizeProgress({ status: 'completed', playlist_url: 'javascript:alert(1)' }).playlist_url, null);
+  // A created playlist whose id was dropped 7 days after the owner's last use: no link, but created.
+  assert.equal(sanitizeProgress({ status: 'completed', playlist_url: null, playlist_created: true }).playlist_created, true);
+  assert.equal(sanitizeProgress({ status: 'completed', playlist_url: null, playlist_created: 'yes' }).playlist_created, false);
 });
 
 test('rowsFor merges titles by position', () => {

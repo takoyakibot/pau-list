@@ -44,6 +44,13 @@ class PlaylistCreation extends Model
             'started_at' => 'immutable_datetime',
             'completed_at' => 'immutable_datetime',
             'updated_at' => 'immutable_datetime',
+            'owner_last_active_at' => 'immutable_datetime',
+            'authorized_data_pruned_at' => 'immutable_datetime',
+            'pruned_had_playlist' => 'boolean',
+            'done_count' => 'integer',
+            'failed_count' => 'integer',
+            'skipped_count' => 'integer',
+            'total_count' => 'integer',
         ];
     }
 
@@ -63,6 +70,27 @@ class PlaylistCreation extends Model
     public function reservations(): HasMany
     {
         return $this->hasMany(QuotaReservation::class, 'creation_id');
+    }
+
+    /**
+     * The logged-in owner used this creation now (start, step, operation, S6 view, logout): data obtained with the
+     * owner's token is kept until 7 days after the last use (PruneExpiredData). Only this column is written.
+     */
+    public static function recordOwnerActivity(int $id): void
+    {
+        self::whereKey($id)->toBase()->update(['owner_last_active_at' => now()]);
+    }
+
+    /** The items were deleted 7 days after the owner's last use; only the counts remain (*_count). */
+    public function isPruned(): bool
+    {
+        return $this->authorized_data_pruned_at !== null;
+    }
+
+    /** A playlist was created on YouTube (its id may have been dropped with the owner's data). */
+    public function playlistCreated(): bool
+    {
+        return $this->youtube_playlist_id !== null || $this->pruned_had_playlist === true;
     }
 
     public function playlistUrl(): ?string

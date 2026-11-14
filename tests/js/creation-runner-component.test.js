@@ -178,3 +178,13 @@ test('another button disarms a pending abort confirmation', async () => {
   await resuming;
   assert.equal(h.requests.filter((r) => r.url === URLS.abort).length, 0);
 });
+
+test('remake hint is hidden once a playlist was created, even without its link', () => {
+  const { runner } = harness();
+  runner.progress = progress('completed');
+  assert.equal(runner.showRemakeHint, true);
+  runner.progress = progress('completed', { playlist_created: true });
+  assert.equal(runner.showRemakeHint, false);
+  runner.progress = progress('completed', { playlist_url: 'https://www.youtube.com/playlist?list=PLx', playlist_created: true });
+  assert.equal(runner.showRemakeHint, false);
+});

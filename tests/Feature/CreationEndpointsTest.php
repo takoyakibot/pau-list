@@ -95,7 +95,7 @@ class CreationEndpointsTest extends TestCase
             ],
         ]);
         $this->assertSame(
-            ['status', 'pause_reason', 'done', 'failed', 'skipped', 'total', 'playlist_url', 'message', 'remaining_today', 'items', 'next_delay_ms'],
+            ['status', 'pause_reason', 'done', 'failed', 'skipped', 'total', 'playlist_url', 'playlist_created', 'message', 'remaining_today', 'items', 'next_delay_ms'],
             array_keys($res->json()),
         );
     }
