@@ -17,12 +17,14 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
+use PHPUnit\Framework\Attributes\Group;
+use Tests\Support\FailsQueries;
 use Tests\Support\FakesYouTube;
 use Tests\TestCase;
 
 class StoreProposalTest extends TestCase
 {
-    use FakesYouTube, RefreshDatabase;
+    use FailsQueries, FakesYouTube, RefreshDatabase;
 
     private const A = 'aaaaaaaaaaa';
 
@@ -417,10 +419,11 @@ class StoreProposalTest extends TestCase
         $this->assertSame('n', $p->proposer_name);
     }
 
+    #[Group('mysql')]
     public function test_database_error_redirects_with_message_and_logs_no_bindings(): void
     {
         $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
-        Schema::drop('proposal_items');
+        $this->failQueriesOn('proposal_items');
         Log::spy();
         $this->store(['title' => 't', 'video_ids' => [self::A]])
             ->assertRedirect(route('channels.propose', $this->id))
@@ -431,7 +434,8 @@ class StoreProposalTest extends TestCase
         Log::shouldHaveReceived('error')->withArgs(function ($msg, $ctx = []) {
             $all = $msg.json_encode($ctx);
 
-            return preg_match('/[0-9a-f]{64}/', $all) === 0 && ! str_contains($all, 'insert');
+            return preg_match('/[0-9a-f]{64}/', $all) === 0 && ! str_contains($all, 'insert')
+                && preg_match('/"sqlstate":"[0-9A-Z]{5}"/', json_encode($ctx)) === 1;
         })->once();
     }
 

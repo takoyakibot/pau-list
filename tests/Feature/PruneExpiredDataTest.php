@@ -15,11 +15,13 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Sleep;
+use PHPUnit\Framework\Attributes\Group;
+use Tests\Support\FailsQueries;
 use Tests\TestCase;
 
 class PruneExpiredDataTest extends TestCase
 {
-    use RefreshDatabase;
+    use FailsQueries, RefreshDatabase;
 
     protected function setUp(): void
     {
@@ -258,11 +260,12 @@ class PruneExpiredDataTest extends TestCase
         $this->assertSame(['fresh'], DB::table('sessions')->pluck('id')->all());
     }
 
+    #[Group('mysql')]
     public function test_failing_step_does_not_stop_the_others_and_exits_non_zero(): void
     {
         $this->proposal(now()->subDays(31), 'aaaaaaaaaaa');
         DB::table('sessions')->insert(['id' => 'stale', 'user_id' => null, 'payload' => '', 'last_activity' => now()->getTimestamp() - 121 * 60]);
-        Schema::drop('quota_usage');
+        $this->failQueriesOn('quota_usage');
         $logged = [];
         Event::listen(MessageLogged::class, function (MessageLogged $e) use (&$logged) {
             $logged[] = $e->message.' '.json_encode($e->context);
@@ -279,7 +282,7 @@ class PruneExpiredDataTest extends TestCase
         $this->assertCount(1, $logged);
         $this->assertStringContainsString('Prune step failed', $logged[0]);
         $this->assertStringContainsString('"step":"quota_usage"', $logged[0]);
-        $this->assertStringContainsString('"sqlstate":"HY000"', $logged[0]);
+        $this->assertStringContainsString('"sqlstate":"42S02"', $logged[0]);
         $this->assertStringNotContainsStringIgnoringCase('delete from', $logged[0]);
         $this->assertStringNotContainsString('2026-', $logged[0]);
     }

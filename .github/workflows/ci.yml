@@ -1,4 +1,5 @@
-# PHP テスト（SQLite）・Pint・依存の脆弱性監査・フロントエンドビルドの CI。
+# PHP テスト（SQLite と MySQL グループ）・Pint・依存の脆弱性監査・フロントエンドビルドの CI。
+# MySQL ジョブは mysql グループ（MySQL でしか確かめられない照合順序・行ロック等）だけを流す。
 # PHP ジョブはテストが withoutVite() で動くため public/build（Vite ビルド）を必要としない。
 name: CI
 
@@ -58,6 +59,64 @@ jobs:
 
       - name: Check code style (Pint)
         run: ./vendor/bin/pint --test
+
+  php-mysql:
+    name: PHP tests (MySQL group)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.4
+        # 空の root パスワードはこのジョブ内のサービス限定（秘密値は使わない）
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+          MYSQL_DATABASE: listmaker_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    # phpunit.xml の <env> は force 無しなので、ここで渡す値が優先される
+    env:
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_DATABASE: listmaker_test
+      DB_USERNAME: root
+      DB_PASSWORD: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_mysql
+          coverage: none
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache composer packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install composer dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      # APP_KEY はワークフローに書かず、実行時に使い捨てのものを生成する
+      - name: Generate app key
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Run MySQL test group
+        run: php artisan test --group=mysql
 
   frontend:
     name: Frontend build
