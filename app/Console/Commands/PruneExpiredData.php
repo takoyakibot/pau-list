@@ -70,7 +70,10 @@ class PruneExpiredData extends Command
         return $this->failed ? self::FAILURE : self::SUCCESS;
     }
 
-    /** Deletes expired proposals and their items in chunks (items explicitly, not only via FK cascade). */
+    /**
+     * Deletes expired proposals in chunks together with their items, creation snapshot and reservations
+     * (explicitly, children first, not only via FK cascade).
+     */
     private function pruneProposals(CarbonInterface $cutoff): int
     {
         $deleted = 0;
@@ -85,6 +88,12 @@ class PruneExpiredData extends Command
                 break;
             }
             $deleted += DB::transaction(function () use ($ids) {
+                $creationIds = DB::table('playlist_creations')->whereIn('proposal_id', $ids)->pluck('id')->all();
+                if ($creationIds !== []) {
+                    DB::table('quota_reservations')->whereIn('creation_id', $creationIds)->delete();
+                    DB::table('playlist_creation_items')->whereIn('creation_id', $creationIds)->delete();
+                    DB::table('playlist_creations')->whereIn('id', $creationIds)->delete();
+                }
                 DB::table('proposal_items')->whereIn('proposal_id', $ids)->delete();
 
                 return DB::table('proposals')->whereIn('id', $ids)->delete();

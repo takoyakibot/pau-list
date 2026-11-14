@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Support\ProposalKey;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
 
@@ -27,6 +28,12 @@ class Proposal extends Model
     public function items(): HasMany
     {
         return $this->hasMany(ProposalItem::class)->orderBy('position');
+    }
+
+    /** @return HasOne<PlaylistCreation, $this> */
+    public function creation(): HasOne
+    {
+        return $this->hasOne(PlaylistCreation::class);
     }
 
     public static function findLiveByKey(string $key): ?self

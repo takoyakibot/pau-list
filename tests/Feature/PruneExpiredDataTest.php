@@ -97,6 +97,55 @@ class PruneExpiredDataTest extends TestCase
         $this->assertSame(0, DB::table('proposal_items')->whereIn('proposal_id', [$edge->id, $gone->id, $older->id])->count());
     }
 
+    /** A creation with two items and one reservation for the proposal; returns the creation id. */
+    private function creation(Proposal $proposal): int
+    {
+        $creationId = DB::table('playlist_creations')->insertGetId([
+            'proposal_id' => $proposal->id,
+            'owner_channel_id' => $proposal->channel_id,
+            'title' => 't',
+            'description' => '',
+            'privacy_status' => 'private',
+            'status' => 'adding',
+            'estimated_units' => 150,
+            'started_at' => now(),
+            'updated_at' => now(),
+        ]);
+        foreach (['xxxxxxxxxx1', 'xxxxxxxxxx2'] as $i => $videoId) {
+            DB::table('playlist_creation_items')->insert([
+                'creation_id' => $creationId,
+                'position' => $i,
+                'video_id' => $videoId,
+                'title' => 'v',
+                'is_outside_channel' => false,
+                'status' => 'pending',
+            ]);
+        }
+        DB::table('quota_reservations')->insert([
+            'creation_id' => $creationId,
+            'day_pt' => '2026-11-13',
+            'reserved_units' => 150,
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return $creationId;
+    }
+
+    public function test_deletes_creation_records_with_expired_proposal(): void
+    {
+        $gone = $this->creation($this->proposal(now()->subDays(31), 'aaaaaaaaaaa'));
+        $kept = $this->creation($this->proposal(now()->subDays(28), 'bbbbbbbbbbb'));
+
+        $this->artisan('app:prune-expired')->expectsOutput('proposals: 1')->assertSuccessful();
+
+        $this->assertSame([$kept], DB::table('playlist_creations')->pluck('id')->all());
+        $this->assertSame(0, DB::table('playlist_creation_items')->where('creation_id', $gone)->count());
+        $this->assertSame(2, DB::table('playlist_creation_items')->where('creation_id', $kept)->count());
+        $this->assertSame([$kept], DB::table('quota_reservations')->pluck('creation_id')->all());
+    }
+
     private function channel(string $id, CarbonInterface $cachedSince): void
     {
         $cachedSince = CarbonImmutable::instance($cachedSince);

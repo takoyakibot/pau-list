@@ -20,6 +20,8 @@ class MySqlCollationTest extends TestCase
         'channel_cache_expirations' => ['channel_id'],
         'proposals' => ['channel_id'],
         'proposal_items' => ['video_id', 'video_channel_id'],
+        'playlist_creations' => ['owner_channel_id', 'youtube_playlist_id'],
+        'playlist_creation_items' => ['video_id', 'youtube_item_id'],
     ];
 
     protected function setUp(): void
