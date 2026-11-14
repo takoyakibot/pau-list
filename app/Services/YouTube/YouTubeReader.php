@@ -123,24 +123,38 @@ class YouTubeReader
             ], $bucket);
 
             foreach ($this->items($json, 'videos') as $item) {
-                $id = $item['id'] ?? null;
-                if (! is_string($id) || ! in_array($id, $chunk, true)) {
-                    continue;
+                $video = self::videoInfo($item);
+                if ($video !== null && in_array($video->id, $chunk, true)) {
+                    $result[$video->id] = $video;
                 }
-                $result[$id] = new VideoInfo(
-                    $id,
-                    self::title($item['snippet']['title'] ?? null),
-                    self::thumbnail($item['snippet']['thumbnails'] ?? null, self::VIDEO_THUMB_PREFIXES),
-                    self::channelId($item['snippet']['channelId'] ?? null),
-                    self::title($item['snippet']['channelTitle'] ?? null),
-                    IsoDuration::toSeconds(is_string($d = $item['contentDetails']['duration'] ?? null) ? $d : null),
-                    self::date($item['snippet']['publishedAt'] ?? null),
-                    self::str($item['status']['privacyStatus'] ?? null, 'unknown'),
-                );
             }
         }
 
         return $result;
+    }
+
+    /**
+     * One videos.list resource; null unless its id is a video id. Shared with YouTubeOwnerClient::videos().
+     *
+     * @param  array<string, mixed>  $item
+     */
+    public static function videoInfo(array $item): ?VideoInfo
+    {
+        $id = $item['id'] ?? null;
+        if (! is_string($id) || preg_match(VideoUrl::ID_PATTERN, $id) !== 1) {
+            return null;
+        }
+
+        return new VideoInfo(
+            $id,
+            self::title($item['snippet']['title'] ?? null),
+            self::thumbnail($item['snippet']['thumbnails'] ?? null, self::VIDEO_THUMB_PREFIXES),
+            self::channelId($item['snippet']['channelId'] ?? null),
+            self::title($item['snippet']['channelTitle'] ?? null),
+            IsoDuration::toSeconds(is_string($d = $item['contentDetails']['duration'] ?? null) ? $d : null),
+            self::date($item['snippet']['publishedAt'] ?? null),
+            self::str($item['status']['privacyStatus'] ?? null, 'unknown'),
+        );
     }
 
     /** @return array<string, mixed> */
@@ -214,12 +228,14 @@ class YouTubeReader
         return is_string($value) && preg_match(ChannelInput::ID_PATTERN, $value) === 1 ? $value : '';
     }
 
-    private static function title(mixed $value): string
+    /** Titles are cut at 200 characters (shared with YouTubeOwnerClient). */
+    public static function title(mixed $value): string
     {
         return mb_substr(self::str($value), 0, 200);
     }
 
-    private static function date(mixed $value): ?CarbonImmutable
+    /** A strict ISO-8601 timestamp, or null (shared with YouTubeOwnerClient). */
+    public static function date(mixed $value): ?CarbonImmutable
     {
         if (! is_string($value) || preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/D', $value) !== 1) {
             return null;
