@@ -49,7 +49,8 @@ class SecurityHeaders
 
         return strtr(self::CSP, [
             "script-src 'self'" => "script-src 'self' $origin",
-            "style-src 'self'" => "style-src 'self' $origin",
+            // Vite dev はインライン <style> を注入するため、local の hot 時に限り style-src のみ緩める
+            "style-src 'self'" => "style-src 'self' $origin 'unsafe-inline'",
             "connect-src 'self'" => "connect-src 'self' $origin $ws",
         ]);
     }

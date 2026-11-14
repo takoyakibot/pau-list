@@ -13,7 +13,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->append(SecurityHeaders::class);
+        // prepend: 最外周に置き、フレームワークのグローバルミドルウェアが返す応答
+        // （413 PostTooLarge、503 メンテナンスなど）にもヘッダーを付ける
+        $middleware->prepend(SecurityHeaders::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
