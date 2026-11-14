@@ -22,7 +22,7 @@ class VideoLookupTest extends TestCase
 
     private function lookup(string $url, ?string $channel = null)
     {
-        return $this->getJson(route('channels.video', $channel ?? $this->ch()).'?url='.urlencode($url));
+        return $this->getJson(route('channels.video', $channel ?? $this->ch()).'?url='.urlencode($url), ['Sec-Fetch-Site' => 'same-origin']);
     }
 
     public function test_returns_video_with_outside_flag(): void
@@ -51,10 +51,10 @@ class VideoLookupTest extends TestCase
     {
         Http::fake();
         $msg = ['message' => '動画の URL を確認してください'];
-        $this->getJson(route('channels.video', $this->ch()))->assertStatus(422)->assertExactJson($msg);
+        $this->getJson(route('channels.video', $this->ch()), ['Sec-Fetch-Site' => 'same-origin'])->assertStatus(422)->assertExactJson($msg);
         $this->lookup('https://example.com/watch?v='.self::VID)->assertStatus(422)->assertExactJson($msg);
         $this->lookup('https://youtu.be/'.str_repeat('a', 200))->assertStatus(422);
-        $this->getJson(route('channels.video', $this->ch()).'?url[]=x')->assertStatus(422);
+        $this->getJson(route('channels.video', $this->ch()).'?url[]=x', ['Sec-Fetch-Site' => 'same-origin'])->assertStatus(422);
         Http::assertNothingSent();
     }
 

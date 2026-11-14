@@ -286,7 +286,7 @@ class StoreProposalTest extends TestCase
         $this->fakeVideos([$this->videoResource(self::A, $this->id), $this->videoResource(self::B, $other)]);
         $this->get(route('channels.propose', $this->id))->assertOk();
         // a lookup fetch must not become the "previous URL" (no-referrer makes back() use the session)
-        $this->get(route('channels.video', $this->id).'?url='.urlencode('https://youtu.be/'.self::B))->assertOk();
+        $this->get(route('channels.video', $this->id).'?url='.urlencode('https://youtu.be/'.self::B), ['Sec-Fetch-Site' => 'same-origin'])->assertOk();
         $this->get(route('channels.video', $this->id).'?url='.urlencode('https://youtu.be/'.self::A), ['X-Requested-With' => 'XMLHttpRequest', 'Accept' => 'application/json'])->assertOk();
 
         // service error path
