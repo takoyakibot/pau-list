@@ -10,12 +10,19 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   php:
     name: PHP tests (SQLite) / Pint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -55,8 +62,11 @@ jobs:
   frontend:
     name: Frontend build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -72,4 +82,9 @@ jobs:
 
       # 標準 Alpine ビルド（new Function を使う）が混入していないこと
       - name: Verify CSP-safe Alpine build
-        run: "! grep -l 'new Function' public/build/assets/*.js"
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(public/build/assets/*.js)
+          test ${#files[@]} -gt 0
+          ! grep -q 'new Function' "${files[@]}"
