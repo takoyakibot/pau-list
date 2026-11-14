@@ -1,5 +1,9 @@
 @extends('layouts.app')
 
+@push('vite')
+    @vite('resources/js/home.js')
+@endpush
+
 @section('title', 'List Maker（仮称）')
 
 @section('content')
@@ -26,4 +30,10 @@
             <p id="q-error" role="alert" class="mt-2 text-sm text-red-700">{{ $message }}</p>
         @enderror
     </form>
+
+    <section id="my-proposals" hidden aria-labelledby="my-proposals-heading" class="mt-10">
+        <h2 id="my-proposals-heading" class="text-lg font-semibold">この端末で作った提案</h2>
+        <p class="mt-1 text-xs text-gray-600">この端末のブラウザにだけ保存されています</p>
+        <ul data-list class="mt-2 space-y-1 text-sm"></ul>
+    </section>
 @endsection

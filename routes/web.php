@@ -31,3 +31,7 @@ Route::post('/channels/{channelId}/proposals', [ProposalController::class, 'stor
 Route::get('/p/{key}/shared', [ProposalController::class, 'shared'])
     ->where('key', ProposalKey::ROUTE_PATTERN)
     ->name('proposals.shared');
+
+Route::get('/p/{key}', [ProposalController::class, 'show'])
+    ->where('key', ProposalKey::ROUTE_PATTERN)
+    ->name('proposals.show');

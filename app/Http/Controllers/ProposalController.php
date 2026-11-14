@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreProposalRequest;
+use App\Models\Proposal;
 use App\Services\CatalogStatus;
 use App\Services\ChannelCacheMissing;
 use App\Services\ChannelVideoCatalog;
@@ -124,9 +125,28 @@ class ProposalController extends Controller
         return redirect()->route('proposals.shared', $created->key);
     }
 
-    public function shared(string $key): never
+    /**
+     * S3: shown only right after saving (the key is flashed once); afterwards it moves to the preview.
+     */
+    public function shared(string $key): Response|RedirectResponse
     {
-        // Implemented in Task 14.
+        $proposal = hash_equals((string) session('proposal_key_shown'), $key)
+            ? Proposal::findLiveByKey($key)
+            : null;
+
+        if ($proposal === null) {
+            return redirect()->route('proposals.show', $key);
+        }
+
+        return response()->view('proposals.shared', [
+            'proposal' => $proposal,
+            'url' => route('proposals.show', $key),
+        ]);
+    }
+
+    public function show(string $key): never
+    {
+        // Implemented in Task 15.
         abort(404);
     }
 }
