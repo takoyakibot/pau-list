@@ -319,12 +319,8 @@ final class CreationRunner
                 $this->progressTo($c, PlaylistCreation::ADDING, [PlaylistCreation::CREATING_PLAYLIST, PlaylistCreation::PENDING]);
             } elseif ($c->youtube_playlist_id !== $o->id) {
                 // A slow insert succeeded after another playlist was adopted: YouTube now has an extra playlist.
-                // Keep the adopted one, but never drop this silently (ids as short prefixes only).
-                Log::warning('Creation late playlist insert', [
-                    'creation_id' => $c->id,
-                    'kept' => substr($c->youtube_playlist_id, 0, 8),
-                    'late' => substr($o->id, 0, 8),
-                ]);
+                // Keep the adopted one, but never drop this silently (no playlist ids in the log, spec 8.8).
+                Log::warning('Creation late playlist insert', ['creation_id' => $c->id]);
             }
             if ($ours) {
                 $c->playlist_leased_at = null;

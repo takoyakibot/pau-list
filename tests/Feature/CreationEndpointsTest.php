@@ -603,4 +603,23 @@ class CreationEndpointsTest extends TestCase
         $this->act($key, 'resume')->assertOk()->assertJson(['status' => 'adding']);
         $this->assertSame([null, null], [$c->refresh()->pause_reason, $c->paused_day_pt]);
     }
+
+    public function test_pause_resume_abort_and_recreate_share_a_per_session_limit(): void
+    {
+        // Final review (security M3): 30 operations per minute per session, shared by the four buttons.
+        [$key] = $this->owned(2, ['status' => PlaylistCreation::PAUSED, 'pause_reason' => PlaylistCreation::PAUSE_USER], 150);
+        $cookie = session()->getId();
+        $act = fn (string $action) => $this->withCookie(config('session.cookie'), $cookie)->act($key, $action);
+
+        for ($i = 0; $i < 30; $i++) {
+            $act(['pause', 'recreate'][$i % 2])->assertOk();
+        }
+        foreach (['pause', 'resume', 'abort', 'recreate'] as $action) {
+            $act($action)->assertStatus(429)->assertJson(['message' => 'アクセスが集中しています。しばらく待ってから再度お試しください']);
+        }
+        $this->assertSame(PlaylistCreation::PAUSED, PlaylistCreation::sole()->status);
+
+        $this->travel(61)->seconds();
+        $act('pause')->assertOk();
+    }
 }

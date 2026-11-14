@@ -836,8 +836,9 @@ class CreationRunnerTest extends TestCase
         $late = array_values(array_filter($logged, fn ($l) => $l[1] === 'Creation late playlist insert'));
         $this->assertCount(1, $late);
         $this->assertSame('warning', $late[0][0]);
-        $this->assertSame(['creation_id' => $c->id, 'kept' => 'PLadopte', 'late' => 'PLlate00'], $late[0][2]);
-        $this->assertStringNotContainsString('PLlate000123', json_encode($logged));
+        $this->assertSame(['creation_id' => $c->id], $late[0][2]); // no playlist ids, not even prefixes
+        $this->assertStringNotContainsString('PLlate', json_encode($logged));
+        $this->assertStringNotContainsString('PLadopte', json_encode($logged));
     }
 
     // ---- final review fixes (race 1, 3, 4) ----

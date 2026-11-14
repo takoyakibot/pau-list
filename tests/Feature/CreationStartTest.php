@@ -90,7 +90,7 @@ class CreationStartTest extends TestCase
         $this->assertSame(0, app(QuotaLedger::class)->used(QuotaLedger::WRITE));
         $this->assertSame(2, ProposalItem::count());
         $res->assertSessionHas('creation_autostart', true);
-        Log::shouldHaveReceived('info')->with('Creation started', ['creation_id' => $c->id, 'items' => 2, 'reserved_units' => 150])->once();
+        Log::shouldHaveReceived('info')->with('Creation started', ['creation_id' => $c->id, 'channel' => 'UCaaaaaa', 'items' => 2, 'reserved_units' => 150])->once();
     }
 
     public function test_edited_order_title_and_privacy_are_used(): void

@@ -125,6 +125,8 @@ class CreationStarter
         if ($started->created) {
             Log::info('Creation started', [
                 'creation_id' => $started->creation->id,
+                // Which channel holds the reservation (an operator may release it: app:release-creation-reservation).
+                'channel' => substr($proposal->channel_id, 0, 8),
                 'items' => $n,
                 'reserved_units' => $estimated,
             ]);
