@@ -141,7 +141,7 @@ class ProposalController extends Controller
     {
         $proposal = ProposalKey::isWellFormed($key)
             && hash_equals((string) session('proposal_key_shown'), ProposalKey::hash($key))
-            ? Proposal::findLiveByKey($key)
+            ? $this->findLive($key)
             : null;
 
         if ($proposal === null) {
@@ -154,9 +154,30 @@ class ProposalController extends Controller
         ]);
     }
 
-    public function show(string $key): never
+    /**
+     * S4: public preview. Unknown and expired keys return the same 404.
+     */
+    public function show(string $key, QuotaLedger $ledger): Response
     {
-        // Implemented in Task 15.
-        abort(404);
+        $proposal = $this->findLive($key) ?? abort(404);
+        $items = $proposal->items()->get();
+
+        return response()->view('proposals.show', [
+            'proposal' => $proposal,
+            'items' => $items,
+            'totalSeconds' => (int) $items->sum('duration_seconds'),
+            'remaining' => $ledger->remainingToday(),
+        ]);
+    }
+
+    private function findLive(string $key): ?Proposal
+    {
+        try {
+            return Proposal::findLiveByKey($key);
+        } catch (QueryException $e) {
+            // The exception message contains SQL bindings (the full key hash): never report it as is.
+            Log::error('Proposal lookup failed (database)', ['sqlstate' => (string) $e->getCode()]);
+            abort(503);
+        }
     }
 }

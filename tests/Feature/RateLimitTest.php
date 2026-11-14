@@ -91,7 +91,8 @@ class RateLimitTest extends TestCase
 
     public function test_404_page_is_japanese(): void
     {
-        $res = $this->get('/p/'.str_repeat('a', 43))->assertNotFound()->assertSee('ページが見つかりません');
+        // No database in this test class: a malformed key never reaches the lookup (PreviewScreenTest covers live/expired keys).
+        $res = $this->get('/p/'.str_repeat('a', 42))->assertNotFound()->assertSee('ページが見つかりません');
         $res->assertSee('30 日');
     }
 
