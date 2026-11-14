@@ -79,6 +79,7 @@ class CreationStarter
                         'status' => PlaylistCreation::PENDING,
                         'estimated_units' => $estimated,
                         'started_at' => now(),
+                        'owner_last_active_at' => now(),
                     ]);
                 } catch (UniqueConstraintViolationException) {
                     // Last line of defense against a double start (spec 7.2): another request created it after our
@@ -173,6 +174,8 @@ class CreationStarter
 
     private function insufficient(WriteLock $lock, int $n): InsufficientWriteQuota
     {
+        Log::info('Write quota insufficient', ['items' => $n, 'free_units' => $lock->free()]);
+
         return new InsufficientWriteQuota(
             new RemainingToday(QuotaPolicy::itemsAffordable($lock->free()), QuotaClock::nextResetJst()),
             $n,

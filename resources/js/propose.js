@@ -1,5 +1,5 @@
 import { toggleVideo, addVideo, removeVideo, moveVideo, restoreSelection, markUnavailable, selectionFromOldIds, maxItemsFrom } from './lib/selection.js';
-import { formatPublishedDate } from './lib/format.js';
+import { formatPublishedDate, watchUrl } from './lib/format.js';
 import { filterVideos } from './lib/filter.js';
 import { loadSelection, saveSelection, clearSelection } from './lib/storage.js';
 import { countChars, isOverLimit } from './lib/text.js';
@@ -101,6 +101,7 @@ document.addEventListener('alpine:init', () => {
     isSelected() { return this.selected.some((x) => x.id === this.video.id); },
     isCheckDisabled() { return this.isFull && !this.isSelected(); },
     publishedLabel() { return formatPublishedDate(this.video.published_at); },
+    watchHref() { return watchUrl(this.video.id); },
 
     // --- actions ---
     persist() {

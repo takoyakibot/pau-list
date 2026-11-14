@@ -8,3 +8,10 @@ export function formatPublishedDate(iso) {
   const parts = Object.fromEntries(JST_DATE.formatToParts(d).map((p) => [p.type, p.value]));
   return `${parts.month}月${parts.day}日`;
 }
+
+const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
+
+// The YouTube watch page for a video id, '' when the id is not a well-formed 11-char id.
+export function watchUrl(id) {
+  return typeof id === 'string' && VIDEO_ID.test(id) ? `https://www.youtube.com/watch?v=${id}` : '';
+}

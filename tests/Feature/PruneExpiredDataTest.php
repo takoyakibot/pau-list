@@ -47,12 +47,13 @@ class PruneExpiredDataTest extends TestCase
         $this->assertTrue($event->withoutOverlapping);
     }
 
-    public function test_only_prune_is_scheduled(): void
+    public function test_only_prune_jobs_are_scheduled(): void
     {
-        // No periodic re-fetch job (spec 10.5)
+        // No periodic re-fetch job (spec 10.5); sessions are also pruned hourly (spec 4.3)
         $events = app(Schedule::class)->events();
-        $this->assertCount(1, $events);
+        $this->assertCount(2, $events);
         $this->assertStringContainsString('app:prune-expired', (string) $events[0]->command);
+        $this->assertStringContainsString('app:prune-sessions', (string) $events[1]->command);
     }
 
     private function proposal(CarbonInterface $createdAt, string $videoId): Proposal

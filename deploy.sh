@@ -30,7 +30,14 @@ fi
 : "${REMOTE_PATH:?deploy.env に REMOTE_PATH を設定してください}"
 SITE_URL="${SITE_URL:-}"
 
+# rsync の転送先なので、空白・; などを含む値や / そのもの、. / .. の区間（親や / に解決されうる）は受け付けない（--delete-after で消えるため）
+if ! [[ "$REMOTE_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]] || [[ "$REMOTE_PATH" =~ ^/+$ ]] || [[ "$REMOTE_PATH/" =~ /\.{1,2}/ ]]; then
+  echo "❌ REMOTE_PATH は / で始まる絶対パス（英数字と . _ / - のみ、/ だけ・. や .. の区間は不可）にしてください"
+  exit 1
+fi
+
 DEV_DEPS_STRIPPED=0
+RSYNC_DONE=0
 
 on_exit() {
   local status=$?
@@ -39,7 +46,11 @@ on_exit() {
   fi
   echo ""
   echo "❌ デプロイが途中で失敗しました（終了コード: ${status}）"
-  echo "   本番への反映は完了していません。上のログを確認して再実行してください。"
+  if [ "$RSYNC_DONE" -eq 1 ]; then
+    echo "   ファイルは本番に転送済みです。サーバー側の手順（migrate など）が終わっていません。上のログを確認して再実行してください。"
+  else
+    echo "   本番への反映は完了していません。上のログを確認して再実行してください。"
+  fi
   if [ "$DEV_DEPS_STRIPPED" -eq 1 ]; then
     echo "▶ ローカルの開発用依存を復元します"
     composer install || echo "⚠ 復元に失敗しました。手動で 'composer install' を実行してください"
@@ -84,9 +95,10 @@ if [ -f "public/hot" ]; then
 fi
 
 echo "▶ 2. rsync で本番転送"
-rsync -avz --exclude-from=".exclude-list" --delete \
+rsync -avz --exclude-from=".exclude-list" --delete-after \
   -e "ssh -i $SSH_KEY -p 22" \
   . "$SERVER:$REMOTE_PATH/"
+RSYNC_DONE=1
 
 echo "▶ 3. サーバー側でマイグレーションとキャッシュクリア"
 ssh -i "$SSH_KEY" -p 22 "$SERVER" "bash -s" <<REMOTE_SCRIPT

@@ -16,10 +16,10 @@
 deploy.sh
 deploy.env
 deploy.env.example
-docs
-tests
-phpunit.xml
-README.md
+/docs
+/tests
+/phpunit.xml
+/README.md
 node_modules
 public/hot
 storage/logs
@@ -29,3 +29,4 @@ database/database.sqlite
 .npmrc
 .phpunit.cache
 .phpunit.result.cache
+/public/.well-known

@@ -37,6 +37,8 @@ class DeployExcludeListTest extends TestCase
         'database/database.sqlite',
         'phpunit.xml',
         'deploy.sh',
+        // Let's Encrypt's challenge files on the server: excluded so that --delete-after never removes them.
+        'public/.well-known/acme-challenge/token',
     ];
 
     private const MUST_TRANSFER = [
@@ -48,6 +50,10 @@ class DeployExcludeListTest extends TestCase
         'vendor/autoload.php',
         'config/app.php',
         'artisan',
+        'vendor/example/pkg/docs/guide.md',
+        'vendor/example/pkg/tests/Fixture.php',
+        'vendor/example/pkg/README.md',
+        'vendor/example/pkg/phpunit.xml',
     ];
 
     private ?string $workDir = null;

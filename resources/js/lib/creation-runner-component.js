@@ -104,7 +104,7 @@ export function createCreationRunner(deps = BROWSER) {
     get playlistUrl() { return this.progress.playlist_url; },
     get hasPlaylist() { return this.progress.playlist_url !== null; },
     get isCompleted() { return this.progress.status === 'completed'; },
-    get showRemakeHint() { return this.isCompleted && !this.hasPlaylist; },
+    get showRemakeHint() { return this.isCompleted && !this.hasPlaylist && this.progress.playlist_created !== true; },
     get buttons() { return buttonsFor(this.progress); },
     get showPause() { return this.buttons.pause; },
     // Also after the loop stopped on network failures while the creation itself is still running.

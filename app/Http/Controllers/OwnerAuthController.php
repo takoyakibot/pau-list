@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\PlaylistCreation;
 use App\Models\Proposal;
 use App\Services\YouTube\GoogleOAuth;
 use App\Services\YouTube\OAuthFailed;
@@ -12,9 +13,11 @@ use App\Support\OwnerSession;
 use App\Support\PendingLogin;
 use App\Support\Pkce;
 use App\Support\ProposalKey;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Google login for channel owners (spec 6.1-6.3, checklist 6.7).
@@ -166,10 +169,22 @@ class OwnerAuthController extends Controller
     public function logout(Request $request): RedirectResponse
     {
         $token = $this->owners->tokenForRevoke();
+        $channelId = $this->owners->current()?->channelId;
         $revokeFailed = $token !== null && ! $this->oauth->revoke($token);
 
         $request->session()->invalidate();
         $request->session()->regenerateToken();
+
+        // Logging out (and revoking) counts as the owner's last use: the owner's data in the creations is deleted
+        // 7 days after it (PruneExpiredData). A failure here never keeps the owner logged in.
+        if ($channelId !== null) {
+            try {
+                PlaylistCreation::where('owner_channel_id', $channelId)->whereNull('authorized_data_pruned_at')
+                    ->toBase()->update(['owner_last_active_at' => now()]);
+            } catch (QueryException $e) {
+                Log::error('Owner activity not recorded at logout', ['sqlstate' => (string) $e->getCode()]);
+            }
+        }
 
         return redirect()->route('owner.logged-out')->with('revoke_failed', $revokeFailed);
     }

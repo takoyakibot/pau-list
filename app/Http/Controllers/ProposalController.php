@@ -19,6 +19,7 @@ use App\Support\OwnerSession;
 use App\Support\ProposalKey;
 use App\Support\ProposalStoreLimits;
 use App\Support\QuotaPolicy;
+use App\Support\RateLimitLog;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\RedirectResponse;
@@ -37,6 +38,7 @@ class ProposalController extends Controller
     ): Response {
         // Only a request that needs the YouTube API consumes the per-IP fetch limit.
         if (! $catalog->isReusable($channelId) && ! $throttle->attempt($request)) {
+            RateLimitLog::exceeded('channel-fetch');
             abort(429, '', ['Retry-After' => (string) $throttle->retryAfter($request)]);
         }
 
@@ -111,6 +113,10 @@ class ProposalController extends Controller
         // limiter's 429 (back to the form with the input kept).
         $retryAfter = $limits->retryAfter($request);
         if ($retryAfter !== null) {
+            RateLimitLog::exceeded('proposal-store');
+            // Marked on the base request (the one the exception handler renders with; $request is a FormRequest copy)
+            // so the ThrottleRequestsException rendering does not log this refusal again as route:proposals.store.
+            request()->attributes->set(RateLimitLog::LOGGED, true);
             throw new ThrottleRequestsException('Too Many Attempts.', null, ['Retry-After' => (string) $retryAfter]);
         }
 
@@ -195,7 +201,8 @@ class ProposalController extends Controller
         $creationStatus = match (true) {
             $creation === null => null,
             $creation->status !== PlaylistCreation::COMPLETED => 'creating',
-            $creation->youtube_playlist_id !== null => 'created',
+            // Also after a non-public playlist id was dropped with the owner's data (7 days after the last use).
+            $creation->playlistCreated() => 'created',
             // Stopped while a playlists.insert was unsettled: a playlist may exist on YouTube (CreationProgress::MAYBE_CREATED).
             $creation->playlist_attempted_at !== null => 'unknown',
             default => 'not_created',

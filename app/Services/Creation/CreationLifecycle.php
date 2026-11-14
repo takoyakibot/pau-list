@@ -190,6 +190,7 @@ final class CreationLifecycle
         $this->ledger->withWriteLock(function (WriteLock $lock) use ($c, $units, $items) {
             if (! $lock->ensure($c->id, $units)) {
                 $free = $lock->free();
+                Log::info('Write quota insufficient', ['items' => $items, 'free_units' => $free]);
                 // With the playlist already created, every free 50 is one more video (the wording must not
                 // subtract the playlist's 50); recreate always needs a new playlist (id cleared afterwards).
                 $affordable = $c->youtube_playlist_id !== null && $c->status !== PlaylistCreation::NEEDS_CHECK

@@ -123,6 +123,27 @@ final class OwnerSession
         return $login;
     }
 
+    /**
+     * Run on every web request (DropExpiredOwnerData): an expired or malformed login leaves the session with its
+     * unlisted list, and an unlisted list that is stale, malformed or without a login is dropped, so neither stays
+     * in the (encrypted) session row after it can no longer be used.
+     */
+    public function dropExpired(): void
+    {
+        if ($this->session->has(self::OWNER_KEY)) {
+            $this->current();
+        }
+        if (! $this->session->has(self::UNLISTED_KEY)) {
+            return;
+        }
+        $raw = $this->session->get(self::UNLISTED_KEY);
+        if (! $this->session->has(self::OWNER_KEY)
+            || ! is_array($raw) || ! is_int($raw['fetched_at'] ?? null)
+            || now()->getTimestamp() - $raw['fetched_at'] >= self::UNLISTED_TTL_SECONDS) {
+            $this->session->forget(self::UNLISTED_KEY);
+        }
+    }
+
     /** The stored token even when expired, so logout can still revoke it. */
     public function tokenForRevoke(): ?string
     {

@@ -1,5 +1,5 @@
 import { addVideo, removeVideo, moveVideo, toggleVideo, maxItemsFrom } from './lib/selection.js';
-import { formatPublishedDate } from './lib/format.js';
+import { formatPublishedDate, watchUrl } from './lib/format.js';
 import { filterVideos } from './lib/filter.js';
 import { countChars, isOverLimit } from './lib/text.js';
 import { safeSessionStorage } from './lib/safe-storage.js';
@@ -170,6 +170,7 @@ document.addEventListener('alpine:init', () => {
     isSelected() { return this.items.some((x) => x.id === this.video.id); },
     isCheckDisabled() { return this.isFull && !this.isSelected(); },
     publishedLabel() { return formatPublishedDate(this.video.published_at); },
+    watchHref() { return watchUrl(this.video.id); },
     moveUpLabel() { return rowActionLabel(this.item, 'up'); },
     moveDownLabel() { return rowActionLabel(this.item, 'down'); },
     removeLabel() { return rowActionLabel(this.item, 'remove'); },

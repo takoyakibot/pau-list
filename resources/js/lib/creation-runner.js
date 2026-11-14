@@ -78,6 +78,7 @@ function text(v) {
 export function sanitizeProgress(body) {
   if (!body || typeof body !== 'object' || typeof body.status !== 'string') return null;
   const items = Array.isArray(body.items) ? body.items : [];
+  const playlistUrl = typeof body.playlist_url === 'string' && PLAYLIST_URL.test(body.playlist_url) ? body.playlist_url : null;
   return {
     status: body.status,
     pause_reason: typeof body.pause_reason === 'string' ? body.pause_reason : null,
@@ -85,7 +86,9 @@ export function sanitizeProgress(body) {
     failed: count(body.failed),
     skipped: count(body.skipped),
     total: count(body.total),
-    playlist_url: typeof body.playlist_url === 'string' && PLAYLIST_URL.test(body.playlist_url) ? body.playlist_url : null,
+    playlist_url: playlistUrl,
+    // True also when the playlist's id was dropped 7 days after the owner's last use (no link then).
+    playlist_created: body.playlist_created === true || playlistUrl !== null,
     message: text(body.message),
     remaining_today: text(body.remaining_today),
     items: items

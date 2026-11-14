@@ -85,7 +85,7 @@
             <p><a class="text-red-700 underline" href="delete">この提案を削除</a></p>
             <p class="mt-1 text-xs text-gray-600">提案と作成の記録を削除します。YouTube に作成した再生リストは残ります</p>
             {{-- Not created (or unknown): this proposal cannot be created again; deleting it is the way to start over (UX m5). --}}
-            <p class="mt-2" x-show="showRemakeHint" @unless ($completed && $progress['playlist_url'] === null) x-cloak @endunless>{{ \App\Services\Creation\CreationProgress::REMAKE_HINT }}</p>
+            <p class="mt-2" x-show="showRemakeHint" @unless ($completed && ! $progress['playlist_created']) x-cloak @endunless>{{ \App\Services\Creation\CreationProgress::REMAKE_HINT }}</p>
         </section>
     </div>
 

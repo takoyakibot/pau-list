@@ -103,6 +103,38 @@ class ChannelVideoCatalog
     }
 
     /**
+     * Rows held for a channel (operator deletion request, app:delete-proposal --channel).
+     *
+     * @return array{channel_caches: int, channel_cache_videos: int, channel_cache_expirations: int}
+     */
+    public function channelDataCounts(string $channelId): array
+    {
+        return [
+            'channel_caches' => DB::table('channel_caches')->where('channel_id', $channelId)->count(),
+            'channel_cache_videos' => DB::table('channel_cache_videos')->where('channel_id', $channelId)->count(),
+            'channel_cache_expirations' => DB::table('channel_cache_expirations')->where('channel_id', $channelId)->count(),
+        ];
+    }
+
+    /**
+     * Deletes the channel's imported list, its videos and its expiration record on a deletion request (no new
+     * expiration record is written). Waits for an import of the channel to finish (same lock as load()); a later
+     * visit imports the channel again like any other.
+     *
+     * @return array{channel_caches: int, channel_cache_videos: int, channel_cache_expirations: int}
+     *
+     * @throws LockTimeoutException
+     */
+    public function deleteChannelData(string $channelId): array
+    {
+        return $this->lock($channelId)->block(self::LOCK_SECONDS, fn () => DB::transaction(fn () => [
+            'channel_cache_videos' => DB::table('channel_cache_videos')->where('channel_id', $channelId)->delete(),
+            'channel_caches' => DB::table('channel_caches')->where('channel_id', $channelId)->delete(),
+            'channel_cache_expirations' => DB::table('channel_cache_expirations')->where('channel_id', $channelId)->delete(),
+        ]));
+    }
+
+    /**
      * Expires every channel whose expires_at <= $cutoff (default: now). The prune batch passes now + 24h so that,
      * running daily, no channel outlives its displayed delete date.
      */

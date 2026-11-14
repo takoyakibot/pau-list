@@ -57,8 +57,8 @@
 
             <ul class="max-h-[32rem] divide-y divide-gray-200 overflow-y-auto rounded border border-gray-200">
                 <template x-for="video in filtered" :key="video.id">
-                    <li>
-                        <label class="flex cursor-pointer items-center gap-3 p-2 text-sm">
+                    <li class="flex items-center gap-2 pr-2">
+                        <label class="flex min-w-0 flex-1 cursor-pointer items-center gap-3 p-2 text-sm">
                             <input type="checkbox" :checked="isSelected" @change="toggle" :disabled="isCheckDisabled">
                             <template x-if="video.thumbnail_url">
                                 <img :src="video.thumbnail_url" loading="lazy" alt="" width="96" height="54" class="h-[54px] w-24 flex-none rounded object-cover">
@@ -68,6 +68,7 @@
                                 <span class="block text-xs text-gray-600" x-text="publishedLabel"></span>
                             </span>
                         </label>
+                        <a class="shrink-0 text-xs underline" :href="watchHref" x-show="watchHref" rel="noopener noreferrer" target="_blank">YouTube で見る</a>
                     </li>
                 </template>
             </ul>

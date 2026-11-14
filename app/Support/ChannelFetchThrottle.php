@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\RateLimiter;
 
 /**
- * Limits requests that need a YouTube API call to resolve a channel handle (per IP).
+ * Limits requests that need a YouTube API call to resolve a channel handle (per client: ClientKey).
  * Both windows must have room; otherwise nothing is consumed.
  */
 class ChannelFetchThrottle
@@ -19,7 +19,7 @@ class ChannelFetchThrottle
 
     public function attempt(Request $request): bool
     {
-        $hash = hash('sha256', (string) $request->ip());
+        $hash = ClientKey::for($request);
         $minute = 'channel-fetch:m:'.$hash;
         $hour = 'channel-fetch:h:'.$hash;
 
@@ -43,7 +43,7 @@ class ChannelFetchThrottle
     /** Seconds until a refused request could succeed (the longer of the exceeded windows). */
     public function retryAfter(Request $request): int
     {
-        $hash = hash('sha256', (string) $request->ip());
+        $hash = ClientKey::for($request);
         $wait = 1;
         foreach (['channel-fetch:m:'.$hash => self::MINUTE_MAX, 'channel-fetch:h:'.$hash => self::HOUR_MAX] as $key => $max) {
             if (RateLimiter::tooManyAttempts($key, $max)) {

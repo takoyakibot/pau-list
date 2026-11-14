@@ -148,7 +148,7 @@ class PreviewScreenTest extends TestCase
         $c = $this->get('/p/'.str_repeat('a', 42).'!')->assertNotFound();
 
         $a->assertSee('ページが見つかりません');
-        $a->assertSee('提案は作成から 30 日以内に削除されます');
+        $a->assertSee('提案の URL の場合は、作成から 30 日たったか、削除の依頼などで削除された可能性があります');
         $a->assertDontSee('過ぎると');
         $a->assertHeader('X-Robots-Tag', 'noindex, nofollow');
         $this->assertStringContainsString('no-store', (string) $a->headers->get('Cache-Control'));
@@ -194,12 +194,33 @@ class PreviewScreenTest extends TestCase
             ->assertSee('href="'.e(route('owner.login', ['p' => $key])).'"', false)
             ->assertSee('チャンネル主の方: Google でログインして作成へ')
             ->assertSeeText('利用規約・プライバシーポリシーに同意のうえログインしてください')
-            ->assertSee('確認されていないアプリの警告が表示されます。「詳細」→「List Maker（安全ではないページ）に移動」で続行できます')
-            ->assertSee('YouTube の管理権限を求めますが、使うのはチャンネルの確認・自分の限定公開動画の表示・再生リストの作成と動画の追加だけです')
             ->assertSee('href="'.route('terms').'"', false)->assertSee('href="'.route('privacy').'"', false)
             ->assertDontSee('ログイン中:')
             ->assertDontSee('href="'.route('proposals.edit', $key).'"', false);
         $this->assertNoInlineCode($res->getContent());
+    }
+
+    public function test_login_area_has_consent_flow_and_scope(): void
+    {
+        $key = $this->makeProposal();
+        $html = $this->get(route('proposals.show', $key))->assertOk()->getContent();
+        $this->assertSame(1, preg_match('#<section[^>]*aria-labelledby="owner-heading"[^>]*>(.*?)</section>#s', $html, $m));
+        $section = $m[1];
+        $login = strpos($section, 'href="'.e(route('owner.login', ['p' => $key])).'"');
+        $consent = strpos($section, '利用規約</a>・<a class="underline" href="'.route('privacy').'">プライバシーポリシー</a>に同意のうえログインしてください');
+        $this->assertIsInt($login);
+        $this->assertIsInt($consent);
+        $this->assertGreaterThan($login, $consent);
+        foreach ([
+            'Google のアカウント選択画面で、再生リストを作りたいチャンネルを選びます',
+            '『このアプリは Google で確認されていません』と表示されたら、『詳細』を押し、『（アプリ名またはドメイン）（安全ではないページ）に移動』のようなリンクを選びます。Google の審査が完了するまでは、この警告が表示されます',
+            'YouTube の権限の確認画面で内容を確認し、『続行』を押します。権限の確認画面にチェックボックスが表示された場合は、YouTube の権限にチェックを入れてください（入れないと再生リストを作成できません）',
+            'Google の画面には YouTube アカウントの管理という広い権限が表示されますが、使うのはチャンネルの確認・自分の限定公開動画の表示・再生リストの作成と動画の追加だけです（<a class="underline" href="'.route('privacy').'#data">詳しくはプライバシーポリシー</a>）',
+        ] as $s) {
+            $this->assertStringContainsString($s, $html, $s);
+        }
+        $this->assertStringContainsString('/privacy#data"', $html);
+        $this->assertMatchesRegularExpression('#<ol[^>]*>\s*<li>Google のアカウント選択画面#', $html);
     }
 
     public function test_preview_links_to_edit_for_matching_owner_only(): void

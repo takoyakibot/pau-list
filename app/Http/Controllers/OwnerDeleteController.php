@@ -3,17 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\PlaylistCreation;
-use App\Models\PlaylistCreationItem;
 use App\Models\Proposal;
-use App\Models\ProposalItem;
-use App\Models\QuotaReservation;
-use App\Services\YouTube\QuotaLedger;
-use App\Services\YouTube\WriteLock;
+use App\Services\ProposalDeleter;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -42,42 +37,14 @@ class OwnerDeleteController extends Controller
         ]);
     }
 
-    public function destroy(Request $request, QuotaLedger $ledger): RedirectResponse
+    public function destroy(Request $request, ProposalDeleter $deleter): RedirectResponse
     {
         /** @var Proposal $proposal */
         $proposal = $request->attributes->get('proposal');
 
         try {
-            $ledger->ensureWriteRow();
-            $deleted = DB::transaction(function () use ($proposal, $ledger) {
-                // Lock order: creation row first, then today's write row (QuotaLedger::withWriteLock). The row is
-                // locked by its primary key only (no gap lock on proposal_id that a concurrent start's insert,
-                // made under the write lock, would wait on while this waits for the write lock).
-                $id = PlaylistCreation::where('proposal_id', $proposal->id)->value('id');
-                $creation = $id === null ? null : PlaylistCreation::whereKey($id)->lockForUpdate()->first();
-                if ($creation !== null && $creation->status !== PlaylistCreation::COMPLETED) {
-                    return false;
-                }
-
-                return $ledger->withWriteLock(function (WriteLock $lock) use ($proposal, $creation) {
-                    // A creation started meanwhile (CreationStarter inserts it under this lock) blocks the delete too.
-                    // A locking read: it sees rows committed after this transaction's first (snapshot) read.
-                    if ($creation === null && PlaylistCreation::where('proposal_id', $proposal->id)->sharedLock()->exists()) {
-                        return false;
-                    }
-                    if ($creation !== null) {
-                        // Unused units go back first, then every record of the creation (not only by FK cascade).
-                        $lock->release($creation->id);
-                        QuotaReservation::where('creation_id', $creation->id)->delete();
-                        PlaylistCreationItem::where('creation_id', $creation->id)->delete();
-                        $creation->delete();
-                    }
-                    ProposalItem::query()->where('proposal_id', $proposal->id)->delete();
-                    $proposal->delete();
-
-                    return true;
-                });
-            }, 3);
+            // Y19: a creation that is not completed blocks the owner's deletion (unlike the operator's command).
+            $deleted = $deleter->delete($proposal);
         } catch (QueryException $e) {
             // The exception message contains SQL bindings: log only the SQLSTATE.
             Log::error('Proposal delete failed (database)', ['sqlstate' => (string) $e->getCode()]);

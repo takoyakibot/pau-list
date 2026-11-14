@@ -17,6 +17,9 @@ final class CreationProgress
     /** A completed creation without a playlist (not created / unknown): the proposal cannot be created again (S4, S6). */
     public const REMAKE_HINT = '作り直すには、「この提案を削除」で提案を削除してから、もう一度提案を作成してください';
 
+    /** Appended to the result once the items were deleted 7 days after the owner's last use (PruneExpiredData). */
+    public const PRUNED = '最後の操作から 7 日たったため、作成の記録（動画の一覧など）は削除しました';
+
     /** Shown next to the armed 「残りを中止」 (S6). */
     public const ABORT_WARNING = '中止すると、まだ追加していない動画は追加されません。元に戻せません（失敗した動画の再試行だけはできます）';
 
@@ -45,22 +48,30 @@ final class CreationProgress
 
     /**
      * @return array{status: string, pause_reason: ?string, done: int, failed: int, skipped: int, total: int,
-     *               playlist_url: ?string, message: ?string, remaining_today: string,
+     *               playlist_url: ?string, playlist_created: bool, message: ?string, remaining_today: string,
      *               items: list<array{position: int, status: string, error: ?string}>}
      */
     public static function toArray(PlaylistCreation $c, RemainingToday $r, bool $ownerLoggedIn = false): array
     {
         $items = $c->items()->get(['position', 'status', 'last_error']);
         $count = fn (string $status) => $items->where('status', $status)->count();
-
-        return [
-            'status' => $c->status,
-            'pause_reason' => $c->pause_reason,
+        $counts = $c->isPruned() ? self::counts($c) : [
             'done' => $count(PlaylistCreationItem::DONE),
             'failed' => $count(PlaylistCreationItem::FAILED),
             'skipped' => $count(PlaylistCreationItem::SKIPPED),
             'total' => $items->count(),
+        ];
+
+        return [
+            'status' => $c->status,
+            'pause_reason' => $c->pause_reason,
+            'done' => $counts['done'],
+            'failed' => $counts['failed'],
+            'skipped' => $counts['skipped'],
+            'total' => $counts['total'],
             'playlist_url' => $c->playlistUrl(),
+            // Also true once a non-public playlist id was dropped with the owner's data (no link, no remake hint).
+            'playlist_created' => $c->playlistCreated(),
             'message' => self::message($c, $r, $ownerLoggedIn),
             'remaining_today' => $r->sentence(),
             'items' => $items->map(fn (PlaylistCreationItem $i) => [
@@ -89,23 +100,45 @@ final class CreationProgress
             return '再生リストが作成されたか確認できませんでした。YouTube Studio で「'.$c->title.'」が作成されていないか確認し、見つからなければ「見つからなかったので作り直す」を押してください';
         }
         if ($c->status === PlaylistCreation::COMPLETED) {
-            if ($c->youtube_playlist_id === null) {
+            if (! $c->playlistCreated()) {
                 // An attempt whose outcome was never settled (stopped from creating_playlist / needs_check).
-                return $c->playlist_attempted_at !== null
+                $result = $c->playlist_attempted_at !== null
                     ? self::MAYBE_CREATED
                     : '再生リストは作成されませんでした';
+            } else {
+                $counts = self::counts($c);
+                $result = sprintf('作成が完了しました（追加 %d 本・失敗 %d 本・中止 %d 本）', $counts['done'], $counts['failed'], $counts['skipped']);
             }
-            $counts = $c->items()->reorder()->selectRaw('status, count(*) as n')->groupBy('status')->pluck('n', 'status');
 
-            return sprintf(
-                '作成が完了しました（追加 %d 本・失敗 %d 本・中止 %d 本）',
-                (int) ($counts[PlaylistCreationItem::DONE] ?? 0),
-                (int) ($counts[PlaylistCreationItem::FAILED] ?? 0),
-                (int) ($counts[PlaylistCreationItem::SKIPPED] ?? 0),
-            );
+            return $c->isPruned() ? $result.'。'.self::PRUNED : $result;
         }
 
         return null;
+    }
+
+    /**
+     * Item counts by status: from the items, or from the columns kept when the items were deleted.
+     *
+     * @return array{done: int, failed: int, skipped: int, total: int}
+     */
+    public static function counts(PlaylistCreation $c): array
+    {
+        if ($c->isPruned()) {
+            return [
+                'done' => (int) $c->done_count,
+                'failed' => (int) $c->failed_count,
+                'skipped' => (int) $c->skipped_count,
+                'total' => (int) $c->total_count,
+            ];
+        }
+        $n = $c->items()->reorder()->selectRaw('status, count(*) as n')->groupBy('status')->pluck('n', 'status');
+
+        return [
+            'done' => (int) ($n[PlaylistCreationItem::DONE] ?? 0),
+            'failed' => (int) ($n[PlaylistCreationItem::FAILED] ?? 0),
+            'skipped' => (int) ($n[PlaylistCreationItem::SKIPPED] ?? 0),
+            'total' => (int) $n->sum(),
+        ];
     }
 
     /** A fixed Japanese label for an item's last_error (YouTube's reason or our own marker); never the raw value. */

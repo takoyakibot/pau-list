@@ -60,6 +60,32 @@ class ConfigurationTest extends TestCase
         $this->assertStringContainsString('GOOGLE_REDIRECT_URI="${APP_URL}/auth/google/callback"', $env);
     }
 
+    public function test_env_example_has_safe_values(): void
+    {
+        $env = file_get_contents(base_path('.env.example'));
+        foreach (['SESSION_DRIVER=database', 'SESSION_ENCRYPT=true', 'SESSION_SAME_SITE=lax', 'CACHE_STORE=database',
+            'QUEUE_CONNECTION=sync', 'LOG_CHANNEL=daily', 'LOG_DAILY_DAYS=14', 'CAPTCHA_ENABLED=false', 'TRUSTED_PROXIES='] as $line) {
+            $this->assertMatchesRegularExpression('/^'.preg_quote($line, '/').'$/m', $env, $line);
+        }
+    }
+
+    public function test_readme_documents_operations(): void
+    {
+        $readme = file_get_contents(base_path('README.md'));
+        foreach (['# List Maker', 'LOG_LEVEL=info', 'TRUSTED_PROXIES=', 'CONTACT_TO_ADDRESS=', 'php artisan app:delete-proposal',
+            'php artisan app:release-creation-reservation', 'curl -sI https://list-maker.alpacasandbag.jp/ | head -1',
+            'https://myaccount.google.com/permissions', '公開前の人手作業'] as $text) {
+            $this->assertStringContainsString($text, $readme, $text);
+        }
+        $this->assertStringNotContainsString('仮称', $readme);
+    }
+
+    public function test_env_example_says_production_log_level_is_info(): void
+    {
+        $env = file_get_contents(base_path('.env.example'));
+        $this->assertMatchesRegularExpression('/^#.*本番.*LOG_LEVEL=info.*\nLOG_LEVEL=/m', $env);
+    }
+
     public function test_config_keys_exist_with_expected_types(): void
     {
         foreach (['quota.write_limit', 'quota.read_budget', 'quota.google_daily',
