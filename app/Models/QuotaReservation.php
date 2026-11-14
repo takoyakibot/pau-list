@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\DB;
 
 /** Write quota reserved for one creation on one PT day (spec 5.4). */
 class QuotaReservation extends Model
@@ -24,6 +25,14 @@ class QuotaReservation extends Model
             'created_at' => 'immutable_datetime',
             'updated_at' => 'immutable_datetime',
         ];
+    }
+
+    /** Σ(reserved − consumed) of the active reservations of one PT day ('Y-m-d'): the part of 5.4's free formula. */
+    public static function unusedActiveOn(string $dayPt): int
+    {
+        return (int) static::where('day_pt', $dayPt)
+            ->where('status', self::ACTIVE)
+            ->sum(DB::raw('reserved_units - consumed_units'));
     }
 
     /** @return BelongsTo<PlaylistCreation, $this> */
