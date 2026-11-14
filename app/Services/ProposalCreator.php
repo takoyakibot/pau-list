@@ -8,6 +8,7 @@ use App\Models\ProposalItem;
 use App\Services\YouTube\ReadBudgetExceeded;
 use App\Services\YouTube\YouTubeApiException;
 use App\Services\YouTube\YouTubeReader;
+use App\Support\ChannelRef;
 use App\Support\ProposalKey;
 use Illuminate\Support\Facades\DB;
 
@@ -21,6 +22,7 @@ class ProposalCreator
      * @param  array{title: string, description?: ?string, comment?: ?string, proposer_name?: ?string, video_ids: list<string>}  $validated
      *
      * @throws ChannelCacheMissing
+     * @throws ChannelUnavailable
      * @throws UnavailableVideos
      * @throws ReadBudgetExceeded
      * @throws YouTubeApiException
@@ -34,6 +36,9 @@ class ProposalCreator
         if ($channel === null) {
             throw new ChannelCacheMissing;
         }
+        $channel = $this->freshMeta($channel);
+        // Always the id stored in the row: a case-insensitive DB collation may match a differently-cased route id.
+        $channelId = $channel->channel_id;
 
         $ids = array_values($validated['video_ids']);
         $videos = $this->reader->videos($ids);
@@ -86,5 +91,38 @@ class ProposalCreator
         });
 
         return new CreatedProposal($proposal, $key);
+    }
+
+    /**
+     * The channel title/icon copied into a proposal must not be older than the reuse window
+     * (the list itself may be up to 30 days old). Re-fetches with one read unit when stale and
+     * updates the cache row's metadata only (the list, last_synced_at and expires_at are untouched).
+     *
+     * @throws ChannelUnavailable
+     * @throws ReadBudgetExceeded
+     * @throws YouTubeApiException
+     */
+    private function freshMeta(ChannelCache $channel): ChannelCache
+    {
+        $fresh = $channel->meta_fetched_at
+            ->addMinutes((int) config('youtube.channel.cache_reuse_minutes'))
+            ->greaterThanOrEqualTo(now());
+        if ($fresh) {
+            return $channel;
+        }
+
+        $info = $this->reader->channel(ChannelRef::id($channel->channel_id));
+        if ($info === null || $info->id !== $channel->channel_id) {
+            throw new ChannelUnavailable;
+        }
+
+        $channel->forceFill([
+            'handle' => $info->handle,
+            'title' => $info->title,
+            'thumbnail_url' => $info->thumbnailUrl,
+            'meta_fetched_at' => now(),
+        ])->save();
+
+        return $channel;
     }
 }

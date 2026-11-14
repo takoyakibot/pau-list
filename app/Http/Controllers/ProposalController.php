@@ -6,6 +6,7 @@ use App\Http\Requests\StoreProposalRequest;
 use App\Models\Proposal;
 use App\Services\CatalogStatus;
 use App\Services\ChannelCacheMissing;
+use App\Services\ChannelUnavailable;
 use App\Services\ChannelVideoCatalog;
 use App\Services\ProposalCreator;
 use App\Services\UnavailableVideos;
@@ -108,6 +109,8 @@ class ProposalController extends Controller
             $created = $creator->create($channelId, $request->safe()->except('website'));
         } catch (ChannelCacheMissing) {
             return $fail('一覧の保存期限が切れたため開き直しました。もう一度保存してください');
+        } catch (ChannelUnavailable) {
+            return $fail('チャンネルが見つからないため保存できません');
         } catch (UnavailableVideos $e) {
             return $fail('この動画は削除または非公開になっています。外して保存してください')
                 ->with('unavailable_video_ids', $e->ids);

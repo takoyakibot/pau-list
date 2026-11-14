@@ -31,7 +31,7 @@ class StoreProposalTest extends TestCase
         parent::setUp();
         $this->travelTo(CarbonImmutable::parse('2026-11-14 03:00:00'));
         $this->id = 'UC'.str_repeat('a', 22);
-        $now = now();
+        $now = CarbonImmutable::now();
         ChannelCache::create([
             'channel_id' => $this->id,
             'handle' => '@a',
@@ -364,5 +364,89 @@ class StoreProposalTest extends TestCase
         $this->assertSame("{$family}\n説明", $p->description);
         $this->assertSame($family, $p->comment);
         $this->assertSame($family, $p->proposer_name);
+    }
+
+    public function test_stale_channel_meta_is_refetched_at_save(): void
+    {
+        $this->travel(25)->days();
+        $this->fakeChannel($this->id, ['title' => '新しい名前', 'thumbnail' => 'https://yt3.ggpht.com/new', 'handle' => '@NewHandle']);
+        $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
+
+        $this->store(['title' => 't', 'video_ids' => [self::A]])->assertRedirect();
+
+        $p = Proposal::sole();
+        $this->assertSame('新しい名前', $p->channel_title);
+        $this->assertSame('https://yt3.ggpht.com/new', $p->channel_thumbnail_url);
+        $cache = ChannelCache::sole();
+        $this->assertSame('新しい名前', $cache->title);
+        $this->assertSame('https://yt3.ggpht.com/new', $cache->thumbnail_url);
+        $this->assertSame('newhandle', $cache->handle);
+        $this->assertTrue($cache->meta_fetched_at->equalTo(now()));
+        // the list itself is not re-synced and its delete date is unchanged
+        $this->assertTrue($cache->last_synced_at->equalTo(now()->subDays(25)));
+        $this->assertTrue($cache->expires_at->equalTo(now()->addDays(5)));
+        // channels.list (1) + videos.list (1)
+        $this->assertSame(2, app(QuotaLedger::class)->used(QuotaLedger::READ));
+    }
+
+    public function test_fresh_channel_meta_is_not_refetched(): void
+    {
+        $this->travel(359)->minutes();
+        $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
+        $this->store(['title' => 't', 'video_ids' => [self::A]])->assertRedirect();
+        $this->assertSame('チャンネル A', Proposal::sole()->channel_title);
+        Http::assertSentCount(1);
+    }
+
+    public function test_stale_meta_refetch_failure_fails_the_save(): void
+    {
+        $this->travel(25)->days();
+        $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
+
+        app(QuotaLedger::class)->record(QuotaLedger::READ, 2000);
+        $this->store(['title' => 't', 'video_ids' => [self::A]])
+            ->assertRedirect(route('channels.propose', $this->id))
+            ->assertSessionHasErrors(['video_ids' => '本日の取得上限に達したため、いまは保存できません。時間をおいて再度お試しください'])
+            ->assertSessionHasInput('title', 't');
+        $this->assertSame(0, Proposal::count());
+        $this->assertNoApiCalls();
+
+        DB::table('quota_usage')->delete();
+        Http::swap(new Factory);
+        $this->fakeYouTubeError('channels', 500, 'backendError');
+        $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
+        $this->store(['title' => 't', 'video_ids' => [self::A]])
+            ->assertSessionHasErrors(['video_ids' => 'YouTube との通信に失敗しました。時間をおいて再度お試しください']);
+
+        Http::swap(new Factory);
+        $this->fakeChannel($this->id, ['missing' => true]);
+        $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
+        $this->store(['title' => 't', 'video_ids' => [self::A]])
+            ->assertRedirect(route('channels.propose', $this->id))
+            ->assertSessionHasErrors(['video_ids' => 'チャンネルが見つからないため保存できません']);
+        $this->assertSame(0, Proposal::count());
+        $this->assertSame('チャンネル A', ChannelCache::sole()->title);
+    }
+
+    public function test_case_insensitive_collation_still_uses_the_stored_channel_id(): void
+    {
+        // Simulate a MySQL case-insensitive collation: a route id differing only in case finds the row.
+        $row = (array) DB::table('channel_caches')->first();
+        Schema::disableForeignKeyConstraints();
+        Schema::drop('channel_caches');
+        DB::statement('CREATE TABLE channel_caches (channel_id varchar(24) COLLATE NOCASE PRIMARY KEY, handle varchar,'
+            .' title varchar NOT NULL, thumbnail_url varchar, uploads_playlist_id varchar NOT NULL,'
+            .' meta_fetched_at datetime NOT NULL, cached_since datetime NOT NULL, last_synced_at datetime NOT NULL,'
+            .' truncated tinyint NOT NULL DEFAULT 0, expires_at datetime NOT NULL)');
+        DB::table('channel_caches')->insert($row);
+        Schema::enableForeignKeyConstraints();
+
+        $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
+        $other = 'UC'.str_repeat('A', 22);
+        $this->store(['title' => 't', 'video_ids' => [self::A]], $other)->assertRedirect();
+
+        $p = Proposal::sole();
+        $this->assertSame($this->id, $p->channel_id);
+        $this->assertFalse($p->items[0]->is_outside_channel);
     }
 }
