@@ -10,6 +10,7 @@ use App\Services\YouTube\YouTubeReader;
 use App\Support\ChannelRef;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -198,5 +199,38 @@ class YouTubeReaderTest extends TestCase
         $this->fakeUploads('UU'.str_repeat('a', 22), []);
         app(YouTubeReader::class)->uploadsPage('UU'.str_repeat('a', 22), null);
         Log::shouldNotHaveReceived('warning');
+    }
+
+    public function test_values_longer_than_their_columns_are_dropped_or_capped(): void
+    {
+        $long = 'https://yt3.ggpht.com/'.str_repeat('x', 240);
+        $this->fakeChannel($this->cid(), ['thumbnail' => $long, 'handle' => '@'.str_repeat('h', 256)]);
+        $info = app(YouTubeReader::class)->channel(ChannelRef::id($this->cid()));
+        $this->assertNull($info->thumbnailUrl);
+        $this->assertNull($info->handle);
+
+        $ok = 'https://yt3.ggpht.com/'.str_repeat('x', 255 - 22);
+        $this->assertSame(255, strlen($ok));
+        Http::swap(new Factory);
+        $this->fakeChannel($this->cid(), ['thumbnail' => $ok]);
+        $this->assertSame($ok, app(YouTubeReader::class)->channel(ChannelRef::id($this->cid()))->thumbnailUrl);
+
+        Http::swap(new Factory);
+        $video = $this->videoResource('abcdefghijk', str_repeat('C', 300), [
+            'channelTitle' => str_repeat('名', 300),
+            'thumbnail' => 'https://i.ytimg.com/'.str_repeat('y', 300),
+        ]);
+        $this->fakeVideos([$video]);
+        $v = app(YouTubeReader::class)->videos(['abcdefghijk'])['abcdefghijk'];
+        $this->assertSame('', $v->channelId);
+        $this->assertSame(200, mb_strlen($v->channelTitle));
+        $this->assertNull($v->thumbnailUrl);
+
+        Http::swap(new Factory);
+        $this->fakeUploads('UU'.str_repeat('a', 22), [[
+            ['snippet' => ['title' => 't', 'thumbnails' => ['medium' => ['url' => 'https://i.ytimg.com/'.str_repeat('z', 300)]]],
+                'contentDetails' => ['videoId' => 'abcdefghijk'], 'status' => ['privacyStatus' => 'public']],
+        ]]);
+        $this->assertNull(app(YouTubeReader::class)->uploadsPage('UU'.str_repeat('a', 22), null)->items[0]->thumbnailUrl);
     }
 }

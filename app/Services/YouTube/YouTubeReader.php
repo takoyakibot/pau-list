@@ -21,6 +21,9 @@ class YouTubeReader
 
     private const VIDEO_THUMB_PREFIXES = ['https://i.ytimg.com/'];
 
+    /** Every string written to a varchar(255) column must fit; URLs and handles are dropped, not cut. */
+    private const MAX_COLUMN = 255;
+
     public function __construct(private readonly QuotaLedger $ledger) {}
 
     public function channel(ChannelRef $ref): ?ChannelInfo
@@ -49,7 +52,9 @@ class YouTubeReader
             self::title($item['snippet']['title'] ?? null),
             self::thumbnail($item['snippet']['thumbnails'] ?? null, self::CHANNEL_THUMB_PREFIXES),
             $uploads,
-            is_string($custom) && $custom !== '' ? mb_strtolower(ltrim($custom, '@')) : null,
+            is_string($custom) && $custom !== '' && mb_strlen($custom) <= self::MAX_COLUMN
+                ? mb_strtolower(ltrim($custom, '@'))
+                : null,
         );
     }
 
@@ -117,8 +122,8 @@ class YouTubeReader
                     $id,
                     self::title($item['snippet']['title'] ?? null),
                     self::thumbnail($item['snippet']['thumbnails'] ?? null, self::VIDEO_THUMB_PREFIXES),
-                    self::str($item['snippet']['channelId'] ?? null),
-                    self::str($item['snippet']['channelTitle'] ?? null),
+                    self::channelId($item['snippet']['channelId'] ?? null),
+                    self::title($item['snippet']['channelTitle'] ?? null),
                     IsoDuration::toSeconds(is_string($d = $item['contentDetails']['duration'] ?? null) ? $d : null),
                     self::date($item['snippet']['publishedAt'] ?? null),
                     self::str($item['status']['privacyStatus'] ?? null, 'unknown'),
@@ -194,6 +199,12 @@ class YouTubeReader
         return is_string($value) ? $value : $default;
     }
 
+    /** A malformed channel id (not UC + 22) is stored as '' rather than overflowing varchar(24). */
+    private static function channelId(mixed $value): string
+    {
+        return is_string($value) && preg_match(ChannelInput::ID_PATTERN, $value) === 1 ? $value : '';
+    }
+
     private static function title(mixed $value): string
     {
         return mb_substr(self::str($value), 0, 200);
@@ -219,7 +230,7 @@ class YouTubeReader
         }
         foreach (['medium', 'default', 'high'] as $size) {
             $url = $thumbnails[$size]['url'] ?? null;
-            if (! is_string($url)) {
+            if (! is_string($url) || strlen($url) > self::MAX_COLUMN) {
                 continue;
             }
             foreach ($prefixes as $prefix) {
