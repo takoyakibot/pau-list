@@ -127,3 +127,7 @@ php artisan test
 
 - 日次バッチ `app:prune-expired` は毎日 04:00（Asia/Tokyo）に実行されます（cron の `schedule:run` 経由）。
 - ログは `storage/logs`（daily、14 日保持）。
+
+## リクエストボディの上限（要確認: CORESERVER）
+
+`LimitRequestBody` ミドルウェアは `Content-Length` と読み込んだボディが 64KB を超えると 413 を返しますが、PHP のミドルウェアでは multipart ボディを PHP が解析する前に制限できません。サーバー側でも約 64KB に抑えるため、`post_max_size` / `upload_max_filesize`（`.user.ini` やコントロールパネルで設定）や、Web サーバーの `LimitRequestBody` を設定してください。CORESERVER で設定できるか・反映されるかは未確認です。

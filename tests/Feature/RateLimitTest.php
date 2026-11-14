@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Support\ChannelFetchThrottle;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Route;
 use Tests\Support\AssertsNoInlineCode;
 use Tests\TestCase;
@@ -58,6 +59,26 @@ class RateLimitTest extends TestCase
         $this->assertTrue($t->attempt($req));
     }
 
+    public function test_413_and_405_render_japanese_pages(): void
+    {
+        config(['app.debug' => false]);
+        $res = $this->call('POST', '/contact', [], [], [], ['CONTENT_LENGTH' => 65537])->assertStatus(413);
+        $res->assertSee('送信できるデータの上限を超えています');
+        $this->assertNoInlineCode($res->getContent());
+        $res = $this->post('/privacy')->assertStatus(405);
+        $res->assertSee('この操作はできません');
+        $this->assertNoInlineCode($res->getContent());
+    }
+
+    public function test_channel_fetch_throttle_lock_timeout_returns_false(): void
+    {
+        $req = Request::create('/', 'GET', server: ['REMOTE_ADDR' => '203.0.113.9']);
+        $lock = Cache::lock('channel-fetch-guard:'.hash('sha256', '203.0.113.9'), 30);
+        $this->assertTrue($lock->get());
+        $this->assertFalse(app(ChannelFetchThrottle::class)->attempt($req));
+        $lock->release();
+    }
+
     public function test_body_over_64kb_is_413(): void
     {
         $this->call('POST', '/contact', [], [], [], ['CONTENT_LENGTH' => 65537])->assertStatus(413);
@@ -76,7 +97,8 @@ class RateLimitTest extends TestCase
 
     public function test_error_views_are_japanese_and_have_no_inline_code(): void
     {
-        foreach ([401, 403, 404, 419, 429, 500, 503] as $code) {
+        config(['app.debug' => false]);
+        foreach ([401, 403, 404, 405, 413, 419, 429, 500, 503, 418, 502] as $code) {
             Route::get('/_err/'.$code, fn () => abort($code));
             $res = $this->get('/_err/'.$code)->assertStatus($code);
             $this->assertNoInlineCode($res->getContent());
@@ -84,6 +106,7 @@ class RateLimitTest extends TestCase
             $res->assertDontSee('Server Error');
             $res->assertDontSee('Service Unavailable');
             $res->assertSee('<html lang="ja"', false);
+            $this->assertMatchesRegularExpression('/\p{Hiragana}/u', strip_tags($res->getContent()));
         }
     }
 }

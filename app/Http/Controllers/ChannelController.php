@@ -39,7 +39,7 @@ class ChannelController extends Controller
         if ($id === null) {
             // Only a lookup that needs the YouTube API consumes the per-IP fetch limit.
             if (! $throttle->attempt($request)) {
-                abort(429);
+                abort(429, '', ['Retry-After' => (string) $throttle->retryAfter($request)]);
             }
             try {
                 $id = $catalog->resolveHandle($ref->value);
