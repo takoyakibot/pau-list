@@ -3,18 +3,13 @@
 namespace App\Http\Requests;
 
 use App\Support\QuotaPolicy;
+use App\Support\TextInput;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
 class StoreProposalRequest extends FormRequest
 {
-    /**
-     * Bidi overrides/isolates and zero-width characters (can hide or reorder text).
-     * U+200D (ZWJ) is kept because joined emoji need it; a value of only ZWJ counts as empty.
-     */
-    private const INVISIBLE = '\x{200B}\x{200C}\x{202A}-\x{202E}\x{2066}-\x{2069}\x{FEFF}';
-
     public function authorize(): bool
     {
         return true;
@@ -25,12 +20,12 @@ class StoreProposalRequest extends FormRequest
         $clean = [];
         foreach (['title', 'proposer_name'] as $field) {
             if ($this->has($field)) {
-                $clean[$field] = self::singleLine($this->input($field));
+                $clean[$field] = TextInput::singleLine($this->input($field));
             }
         }
         foreach (['description', 'comment'] as $field) {
             if ($this->has($field)) {
-                $clean[$field] = self::multiLine($this->input($field));
+                $clean[$field] = TextInput::multiLine($this->input($field));
             }
         }
         $this->merge($clean);
@@ -105,31 +100,5 @@ class StoreProposalRequest extends FormRequest
         $value = $this->input('website');
 
         return $value !== null && $value !== '';
-    }
-
-    private static function singleLine(mixed $value): mixed
-    {
-        if (! is_string($value)) {
-            return $value;
-        }
-
-        return self::finish(preg_replace('/[\p{Cc}'.self::INVISIBLE.']/u', '', mb_scrub($value, 'UTF-8')));
-    }
-
-    private static function multiLine(mixed $value): mixed
-    {
-        if (! is_string($value)) {
-            return $value;
-        }
-        $value = str_replace(["\r\n", "\r"], "\n", mb_scrub($value, 'UTF-8'));
-
-        return self::finish(preg_replace('/[^\P{Cc}\n\t]|['.self::INVISIBLE.']/u', '', $value));
-    }
-
-    private static function finish(?string $value): ?string
-    {
-        $value = preg_replace('/^[\s\x{3000}]+|[\s\x{3000}]+$/u', '', (string) $value);
-
-        return $value === null || preg_match('/^[\s\x{3000}\x{200D}]*$/u', $value) === 1 ? null : $value;
     }
 }

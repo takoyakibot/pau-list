@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ChannelController;
 use App\Http\Controllers\ContactController;
+use App\Http\Controllers\CreationController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\OwnerAuthController;
 use App\Http\Controllers\OwnerDeleteController;
@@ -62,6 +63,13 @@ Route::post('/p/{key}/deletion', [OwnerDeleteController::class, 'destroy'])
     ->where('key', ProposalKey::ROUTE_PATTERN)
     ->middleware(RequireOwnerSession::class)
     ->name('proposals.destroy');
+// Creation (spec 7): JSON from S5. The origin check runs before the limiter, the limiter before the owner check
+// (the limiter key is the logged-in channel, shared with the retry of failed items).
+Route::post('/p/{key}/creation', [CreationController::class, 'start'])
+    ->where('key', ProposalKey::ROUTE_PATTERN)
+    ->middleware([RequireSameOriginFetch::class, 'throttle:creation-start', RequireOwnerSession::class])
+    ->name('proposals.creation.start');
+
 Route::get('/deleted', [OwnerDeleteController::class, 'deleted'])->name('proposals.deleted');
 
 Route::get('/owner/videos/unlisted', [OwnerEditController::class, 'unlisted'])
