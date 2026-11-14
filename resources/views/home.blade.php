@@ -16,7 +16,7 @@
         <li>チャンネル主が内容を確認して作成する</li>
     </ol>
 
-    <p class="mt-8">Google ログインで許可いただく権限は、あなたのチャンネルへの再生リストの作成と動画の追加にのみ使います。</p>
+    <p class="mt-8">Google ログインで許可いただく YouTube の権限は、チャンネルの確認・自分の限定公開動画の表示・再生リストの作成と動画の追加にのみ使います。</p>
 
     <form method="GET" action="{{ route('channels.open') }}" class="mt-8">
         <label for="q" class="block font-semibold">提案したいチャンネル</label>

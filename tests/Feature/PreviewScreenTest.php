@@ -194,7 +194,7 @@ class PreviewScreenTest extends TestCase
             ->assertSee('チャンネル主の方: Google でログインして作成へ')
             ->assertSeeText('利用規約・プライバシーポリシーに同意のうえログインしてください')
             ->assertSee('確認されていないアプリの警告が表示されます。「詳細」→「List Maker（安全ではないページ）に移動」で続行できます')
-            ->assertSee('YouTube の管理権限を求めますが、使うのは再生リストの作成と動画の追加だけです')
+            ->assertSee('YouTube の管理権限を求めますが、使うのはチャンネルの確認・自分の限定公開動画の表示・再生リストの作成と動画の追加だけです')
             ->assertSee('href="'.route('terms').'"', false)->assertSee('href="'.route('privacy').'"', false)
             ->assertDontSee('ログイン中:')
             ->assertDontSee('href="'.route('proposals.edit', $key).'"', false);

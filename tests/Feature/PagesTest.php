@@ -43,7 +43,7 @@ class PagesTest extends TestCase
     {
         $this->get('/')
             ->assertSee('List Maker')
-            ->assertSee('再生リストの作成と動画の追加')
+            ->assertSee('Google ログインで許可いただく YouTube の権限は、チャンネルの確認・自分の限定公開動画の表示・再生リストの作成と動画の追加にのみ使います。')
             ->assertDontSee('YouTube List Maker');
     }
 

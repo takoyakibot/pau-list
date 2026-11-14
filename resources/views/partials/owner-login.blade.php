@@ -23,6 +23,6 @@
         </p>
         <p class="mt-2"><a class="underline" href="{{ route('terms') }}">利用規約</a>・<a class="underline" href="{{ route('privacy') }}">プライバシーポリシー</a>に同意のうえログインしてください</p>
         <p class="mt-2">確認されていないアプリの警告が表示されます。「詳細」→「List Maker（安全ではないページ）に移動」で続行できます</p>
-        <p class="mt-2">YouTube の管理権限を求めますが、使うのは再生リストの作成と動画の追加だけです</p>
+        <p class="mt-2">YouTube の管理権限を求めますが、使うのはチャンネルの確認・自分の限定公開動画の表示・再生リストの作成と動画の追加だけです</p>
     @endif
 </section>
