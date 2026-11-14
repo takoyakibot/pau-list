@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\DropExpiredOwnerData;
 use App\Http\Middleware\LimitRequestBody;
 use App\Http\Middleware\RejectCrossSiteRequest;
 use App\Http\Middleware\RequireSameOriginFetch;
@@ -34,6 +35,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prepend(SecurityHeaders::class);
         $middleware->append(LimitRequestBody::class);
         $middleware->appendToGroup('web', 'throttle:global');
+        // After StartSession: an expired owner login / stale unlisted list leaves the session on every request.
+        $middleware->appendToGroup('web', DropExpiredOwnerData::class);
         // Reject cross-site lookups and login starts before any rate limiter counts them.
         $middleware->prependToPriorityList(before: ThrottleRequests::class, prepend: RequireSameOriginFetch::class);
         $middleware->prependToPriorityList(before: ThrottleRequests::class, prepend: RejectCrossSiteRequest::class);

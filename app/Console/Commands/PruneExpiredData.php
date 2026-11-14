@@ -79,9 +79,8 @@ class PruneExpiredData extends Command
             ->where('expiration', '<=', $timestamp)
             ->delete());
 
-        $this->step('sessions', fn () => DB::table(config('session.table') ?: 'sessions')
-            ->where('last_activity', '<', $timestamp - (int) config('session.lifetime') * 60)
-            ->delete());
+        // Also hourly (app:prune-sessions).
+        $this->step('sessions', fn () => PruneSessions::deleteStale());
 
         return $this->failed ? self::FAILURE : self::SUCCESS;
     }
