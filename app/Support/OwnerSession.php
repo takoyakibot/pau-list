@@ -17,6 +17,11 @@ final class OwnerSession
 
     public const STATE_TTL_SECONDS = 600;
 
+    /** The owner's unlisted uploads (owner-only data), cached per channel to spare owner_read. */
+    public const UNLISTED_KEY = 'owner_unlisted';
+
+    public const UNLISTED_TTL_SECONDS = 600;
+
     private const RANDOM_PATTERN = '/^[A-Za-z0-9_-]{43}$/D';
 
     public function __construct(private readonly Session $session) {}
@@ -55,7 +60,32 @@ final class OwnerSession
 
     public function login(OwnerLogin $login): void
     {
+        $this->session->forget(self::UNLISTED_KEY);
         $this->session->put(self::OWNER_KEY, self::serialize($login));
+    }
+
+    /** @param list<array<string, mixed>> $videos */
+    public function rememberUnlisted(string $channelId, array $videos): void
+    {
+        $this->session->put(self::UNLISTED_KEY, [
+            'channel_id' => $channelId,
+            'fetched_at' => now()->getTimestamp(),
+            'videos' => array_values($videos),
+        ]);
+    }
+
+    /** @return list<array<string, mixed>>|null null when absent, for another channel, expired or malformed */
+    public function unlisted(string $channelId): ?array
+    {
+        $raw = $this->session->get(self::UNLISTED_KEY);
+        if (! is_array($raw) || ($raw['channel_id'] ?? null) !== $channelId
+            || ! is_int($raw['fetched_at'] ?? null)
+            || now()->getTimestamp() - $raw['fetched_at'] >= self::UNLISTED_TTL_SECONDS
+            || ! is_array($raw['videos'] ?? null) || ! array_is_list($raw['videos'])) {
+            return null;
+        }
+
+        return array_values(array_filter($raw['videos'], 'is_array'));
     }
 
     public function current(): ?OwnerLogin
@@ -80,7 +110,7 @@ final class OwnerSession
 
     public function forget(): void
     {
-        $this->session->forget([self::OWNER_KEY, self::PENDING_KEY]);
+        $this->session->forget([self::OWNER_KEY, self::PENDING_KEY, self::UNLISTED_KEY]);
     }
 
     public function matches(string $channelId): bool

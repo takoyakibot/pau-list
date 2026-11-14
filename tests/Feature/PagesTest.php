@@ -52,7 +52,7 @@ class PagesTest extends TestCase
         // スケルトンの /up（外部 CDN を読む）と local ディスクの storage/{path} 配信は使わない
         $uris = collect(app('router')->getRoutes()->getRoutes())->map->uri()->sort()->values()->all();
 
-        $this->assertSame(['/', 'auth/google', 'auth/google/callback', 'channels', 'channels/{channelId}/proposals', 'channels/{channelId}/propose', 'channels/{channelId}/videos/lookup', 'contact', 'p/{key}', 'p/{key}/edit', 'p/{key}/shared', 'privacy', 'terms'], $uris);
+        $this->assertSame(['/', 'auth/google', 'auth/google/callback', 'channels', 'channels/{channelId}/proposals', 'channels/{channelId}/propose', 'channels/{channelId}/videos/lookup', 'contact', 'owner/videos/unlisted', 'p/{key}', 'p/{key}/edit', 'p/{key}/shared', 'privacy', 'terms'], $uris);
         $this->get('/up')->assertNotFound();
         $this->get('/storage/anything.txt')->assertNotFound();
     }

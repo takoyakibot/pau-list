@@ -22,7 +22,7 @@ class OwnerEditScreenTest extends TestCase
 
     private const UPLOADS = 'UUaaaaaaaaaaaaaaaaaaaaaa';
 
-    private const EDITOR_KEYS = ['description', 'draftId', 'items', 'lookupUrl', 'maxItems', 'privacy', 'remainingItems', 'resetLabel', 'title', 'videos'];
+    private const EDITOR_KEYS = ['description', 'draftId', 'items', 'lookupUrl', 'maxItems', 'privacy', 'remainingItems', 'resetLabel', 'title', 'unlistedUrl', 'videos'];
 
     protected function setUp(): void
     {
@@ -58,13 +58,6 @@ class OwnerEditScreenTest extends TestCase
         }
     }
 
-    /** The owner's own uploads (read with the owner token): channels mine=true + the uploads playlist. */
-    private function fakeOwnerUploads(array $pages = [[]]): void
-    {
-        $this->fakeChannel($this->channelId, ['uploads' => self::UPLOADS]);
-        $this->fakeUploads(self::UPLOADS, $pages);
-    }
-
     private function edit(string $key, string $title = 'My Channel'): TestResponse
     {
         return $this->actAsOwner($this->channelId, title: $title)->get(route('proposals.edit', $key));
@@ -81,7 +74,6 @@ class OwnerEditScreenTest extends TestCase
     public function test_shows_needed_and_remaining_and_enabled_button(): void
     {
         $this->cacheChannel();
-        $this->fakeOwnerUploads();
         $key = $this->createProposal();   // 2 本
         $res = $this->edit($key, 'チャンネル A')->assertOk();
         $res->assertSee('ログイン中: チャンネル A')
@@ -103,7 +95,6 @@ class OwnerEditScreenTest extends TestCase
     public function test_shortage_disables_button_and_shows_reset_time(): void
     {
         $this->cacheChannel();
-        $this->fakeOwnerUploads();
         app(QuotaLedger::class)->record(QuotaLedger::WRITE, 4900);   // 空き 100 → N = 1
         $key = $this->createProposal();                              // n = 2
         $res = $this->edit($key)->assertOk();
@@ -118,10 +109,10 @@ class OwnerEditScreenTest extends TestCase
     public function test_exhausted_quota_shows_reset_message(): void
     {
         $this->cacheChannel();
-        $this->fakeOwnerUploads();
         app(QuotaLedger::class)->record(QuotaLedger::WRITE, 5000);
         $res = $this->edit($this->createProposal())->assertOk();
-        $res->assertSee('本日はこれ以上作成できません。次にリセットされるのは 日本時間 11月14日 17時 です');
+        $res->assertSee('本日はこれ以上作成できません。次にリセットされるのは 日本時間 11月14日 17時 です')
+            ->assertDontSee('本減らすか');
         $this->assertMatchesRegularExpression('/<button[^>]*id="create-playlist"[^>]*disabled/', $res->getContent());
         $this->assertSame(0, $this->editorPayload($res->getContent())['remainingItems']);
     }
@@ -129,7 +120,6 @@ class OwnerEditScreenTest extends TestCase
     public function test_proposal_with_no_items_disables_button(): void
     {
         $this->cacheChannel();
-        $this->fakeOwnerUploads();
         $res = $this->edit($this->createProposal([], []))->assertOk();
         $res->assertSee('この内容に必要な枠: 再生リスト 1 つ＋動画 0 本');
         $this->assertMatchesRegularExpression('/<button[^>]*id="create-playlist"[^>]*disabled/', $res->getContent());
@@ -138,7 +128,6 @@ class OwnerEditScreenTest extends TestCase
     public function test_privacy_defaults_to_private_and_offers_three_values(): void
     {
         $this->cacheChannel();
-        $this->fakeOwnerUploads();
         $html = $this->edit($this->createProposal())->getContent();
         $this->assertMatchesRegularExpression('/<select[^>]*name="privacy"/', $html);
         $this->assertMatchesRegularExpression('/<option value="private"[^>]*selected/', $html);
@@ -152,7 +141,6 @@ class OwnerEditScreenTest extends TestCase
     public function test_name_and_description_inputs_start_from_the_proposal(): void
     {
         $this->cacheChannel();
-        $this->fakeOwnerUploads();
         $html = $this->edit($this->createProposal(['title' => '<b>名前</b>']))->getContent();
         $this->assertMatchesRegularExpression('/<input[^>]*name="title"[^>]*value="&lt;b&gt;名前&lt;\/b&gt;"/', $html);
         $this->assertMatchesRegularExpression('/<textarea[^>]*name="description"[^>]*>1 行目\n2 行目 https:\/\/example.com\/x<\/textarea>/', $html);
@@ -164,7 +152,6 @@ class OwnerEditScreenTest extends TestCase
             ['ccccccccccc', '一覧の動画 C', '2026-11-10 00:00:00'],
             ['ddddddddddd', '一覧の動画 D', '2026-11-12 00:00:00'],
         ]);
-        $this->fakeOwnerUploads();
         $key = $this->createProposal([], [
             ['video_id' => 'bbbbbbbbbbb', 'title' => '動画 B', 'duration_seconds' => 10, 'is_outside_channel' => true],
             ['video_id' => 'aaaaaaaaaaa', 'title' => '動画 A', 'duration_seconds' => 10, 'is_outside_channel' => false],
@@ -198,65 +185,33 @@ class OwnerEditScreenTest extends TestCase
         $this->assertStringNotContainsString($proposal->key_hash, $html);
     }
 
-    public function test_owner_unlisted_uploads_are_added_and_marked_but_private_ones_are_not(): void
+    public function test_unlisted_videos_are_loaded_only_on_demand(): void
     {
         $this->cacheChannel([['ccccccccccc', '一覧の動画 C', '2026-11-10 00:00:00']]);
-        $this->fakeOwnerUploads([[
-            $this->uploadItem('unl00000001', '2026-11-12T00:00:00Z', 'unlisted', '限定の動画'),
-            $this->uploadItem('prv00000001', '2026-11-13T00:00:00Z', 'private', '非公開の動画'),
-            $this->uploadItem('ccccccccccc', '2026-11-10T00:00:00Z'),
-        ]]);
         $res = $this->edit($this->createProposal())->assertOk();
+        // Rendering S5 never spends owner_read: the unlisted list is fetched by a button (owner.unlisted).
+        $this->assertCount(0, Http::recorded());
+        $this->assertSame(0, app(QuotaLedger::class)->used(QuotaLedger::OWNER_READ));
         $payload = $this->editorPayload($res->getContent());
-        $this->assertSame([
-            ['id' => 'unl00000001', 'title' => '限定の動画', 'thumbnail_url' => 'https://i.ytimg.com/vi/unl00000001/mqdefault.jpg', 'published_at' => '2026-11-12T00:00:00Z', 'unlisted' => true],
-            ['id' => 'ccccccccccc', 'title' => '一覧の動画 C', 'thumbnail_url' => 'https://i.ytimg.com/vi/ccccccccccc/mqdefault.jpg', 'published_at' => '2026-11-10T00:00:00Z'],
-        ], $payload['videos']);
-        $res->assertDontSee('非公開の動画')->assertDontSee('prv00000001');
-        $res->assertSee('あなたの限定公開の動画も一覧に表示しています（あなたにだけ表示されます）');
-
-        // Read with the owner token into owner_read only; nothing is written to the channel cache.
-        $this->assertSame(2, app(QuotaLedger::class)->used(QuotaLedger::OWNER_READ));
-        $this->assertSame(0, app(QuotaLedger::class)->used(QuotaLedger::READ));
-        $this->assertSame(['ccccccccccc'], DB::table('channel_cache_videos')->pluck('video_id')->all());
-        foreach (Http::recorded() as [$request]) {
-            $this->assertSame('Bearer ya29.session-token', $request->header('Authorization')[0]);
-        }
-    }
-
-    public function test_cached_video_that_became_unlisted_is_listed_once_as_unlisted(): void
-    {
-        $this->cacheChannel([['ccccccccccc', '一覧の動画 C', '2026-11-10 00:00:00']]);
-        $this->fakeOwnerUploads([[$this->uploadItem('ccccccccccc', '2026-11-10T00:00:00Z', 'unlisted', '一覧の動画 C')]]);
-        $videos = $this->editorPayload($this->edit($this->createProposal())->getContent())['videos'];
-        $this->assertCount(1, $videos);
-        $this->assertTrue($videos[0]['unlisted']);
-    }
-
-    public function test_unlisted_read_failure_keeps_the_public_list(): void
-    {
-        $this->cacheChannel([['ccccccccccc', '一覧の動画 C', '2026-11-10 00:00:00']]);
-        $this->fakeYouTubeError('channels', 401, 'authError');
-        $res = $this->edit($this->createProposal())->assertOk();
-        $res->assertSee('あなたの限定公開の動画を読み込めませんでした。公開動画の一覧と動画 URL で追加できます');
-        $this->assertSame(['ccccccccccc'], array_column($this->editorPayload($res->getContent())['videos'], 'id'));
+        $this->assertSame(route('owner.unlisted'), $payload['unlistedUrl']);
+        $this->assertSame(['ccccccccccc'], array_column($payload['videos'], 'id'));
+        $this->assertMatchesRegularExpression('/<button type="button" id="load-unlisted"[^>]*>限定公開の動画も表示する<\/button>/', $res->getContent());
+        $res->assertSee('あなたの限定公開の動画はあなたにだけ表示されます');
     }
 
     public function test_catalog_unavailable_still_renders_page(): void
     {
         config(['youtube.quota.read_budget' => 0]);
-        $this->fakeOwnerUploads([[$this->uploadItem('unl00000001', '2026-11-12T00:00:00Z', 'unlisted')]]);
         $res = $this->edit($this->createProposal())->assertOk();
         $res->assertSee('チャンネルの動画一覧を読み込めませんでした。動画 URL で追加してください')
             ->assertSee('あなたのチャンネルに再生リストを作成します');
-        $this->assertSame(['unl00000001'], array_column($this->editorPayload($res->getContent())['videos'], 'id'));
-        $this->assertCount(0, Http::recorded(fn ($r) => $r->hasHeader('X-Goog-Api-Key')));
+        $this->assertSame([], $this->editorPayload($res->getContent())['videos']);
+        $this->assertCount(0, Http::recorded());
     }
 
     public function test_writes_nothing(): void
     {
         $this->cacheChannel();
-        $this->fakeOwnerUploads();
         $key = $this->createProposal();
         $snapshot = fn () => [
             DB::table('proposals')->get()->map(fn ($r) => (array) $r)->all(),

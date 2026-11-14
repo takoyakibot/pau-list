@@ -117,30 +117,34 @@ class OwnerAuthController extends Controller
             return $this->backToPreview($key, self::TOKEN_FAILED_MESSAGE);
         }
 
-        // Partial consent: the youtube scope was unchecked on the consent screen (6.7 E3).
-        if (! $token->hasScope(GoogleOAuth::SCOPE)) {
-            $this->oauth->revoke($token->accessToken);
-
-            return $this->backToPreview($key, self::SCOPE_MISSING_MESSAGE);
-        }
-
+        // From here on the token is revoked unless the login completes, whatever goes wrong
+        // (including unexpected exceptions such as a database error).
+        $loggedIn = false;
         try {
-            $channel = $this->youtube->myChannel($token->accessToken);
-        } catch (YouTubeApiException) {
-            $this->oauth->revoke($token->accessToken);
+            // Partial consent: the youtube scope was unchecked on the consent screen (6.7 E3).
+            if (! $token->hasScope(GoogleOAuth::SCOPE)) {
+                return $this->backToPreview($key, self::SCOPE_MISSING_MESSAGE);
+            }
 
-            return $this->backToPreview($key, self::CHANNEL_FAILED_MESSAGE);
+            try {
+                $channel = $this->youtube->myChannel($token->accessToken);
+            } catch (YouTubeApiException) {
+                return $this->backToPreview($key, self::CHANNEL_FAILED_MESSAGE);
+            }
+            if ($channel === null) {
+                return $this->backToPreview($key, self::NO_CHANNEL_MESSAGE);
+            }
+
+            // New session id on privilege change (6.7 G1). An existing owner login is overwritten without
+            // revoking its token: revoking the same grant could also invalidate the new token.
+            $request->session()->regenerate();
+            $this->owners->login(new OwnerLogin($token->accessToken, $token->expiresAt, $channel->id, $channel->title));
+            $loggedIn = true;
+        } finally {
+            if (! $loggedIn) {
+                $this->oauth->revoke($token->accessToken);
+            }
         }
-        if ($channel === null) {
-            $this->oauth->revoke($token->accessToken);
-
-            return $this->backToPreview($key, self::NO_CHANNEL_MESSAGE);
-        }
-
-        // New session id on privilege change (6.7 G1). An existing owner login is overwritten without
-        // revoking its token: revoking the same grant could also invalidate the new token.
-        $request->session()->regenerate();
-        $this->owners->login(new OwnerLogin($token->accessToken, $token->expiresAt, $channel->id, $channel->title));
 
         // Channel mismatch is decided (and shown) by RequireOwnerSession on the edit page.
         return redirect()->route('proposals.edit', $key);

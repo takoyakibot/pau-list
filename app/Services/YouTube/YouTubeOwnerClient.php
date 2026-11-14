@@ -41,8 +41,9 @@ class YouTubeOwnerClient
 
     /**
      * The owner's unlisted uploads (private ones excluded), newest first as YouTube returns them.
-     * Paging stops at the same cap as the channel list (fetch_max_videos). Empty when the token's
-     * channel is not $channelId or the channel has no uploads. Never stored: the caller only renders it.
+     * The uploads playlist id is derived from the channel id (UC… → UU…), so no channels.list call.
+     * Paging stops at the same cap as the channel list (fetch_max_videos). Empty for a malformed
+     * channel id or a channel without uploads. Never stored in shared caches.
      *
      * @return list<PlaylistItem>
      *
@@ -50,12 +51,10 @@ class YouTubeOwnerClient
      */
     public function unlistedUploads(#[\SensitiveParameter] string $accessToken, string $channelId): array
     {
-        $item = $this->firstItem($this->get($accessToken, 'channels', ['part' => 'contentDetails', 'mine' => 'true']), 'channels');
-        $uploads = $item['contentDetails']['relatedPlaylists']['uploads'] ?? null;
-        if (($item['id'] ?? null) !== $channelId
-            || ! is_string($uploads) || preg_match(YouTubeReader::UPLOADS_PATTERN, $uploads) !== 1) {
+        if (preg_match(ChannelInput::ID_PATTERN, $channelId) !== 1) {
             return [];
         }
+        $uploads = 'UU'.substr($channelId, 2);
 
         $maxPages = max(1, intdiv((int) config('youtube.channel.fetch_max_videos'), self::PAGE_SIZE));
         $deadline = CarbonImmutable::now()->addSeconds(self::DEADLINE_SECONDS);

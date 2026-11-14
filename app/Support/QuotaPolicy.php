@@ -20,6 +20,20 @@ final class QuotaPolicy
         return max(0, intdiv($freeUnits - self::PLAYLIST_UNITS, self::ITEM_UNITS));
     }
 
+    /**
+     * owner_read has no cap of its own but shares Google's daily project quota with writes and reads.
+     * Optional owner reads (the unlisted list) stop once today's owner_read reaches half of the headroom
+     * left after the write limit and the read budget.
+     */
+    public static function ownerReadGuard(): int
+    {
+        $headroom = (int) config('youtube.quota.google_daily')
+            - (int) config('youtube.quota.write_limit')
+            - (int) config('youtube.quota.read_budget');
+
+        return intdiv(max(0, $headroom), 2);
+    }
+
     public static function validateConfig(): void
     {
         $write = (int) config('youtube.quota.write_limit');

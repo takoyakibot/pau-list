@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Services\YouTube\GoogleOAuth;
 use App\Services\YouTube\QuotaLedger;
+use App\Services\YouTube\YouTubeOwnerClient;
 use App\Services\YouTube\YouTubeReader;
 use App\Support\OwnerSession;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -231,5 +232,16 @@ class OwnerCallbackLoginTest extends TestCase
         $this->assertFalse(session()->has(OwnerSession::PENDING_KEY));
         $this->get(route('proposals.show', $key))
             ->assertSee('Google との通信に失敗しました。もう一度ログインしてください');
+    }
+
+    public function test_unexpected_failure_after_exchange_still_revokes_the_token(): void
+    {
+        $key = $this->createProposal();
+        $this->fakeToken();
+        $this->fakeRevoke();
+        $this->mock(YouTubeOwnerClient::class, fn ($m) => $m->shouldReceive('myChannel')->andThrow(new \RuntimeException('database is down')));
+        $this->loginCallback($key)->assertStatus(500);
+        $this->assertSame(['token' => 'ya29.test-access-token'], $this->googleRequests(GoogleOAuth::REVOKE_URL)->sole()->data());
+        $this->assertNull(app(OwnerSession::class)->current());
     }
 }

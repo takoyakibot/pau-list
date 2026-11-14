@@ -51,6 +51,11 @@ Route::get('/p/{key}/edit', [OwnerEditController::class, 'show'])
     ->middleware([RequireDocumentNavigation::class, RequireOwnerSession::class])
     ->name('proposals.edit');
 
+Route::get('/owner/videos/unlisted', [OwnerEditController::class, 'unlisted'])
+    // The origin check runs before the limiter: rejected requests must not use up the owner's limit.
+    ->middleware([RequireSameOriginFetch::class, 'throttle:owner-unlisted'])
+    ->name('owner.unlisted');
+
 Route::get('/auth/google', [OwnerAuthController::class, 'redirect'])
     ->middleware([RequireDocumentNavigation::class, RejectCrossSiteRequest::class, 'throttle:oauth'])
     ->name('owner.login');

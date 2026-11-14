@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Middleware\RequireOwnerSession;
 use App\Models\Proposal;
 use App\Services\ChannelVideoCatalog;
 use App\Services\YouTube\PlaylistItem;
@@ -9,24 +10,28 @@ use App\Services\YouTube\QuotaLedger;
 use App\Services\YouTube\YouTubeApiException;
 use App\Services\YouTube\YouTubeOwnerClient;
 use App\Support\OwnerLogin;
+use App\Support\OwnerSession;
 use App\Support\QuotaPolicy;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
 /**
  * S5: the owner's edit screen (display only in Phase 2; no writes, no form).
- * Candidates are the channel's public list (shared cache) plus the owner's own unlisted uploads,
- * which are read with the owner token and only rendered into this response (user decision #9).
+ * Candidates are the channel's public list (shared cache). The owner's own unlisted uploads (user
+ * decision #9) come from unlisted() on demand and are kept only in the owner's session and the response.
  */
 class OwnerEditController extends Controller
 {
     public const CATALOG_UNAVAILABLE = 'チャンネルの動画一覧を読み込めませんでした。動画 URL で追加してください';
 
-    public const UNLISTED_SHOWN = 'あなたの限定公開の動画も一覧に表示しています（あなたにだけ表示されます）';
+    public const UNLISTED_NOTE = 'あなたの限定公開の動画はあなたにだけ表示されます（非公開の動画は表示されません）';
 
     public const UNLISTED_FAILED = 'あなたの限定公開の動画を読み込めませんでした。公開動画の一覧と動画 URL で追加できます';
 
-    public function show(Request $request, ChannelVideoCatalog $catalog, QuotaLedger $ledger, YouTubeOwnerClient $youtube): Response
+    public const UNLISTED_THROTTLED = '限定公開の動画の読み込みが続いています。10 分ほど待ってから再度お試しください';
+
+    public function show(Request $request, ChannelVideoCatalog $catalog, QuotaLedger $ledger): Response
     {
         /** @var Proposal $proposal */
         $proposal = $request->attributes->get('proposal');
@@ -46,14 +51,6 @@ class OwnerEditController extends Controller
                 'published_at' => $v->published_at?->utc()->format('Y-m-d\TH:i:s\Z'),
             ])->all();
 
-        try {
-            $unlisted = $youtube->unlistedUploads($owner->accessToken, $proposal->channel_id);
-            $unlistedFailed = false;
-        } catch (YouTubeApiException) {
-            $unlisted = [];
-            $unlistedFailed = true;
-        }
-
         $items = $proposal->items()->get();
         $remaining = $ledger->remainingToday();
         $count = $items->count();
@@ -72,7 +69,9 @@ class OwnerEditController extends Controller
                 'thumbnail_url' => $item->thumbnail_url,
                 'outside' => (bool) $item->is_outside_channel,
             ])->values()->all(),
-            'videos' => self::withUnlisted($public, $unlisted),
+            'videos' => $public,
+            // The owner's unlisted uploads are loaded only on demand (button), never on page load.
+            'unlistedUrl' => route('owner.unlisted'),
             'title' => $proposal->title,
             'description' => $proposal->description,
             'privacy' => 'private',
@@ -88,41 +87,45 @@ class OwnerEditController extends Controller
             'count' => $count,
             'shortBy' => max(0, $count - $remaining->items),
             'catalogUnavailable' => $channel === null,
-            'unlistedShown' => $unlisted !== [],
-            'unlistedFailed' => $unlistedFailed,
         ]);
     }
 
     /**
-     * Merges the owner's unlisted uploads into the public list, newest first (undated last, then by id).
-     * A cached video that has since become unlisted appears once, as unlisted.
-     *
-     * @param  list<array<string, mixed>>  $public
-     * @param  list<PlaylistItem>  $unlisted
-     * @return list<array<string, mixed>>
+     * JSON for the S5 button 「限定公開の動画も表示する」: the logged-in owner's unlisted uploads only.
+     * Same-origin fetch only, rate limited per owner channel, cached in the (encrypted) session for
+     * 10 minutes, and skipped when today's owner_read reaches QuotaPolicy::ownerReadGuard().
      */
-    private static function withUnlisted(array $public, array $unlisted): array
+    public function unlisted(OwnerSession $owners, QuotaLedger $ledger, YouTubeOwnerClient $youtube): JsonResponse
     {
-        if ($unlisted === []) {
-            return $public;
+        $owner = $owners->current();
+        if ($owner === null) {
+            return response()->json(['message' => RequireOwnerSession::NOTICE], 401);
         }
-        $videos = [];
-        foreach ($public as $video) {
-            $videos[$video['id']] = $video;
-        }
-        foreach ($unlisted as $item) {
-            $videos[$item->videoId] = [
-                'id' => $item->videoId,
-                'title' => $item->title,
-                'thumbnail_url' => $item->thumbnailUrl,
-                'published_at' => $item->publishedAt?->utc()->format('Y-m-d\TH:i:s\Z'),
-                'unlisted' => true,
-            ];
-        }
-        $videos = array_values($videos);
-        usort($videos, fn (array $a, array $b) => [$a['published_at'] === null, $b['published_at'] ?? '', $a['id']]
-            <=> [$b['published_at'] === null, $a['published_at'] ?? '', $b['id']]);
 
-        return $videos;
+        $cached = $owners->unlisted($owner->channelId);
+        if ($cached !== null) {
+            return response()->json(['videos' => $cached]);
+        }
+
+        if ($ledger->used(QuotaLedger::OWNER_READ) >= QuotaPolicy::ownerReadGuard()) {
+            return response()->json(['message' => self::UNLISTED_FAILED], 503);
+        }
+
+        try {
+            $items = $youtube->unlistedUploads($owner->accessToken, $owner->channelId);
+        } catch (YouTubeApiException) {
+            return response()->json(['message' => self::UNLISTED_FAILED], 503);
+        }
+
+        $videos = array_map(fn (PlaylistItem $item) => [
+            'id' => $item->videoId,
+            'title' => $item->title,
+            'thumbnail_url' => $item->thumbnailUrl,
+            'published_at' => $item->publishedAt?->utc()->format('Y-m-d\TH:i:s\Z'),
+            'unlisted' => true,
+        ], $items);
+        $owners->rememberUnlisted($owner->channelId, $videos);
+
+        return response()->json(['videos' => $videos]);
     }
 }

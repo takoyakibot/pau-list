@@ -17,7 +17,7 @@ class YouTubeReader
 
     private const CHANNEL_THUMB_PREFIXES = ['https://yt3.ggpht.com/', 'https://i.ytimg.com/'];
 
-    public const UPLOADS_PATTERN = '/^UU[A-Za-z0-9_-]{22}$/D';
+    private const UPLOADS_PATTERN = '/^UU[A-Za-z0-9_-]{22}$/D';
 
     private const VIDEO_THUMB_PREFIXES = ['https://i.ytimg.com/'];
 

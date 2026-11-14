@@ -64,12 +64,13 @@
             @if ($catalogUnavailable)
                 <p class="text-sm text-amber-800">{{ \App\Http\Controllers\OwnerEditController::CATALOG_UNAVAILABLE }}</p>
             @endif
-            @if ($unlistedShown)
-                <p class="text-sm">{{ \App\Http\Controllers\OwnerEditController::UNLISTED_SHOWN }}</p>
-            @endif
-            @if ($unlistedFailed)
-                <p class="text-sm text-amber-800">{{ \App\Http\Controllers\OwnerEditController::UNLISTED_FAILED }}</p>
-            @endif
+
+            {{-- Loaded on demand only (owner-edit.js fetches data-editor.unlistedUrl): each load spends owner_read. --}}
+            <div class="space-y-1" x-cloak>
+                <button type="button" id="load-unlisted" @click="loadUnlisted" :disabled="unlistedBusy" x-show="canLoadUnlisted" class="rounded border border-gray-400 px-3 py-1 text-sm">限定公開の動画も表示する</button>
+                <p class="text-xs text-gray-600">{{ \App\Http\Controllers\OwnerEditController::UNLISTED_NOTE }}</p>
+                <p class="text-sm text-amber-800" role="alert" x-show="hasUnlistedMessage" x-text="unlistedMessage"></p>
+            </div>
 
             <div x-show="hasVideos" x-cloak class="space-y-2">
                 <label class="block text-sm">
@@ -130,7 +131,8 @@
             @include('partials.max-items')
             <p x-text="neededText">この内容に必要な枠: 再生リスト 1 つ＋動画 {{ $count }} 本</p>
             @include('partials.remaining-today', ['remaining' => $remaining])
-            @if ($shortBy > 0)
+            {{-- When nothing is left today, the remaining-today partial already shows the reset time; reducing would not help. --}}
+            @if ($shortBy > 0 && ! $remaining->exhausted())
                 <p class="text-red-700" x-show="showServerShortage">あと {{ $shortBy }} 本減らすか、リセット後に作成してください（次にリセットされるのは 日本時間 {{ $resetLabel }} です）</p>
             @endif
             <p class="text-red-700" x-show="hasShortage" x-cloak x-text="shortageText"></p>

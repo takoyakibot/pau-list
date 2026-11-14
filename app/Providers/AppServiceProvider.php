@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Http\Controllers\OwnerEditController;
 use App\Session\PrivacyDatabaseSessionHandler;
+use App\Support\OwnerSession;
 use App\Support\QuotaPolicy;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -51,6 +53,10 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('video-lookup', fn (Request $request) => Limit::perMinute(30)->by($request->ip()));
         // Login start and callback share one limit (spec 8.1, 6.7 J2).
         RateLimiter::for('oauth', fn (Request $request) => Limit::perMinute(10)->by('oauth:'.$request->ip()));
+        // The owner's unlisted list spends owner_read: 5 per 10 minutes per owner channel (IP when logged out).
+        RateLimiter::for('owner-unlisted', fn (Request $request) => Limit::perMinutes(10, 5)
+            ->by('owner-unlisted:'.(app(OwnerSession::class)->current()?->channelId ?? 'ip:'.$request->ip()))
+            ->response(fn () => response()->json(['message' => OwnerEditController::UNLISTED_THROTTLED], 429)));
         RateLimiter::for('proposal-store', fn (Request $request) => [
             Limit::perMinutes(10, 5)->by('m:'.$request->ip()),
             Limit::perDay(30)->by('d:'.$request->ip()),
