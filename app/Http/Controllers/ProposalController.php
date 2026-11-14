@@ -13,7 +13,9 @@ use App\Services\YouTube\QuotaLedger;
 use App\Services\YouTube\ReadBudgetExceeded;
 use App\Services\YouTube\YouTubeApiException;
 use App\Support\ChannelFetchThrottle;
+use App\Support\ProposalKey;
 use App\Support\QuotaPolicy;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -96,22 +98,28 @@ class ProposalController extends Controller
             return redirect()->route('home');
         }
 
+        // Errors always return to the propose screen explicitly: with Referrer-Policy no-referrer,
+        // back() would fall back to the session's previous URL, which may be a JSON lookup.
+        $fail = fn (string $message) => redirect()->route('channels.propose', $channelId)
+            ->withInput()
+            ->withErrors(['video_ids' => $message]);
+
         try {
             $created = $creator->create($channelId, $request->safe()->except('website'));
         } catch (ChannelCacheMissing) {
-            return redirect()->route('channels.propose', $channelId)
-                ->withInput()
-                ->withErrors(['video_ids' => '一覧の保存期限が切れたため開き直しました。もう一度保存してください']);
+            return $fail('一覧の保存期限が切れたため開き直しました。もう一度保存してください');
         } catch (UnavailableVideos $e) {
-            return back()->withInput()
-                ->withErrors(['video_ids' => 'この動画は削除または非公開になっています。外して保存してください'])
+            return $fail('この動画は削除または非公開になっています。外して保存してください')
                 ->with('unavailable_video_ids', $e->ids);
         } catch (ReadBudgetExceeded) {
-            return back()->withInput()
-                ->withErrors(['video_ids' => '本日の取得上限に達したため、いまは保存できません。時間をおいて再度お試しください']);
+            return $fail('本日の取得上限に達したため、いまは保存できません。時間をおいて再度お試しください');
         } catch (YouTubeApiException) {
-            return back()->withInput()
-                ->withErrors(['video_ids' => 'YouTube との通信に失敗しました。時間をおいて再度お試しください']);
+            return $fail('YouTube との通信に失敗しました。時間をおいて再度お試しください');
+        } catch (QueryException $e) {
+            // The exception message contains SQL bindings (incl. the key hash): log only the SQLSTATE.
+            Log::error('Proposal save failed (database)', ['sqlstate' => (string) $e->getCode()]);
+
+            return $fail('保存に失敗しました。時間をおいて再度お試しください');
         }
 
         // Never log the raw key or the full hash.
@@ -120,7 +128,8 @@ class ProposalController extends Controller
             'items' => $created->proposal->item_count,
         ]);
 
-        session()->flash('proposal_key_shown', $created->key);
+        // The session (DB-backed) only holds the hash; the raw key travels in the redirect URL.
+        session()->flash('proposal_key_shown', $created->proposal->key_hash);
 
         return redirect()->route('proposals.shared', $created->key);
     }
@@ -130,7 +139,8 @@ class ProposalController extends Controller
      */
     public function shared(string $key): Response|RedirectResponse
     {
-        $proposal = hash_equals((string) session('proposal_key_shown'), $key)
+        $proposal = ProposalKey::isWellFormed($key)
+            && hash_equals((string) session('proposal_key_shown'), ProposalKey::hash($key))
             ? Proposal::findLiveByKey($key)
             : null;
 

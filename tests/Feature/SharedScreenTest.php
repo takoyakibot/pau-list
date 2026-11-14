@@ -73,17 +73,27 @@ class SharedScreenTest extends TestCase
         $this->get(route('proposals.shared', $key))->assertRedirect(route('proposals.show', $key));
 
         // a flashed key for a different proposal does not unlock this one
-        $this->withSession(['proposal_key_shown' => ProposalKey::generate()])
+        $this->withSession(['proposal_key_shown' => ProposalKey::hash(ProposalKey::generate())])
             ->get(route('proposals.shared', $key))
             ->assertRedirect(route('proposals.show', $key));
     }
 
+    public function test_raw_key_in_session_does_not_unlock(): void
+    {
+        $res = $this->post(route('proposals.store', $this->id), ['title' => 't', 'video_ids' => ['aaaaaaaaaaa']]);
+        $this->assertSame(1, preg_match('#/p/('.ProposalKey::ROUTE_PATTERN.')/shared$#', (string) $res->headers->get('Location'), $m));
+        $this->withSession(['proposal_key_shown' => $m[1]])
+            ->get(route('proposals.shared', $m[1]))
+            ->assertRedirect(route('proposals.show', $m[1]));
+    }
+
     public function test_flash_matching_but_expired_proposal_redirects(): void
     {
-        $this->post(route('proposals.store', $this->id), ['title' => 't', 'video_ids' => ['aaaaaaaaaaa']]);
-        $key = session('proposal_key_shown');
+        $res = $this->post(route('proposals.store', $this->id), ['title' => 't', 'video_ids' => ['aaaaaaaaaaa']]);
+        $this->assertSame(1, preg_match('#/p/('.ProposalKey::ROUTE_PATTERN.')/shared$#', (string) $res->headers->get('Location'), $m));
+        $key = $m[1];
         $this->travel(31)->days();
-        $this->withSession(['proposal_key_shown' => $key])
+        $this->withSession(['proposal_key_shown' => ProposalKey::hash($key)])
             ->get(route('proposals.shared', $key))
             ->assertRedirect(route('proposals.show', $key));
     }

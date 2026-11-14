@@ -9,6 +9,9 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 
 class StoreProposalRequest extends FormRequest
 {
+    /** Bidi overrides/isolates and zero-width characters (can hide or reorder text). */
+    private const INVISIBLE = '\x{200B}-\x{200D}\x{202A}-\x{202E}\x{2066}-\x{2069}\x{FEFF}';
+
     public function authorize(): bool
     {
         return true;
@@ -74,6 +77,15 @@ class StoreProposalRequest extends FormRequest
     }
 
     /**
+     * Always return to the propose screen: with Referrer-Policy no-referrer the "previous URL"
+     * can be a JSON lookup request.
+     */
+    protected function getRedirectUrl(): string
+    {
+        return route('channels.propose', (string) $this->route('channelId'));
+    }
+
+    /**
      * A filled honeypot gets the same silent redirect even when the rest is invalid.
      */
     protected function failedValidation(Validator $validator): void
@@ -98,7 +110,7 @@ class StoreProposalRequest extends FormRequest
             return $value;
         }
 
-        return self::finish(preg_replace('/\p{Cc}/u', '', mb_scrub($value, 'UTF-8')));
+        return self::finish(preg_replace('/[\p{Cc}'.self::INVISIBLE.']/u', '', mb_scrub($value, 'UTF-8')));
     }
 
     private static function multiLine(mixed $value): mixed
@@ -108,7 +120,7 @@ class StoreProposalRequest extends FormRequest
         }
         $value = str_replace(["\r\n", "\r"], "\n", mb_scrub($value, 'UTF-8'));
 
-        return self::finish(preg_replace('/[^\P{Cc}\n\t]/u', '', $value));
+        return self::finish(preg_replace('/[^\P{Cc}\n\t]|['.self::INVISIBLE.']/u', '', $value));
     }
 
     private static function finish(?string $value): ?string

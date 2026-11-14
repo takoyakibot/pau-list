@@ -12,6 +12,7 @@ use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Tests\Support\FakesYouTube;
 use Tests\TestCase;
 
@@ -50,6 +51,13 @@ class StoreProposalTest extends TestCase
         return $this->post(route('proposals.store', $channelId ?? $this->id), $data);
     }
 
+    private function keyFrom($res): string
+    {
+        $this->assertSame(1, preg_match('#/p/('.ProposalKey::ROUTE_PATTERN.')/shared$#', (string) $res->headers->get('Location'), $m));
+
+        return $m[1];
+    }
+
     private function assertNoApiCalls(): void
     {
         $this->assertCount(0, app(Factory::class)->recorded());
@@ -64,9 +72,9 @@ class StoreProposalTest extends TestCase
         ]);
         $res = $this->store(['title' => ' 案 ', 'video_ids' => [self::B, self::A], 'video_titles' => ['偽装']]);
         $p = Proposal::sole();
-        $key = session('proposal_key_shown');
-        $this->assertIsString($key);
-        $this->assertTrue(ProposalKey::isWellFormed($key));
+        $key = $this->keyFrom($res);
+        // the session only ever holds the hash, never the raw key
+        $this->assertSame(ProposalKey::hash($key), session('proposal_key_shown'));
         $res->assertRedirect(route('proposals.shared', $key));
         $this->assertSame(ProposalKey::hash($key), $p->key_hash);
         $this->assertSame('案', $p->title);
@@ -94,8 +102,7 @@ class StoreProposalTest extends TestCase
     public function test_find_live_by_key_rejects_malformed_unknown_and_expired(): void
     {
         $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
-        $this->store(['title' => 't', 'video_ids' => [self::A]]);
-        $key = session('proposal_key_shown');
+        $key = $this->keyFrom($this->store(['title' => 't', 'video_ids' => [self::A]]));
         $this->assertNull(Proposal::findLiveByKey('short'));
         $this->assertNull(Proposal::findLiveByKey(ProposalKey::generate()));
         $this->travel(30)->days();
@@ -264,13 +271,77 @@ class StoreProposalTest extends TestCase
     {
         $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
         Log::spy();
-        $this->store(['title' => 't', 'video_ids' => [self::A]]);
-        $key = session('proposal_key_shown');
+        $key = $this->keyFrom($this->store(['title' => 't', 'video_ids' => [self::A]]));
         $hash = ProposalKey::hash($key);
         Log::shouldHaveReceived('info')->withArgs(function ($msg, $ctx = []) use ($key, $hash) {
             $all = $msg.json_encode($ctx);
 
             return ! str_contains($all, $key) && ! str_contains($all, $hash) && str_contains($all, substr($hash, 0, 8));
+        })->once();
+    }
+
+    public function test_failed_save_after_url_lookup_returns_to_propose_screen(): void
+    {
+        $other = 'UC'.str_repeat('b', 22);
+        $this->fakeVideos([$this->videoResource(self::A, $this->id), $this->videoResource(self::B, $other)]);
+        $this->get(route('channels.propose', $this->id))->assertOk();
+        // a lookup fetch must not become the "previous URL" (no-referrer makes back() use the session)
+        $this->get(route('channels.video', $this->id).'?url='.urlencode('https://youtu.be/'.self::B))->assertOk();
+        $this->get(route('channels.video', $this->id).'?url='.urlencode('https://youtu.be/'.self::A), ['X-Requested-With' => 'XMLHttpRequest', 'Accept' => 'application/json'])->assertOk();
+
+        // service error path
+        $this->store(['title' => 't', 'video_ids' => [self::A, 'ccccccccccc']])
+            ->assertRedirect(route('channels.propose', $this->id))
+            ->assertSessionHasErrors('video_ids')
+            ->assertSessionHasInput('video_ids', [self::A, 'ccccccccccc']);
+        // validation error path
+        $this->store(['title' => '', 'video_ids' => [self::A, self::B]])
+            ->assertRedirect(route('channels.propose', $this->id))
+            ->assertSessionHasErrors('title')
+            ->assertSessionHasInput('video_ids', [self::A, self::B]);
+        // budget path
+        config(['youtube.quota.read_budget' => 0]);
+        $this->store(['title' => 't', 'video_ids' => [self::A]])
+            ->assertRedirect(route('channels.propose', $this->id))
+            ->assertSessionHasErrors('video_ids');
+    }
+
+    public function test_invisible_and_bidi_characters_are_stripped(): void
+    {
+        $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
+        $this->store(['title' => "\u{200B}\u{FEFF}", 'video_ids' => [self::A]])
+            ->assertSessionHasErrors(['title' => '再生リスト名を入力してください']);
+        $this->assertNoApiCalls();
+
+        $this->store([
+            'title' => "a\u{202E}b\u{2066}c\u{2069}d\u{200C}",
+            'description' => "x\u{202A}\ny\u{200D}",
+            'comment' => "\u{2067}c\u{202C}",
+            'proposer_name' => "\u{FEFF}n\u{200B}",
+            'video_ids' => [self::A],
+        ])->assertSessionHasNoErrors();
+        $p = Proposal::sole();
+        $this->assertSame('abcd', $p->title);
+        $this->assertSame("x\ny", $p->description);
+        $this->assertSame('c', $p->comment);
+        $this->assertSame('n', $p->proposer_name);
+    }
+
+    public function test_database_error_redirects_with_message_and_logs_no_bindings(): void
+    {
+        $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
+        Schema::drop('proposal_items');
+        Log::spy();
+        $this->store(['title' => 't', 'video_ids' => [self::A]])
+            ->assertRedirect(route('channels.propose', $this->id))
+            ->assertSessionHasErrors(['video_ids' => '保存に失敗しました。時間をおいて再度お試しください'])
+            ->assertSessionHasInput('title', 't');
+        $this->assertSame(0, Proposal::count());
+        $this->assertNull(session('proposal_key_shown'));
+        Log::shouldHaveReceived('error')->withArgs(function ($msg, $ctx = []) {
+            $all = $msg.json_encode($ctx);
+
+            return preg_match('/[0-9a-f]{64}/', $all) === 0 && ! str_contains($all, 'insert');
         })->once();
     }
 }

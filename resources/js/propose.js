@@ -120,7 +120,7 @@ document.addEventListener('alpine:init', () => {
       this.urlBusy = true;
       this.urlMessage = '';
       try {
-        const res = await fetch(`${this.lookupUrl}?url=${encodeURIComponent(url)}`, { headers: { Accept: 'application/json' } });
+        const res = await fetch(`${this.lookupUrl}?url=${encodeURIComponent(url)}`, { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
         let body = null;
         try { body = await res.json(); } catch { body = null; }
         if (!res.ok || !body || !body.video) {
