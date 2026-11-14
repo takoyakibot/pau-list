@@ -56,7 +56,7 @@ document.addEventListener('alpine:init', () => {
       this.proposerName = old.proposerName ?? '';
       this.storage = safeStorage();
 
-      let stored = loadSelection(this.storage, this.channelId);
+      let stored = loadSelection(this.storage, this.channelId, Date.now());
       if (Array.isArray(old.videoIds) && old.videoIds.length > 0) {
         // After a failed save, the server-submitted order wins (unknown IDs become placeholders).
         stored = selectionFromOldIds(old.videoIds, this.catalogById, stored);
@@ -104,7 +104,7 @@ document.addEventListener('alpine:init', () => {
 
     // --- actions ---
     persist() {
-      saveSelection(this.storage, this.channelId, this.selected);
+      saveSelection(this.storage, this.channelId, this.selected, Date.now());
     },
     apply(list) {
       this.selected = list;

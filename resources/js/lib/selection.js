@@ -25,34 +25,27 @@ export function moveVideo(list, id, delta) {
   return next;
 }
 
-const THUMB_PREFIX = 'https://i.ytimg.com/';
 const ID_RE = /^[A-Za-z0-9_-]{11}$/;
 
-function safeThumb(url) {
-  return typeof url === 'string' && url.startsWith(THUMB_PREFIX) ? url : null;
+function placeholder(id, outside) {
+  return { id, title: `動画 ${id}`, thumbnail_url: null, outside, placeholder: true };
 }
 
-function validItem(x) {
-  return x !== null && typeof x === 'object' && typeof x.id === 'string' && x.id !== '' && typeof x.title === 'string';
+function validStored(x) {
+  return x !== null && typeof x === 'object' && typeof x.id === 'string' && ID_RE.test(x.id);
 }
 
+// Stored selections hold only {id, outside}: catalog videos get their current catalog values,
+// any other id (URL-added, or no longer in the list) becomes a placeholder. The server re-fetches on save.
 export function restoreSelection(stored, catalogById, max) {
   if (!Array.isArray(stored)) return [];
   const seen = new Set();
   const out = [];
   for (const x of stored) {
-    if (!validItem(x) || seen.has(x.id)) continue;
+    if (!validStored(x) || seen.has(x.id)) continue;
     seen.add(x.id);
     const hit = catalogById.get(x.id);
-    out.push(hit
-      ? { ...hit, outside: false }
-      : {
-          id: x.id,
-          title: x.title,
-          thumbnail_url: safeThumb(x.thumbnail_url),
-          outside: x.outside === true,
-          ...(x.placeholder === true ? { placeholder: true } : {}),
-        });
+    out.push(hit ? { ...hit, outside: false } : placeholder(x.id, x.outside === true));
     if (out.length >= max) break;
   }
   return out;
@@ -63,20 +56,19 @@ export function markUnavailable(list, ids) {
   return list.map((x) => (set.has(x.id) ? { ...x, unavailable: true } : x));
 }
 
-// After a failed save the server-submitted order wins. IDs known neither to the catalog nor to
-// this device's storage (e.g. URL-added with storage unavailable) are kept as placeholders so they
-// are still submitted; the server re-fetches real values on save.
+// After a failed save the server-submitted order wins. IDs not in the catalog are kept as
+// placeholders (keeping the stored outside flag) so they are still submitted; the server
+// re-fetches real values on save.
 export function selectionFromOldIds(oldIds, catalogById, stored) {
   const byId = new Map((Array.isArray(stored) ? stored : [])
-    .filter((x) => validItem(x))
+    .filter((x) => validStored(x))
     .map((x) => [x.id, x]));
   const seen = new Set();
   const out = [];
   for (const id of Array.isArray(oldIds) ? oldIds : []) {
     if (typeof id !== 'string' || !ID_RE.test(id) || seen.has(id)) continue;
     seen.add(id);
-    out.push(catalogById.get(id) ?? byId.get(id)
-      ?? { id, title: `動画 ${id}`, thumbnail_url: null, outside: false, placeholder: true });
+    out.push(catalogById.get(id) ?? placeholder(id, byId.get(id)?.outside === true));
   }
   return out;
 }

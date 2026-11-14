@@ -27,31 +27,30 @@ test('move clamps at edges', () => {
   assert.deepEqual(moveVideo([v('a'), v('b')], 'a', -1).map(x => x.id), ['a', 'b']);
   assert.deepEqual(moveVideo([v('a'), v('b')], 'b', 1).map(x => x.id), ['a', 'b']);
 });
-test('restore refreshes catalog items, keeps url-added, drops junk, caps at max', () => {
-  const catalog = new Map([['a', v('a', { title: 'new' })]]);
-  const stored = [v('a', { title: 'old' }), v('x', { outside: true }), { id: 1 }, null, v('a'), v('y')];
+test('restore refreshes catalog items, turns other ids into placeholders, drops junk, caps at max', () => {
+  const catalog = new Map([['aaaaaaaaaaa', v('aaaaaaaaaaa', { title: 'new' })]]);
+  const stored = [{ id: 'aaaaaaaaaaa', outside: false }, { id: 'xxxxxxxxxxx', outside: true }, { id: 1 }, null, { id: 'bad id' },
+    { id: 'aaaaaaaaaaa' }, { id: 'yyyyyyyyyyy' }];
   const list = restoreSelection(stored, catalog, 2);
-  assert.deepEqual(list.map(x => [x.id, x.title]), [['a', 'new'], ['x', 'tx']]);
+  assert.deepEqual(list, [
+    { ...v('aaaaaaaaaaa', { title: 'new' }), outside: false },
+    { id: 'xxxxxxxxxxx', title: '動画 xxxxxxxxxxx', thumbnail_url: null, outside: true, placeholder: true },
+  ]);
+});
+test('restore never uses stored titles or thumbnails (storage keeps ids only)', () => {
+  const stored = [{ id: 'bbbbbbbbbbb', title: 'old title', thumbnail_url: 'https://i.ytimg.com/vi/b/mqdefault.jpg', outside: true }];
+  assert.deepEqual(restoreSelection(stored, new Map(), 10),
+    [{ id: 'bbbbbbbbbbb', title: '動画 bbbbbbbbbbb', thumbnail_url: null, outside: true, placeholder: true }]);
 });
 test('markUnavailable flags ids', () => { assert.equal(markUnavailable([v('a')], ['a'])[0].unavailable, true); });
-test('restore keeps only i.ytimg.com https thumbnails for url-added items', () => {
-  const stored = [
-    v('a', { thumbnail_url: 'https://i.ytimg.com/vi/a/mqdefault.jpg' }),
-    v('b', { thumbnail_url: 'https://evil.example/x.jpg' }),
-    v('c', { thumbnail_url: 'http://i.ytimg.com/vi/c/mqdefault.jpg' }),
-    v('d', { thumbnail_url: 'https://i.ytimg.com.evil.example/x.jpg' }),
-  ];
-  assert.deepEqual(restoreSelection(stored, new Map(), 10).map(x => x.thumbnail_url),
-    ['https://i.ytimg.com/vi/a/mqdefault.jpg', null, null, null]);
-});
 test('selectionFromOldIds keeps server order and fills unknown ids with placeholders', () => {
   const catalog = new Map([['aaaaaaaaaaa', v('aaaaaaaaaaa', { title: 'cat' })]]);
-  const stored = [v('bbbbbbbbbbb', { title: 'stored', outside: true })];
+  const stored = [{ id: 'bbbbbbbbbbb', outside: true }];
   const list = selectionFromOldIds(['ccccccccccc', 'aaaaaaaaaaa', 'bbbbbbbbbbb', 'bad', 'aaaaaaaaaaa'], catalog, stored);
-  assert.deepEqual(list.map(x => [x.id, x.title, x.placeholder === true]), [
-    ['ccccccccccc', '動画 ccccccccccc', true],
-    ['aaaaaaaaaaa', 'cat', false],
-    ['bbbbbbbbbbb', 'stored', false],
+  assert.deepEqual(list.map(x => [x.id, x.title, x.placeholder === true, x.outside]), [
+    ['ccccccccccc', '動画 ccccccccccc', true, false],
+    ['aaaaaaaaaaa', 'cat', false, false],
+    ['bbbbbbbbbbb', '動画 bbbbbbbbbbb', true, true],
   ]);
   // placeholders survive restoreSelection
   assert.equal(restoreSelection(list, catalog, 99)[0].placeholder, true);
