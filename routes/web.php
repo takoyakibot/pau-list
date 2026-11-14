@@ -16,3 +16,8 @@ Route::get('/channels', [ChannelController::class, 'open'])->name('channels.open
 Route::get('/channels/{channelId}/propose', [ProposalController::class, 'create'])
     ->where('channelId', 'UC[A-Za-z0-9_-]{22}')
     ->name('channels.propose');
+
+Route::get('/channels/{channelId}/videos/lookup', [ChannelController::class, 'video'])
+    ->where('channelId', 'UC[A-Za-z0-9_-]{22}')
+    ->middleware('throttle:video-lookup')
+    ->name('channels.video');
