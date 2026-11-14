@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Services\YouTube\QuotaLedger;
 use Carbon\CarbonImmutable;
+use Database\Seeders\DemoChannelSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\DB;
@@ -206,5 +207,24 @@ class ProposeScreenTest extends TestCase
         $id = $this->setUpChannel();
         $res = $this->withSession(['unavailable_video_ids' => ['dQw4w9WgXcQ']])->get(route('channels.propose', $id));
         $this->assertSame(['dQw4w9WgXcQ'], $this->catalogPayload($res)['unavailableIds']);
+    }
+
+    public function test_demo_seeder_skips_in_production(): void
+    {
+        $this->app['env'] = 'production';
+        (new DemoChannelSeeder)->run();
+        $this->assertSame(0, DB::table('channel_caches')->count());
+
+        $this->app['env'] = 'testing';
+        (new DemoChannelSeeder)->run();
+        $this->assertSame(1, DB::table('channel_caches')->count());
+    }
+
+    public function test_placeholder_notice_is_in_markup(): void
+    {
+        $id = $this->setUpChannel();
+        $this->get(route('channels.propose', $id))->assertOk()
+            ->assertSee('x-show="hasPlaceholders"', false)
+            ->assertSee('一部の動画はタイトルを表示できませんが、選択は保たれています（保存時に YouTube から取得し直します）');
     }
 }

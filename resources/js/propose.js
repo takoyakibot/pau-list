@@ -1,17 +1,10 @@
-import { toggleVideo, addVideo, removeVideo, moveVideo, restoreSelection, markUnavailable } from './lib/selection.js';
+import { toggleVideo, addVideo, removeVideo, moveVideo, restoreSelection, markUnavailable, selectionFromOldIds } from './lib/selection.js';
 import { filterVideos } from './lib/filter.js';
 import { loadSelection, saveSelection, clearSelection } from './lib/storage.js';
 import { countChars } from './lib/text.js';
+import { safeStorage } from './lib/safe-storage.js';
 
 const LIMITS = { title: 150, description: 1000, comment: 500, proposerName: 30 };
-
-function safeStorage() {
-  try {
-    return window.localStorage ?? null;
-  } catch {
-    return null;
-  }
-}
 
 function readJson(el, name) {
   try {
@@ -61,15 +54,15 @@ document.addEventListener('alpine:init', () => {
 
       let stored = loadSelection(this.storage, this.channelId);
       if (Array.isArray(old.videoIds) && old.videoIds.length > 0) {
-        // After a failed save, the server-submitted order wins.
-        const byId = new Map(stored.filter((x) => x && typeof x.id === 'string').map((x) => [x.id, x]));
-        stored = old.videoIds
-          .map((id) => this.catalogById.get(id) ?? byId.get(id))
-          .filter(Boolean);
+        // After a failed save, the server-submitted order wins (unknown IDs become placeholders).
+        stored = selectionFromOldIds(old.videoIds, this.catalogById, stored);
       }
       const restored = restoreSelection(stored, this.catalogById, this.maxItems);
       this.selected = markUnavailable(restored, Array.isArray(catalog.unavailableIds) ? catalog.unavailableIds : []);
       this.persist();
+
+      // A page restored from the back/forward cache keeps the old disabled state.
+      window.addEventListener('pageshow', () => { this.submitting = false; });
     },
 
     // --- derived ---
@@ -88,6 +81,7 @@ document.addEventListener('alpine:init', () => {
     get hasLimitMessage() { return this.limitMessage !== ''; },
     get hasUrlMessage() { return this.urlMessage !== ''; },
     get hasSelection() { return this.selected.length > 0; },
+    get hasPlaceholders() { return this.selected.some((x) => x.placeholder === true); },
 
     // --- per-row helpers (use this.video / this.item from x-for scope) ---
     isSelected() { return this.selected.some((x) => x.id === this.video.id); },

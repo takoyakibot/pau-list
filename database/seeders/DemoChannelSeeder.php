@@ -14,6 +14,12 @@ class DemoChannelSeeder extends Seeder
 {
     public function run(): void
     {
+        if (app()->isProduction()) {
+            $this->command?->warn('DemoChannelSeeder is for local checks only; skipped in production.');
+
+            return;
+        }
+
         $id = 'UC'.str_repeat('D', 22);
         $now = now();
 

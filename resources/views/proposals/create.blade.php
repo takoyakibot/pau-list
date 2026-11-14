@@ -86,6 +86,7 @@
             <section aria-labelledby="selected-heading" class="space-y-2">
                 <h2 id="selected-heading" class="text-lg font-semibold">選択した動画（<span x-text="selectedCount"></span> / <span x-text="maxItems"></span>）</h2>
                 <p class="text-sm text-gray-600" x-show="!hasSelection">まだ動画が選ばれていません</p>
+                <p class="text-sm text-amber-800" x-show="hasPlaceholders">一部の動画はタイトルを表示できませんが、選択は保たれています（保存時に YouTube から取得し直します）</p>
                 <ol class="space-y-2">
                     <template x-for="item in selected" :key="item.id">
                         <li class="rounded border border-gray-200 p-2 text-sm">

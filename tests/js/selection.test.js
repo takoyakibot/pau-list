@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { toggleVideo, addVideo, removeVideo, moveVideo, restoreSelection, markUnavailable } from '../../resources/js/lib/selection.js';
+import { toggleVideo, addVideo, removeVideo, moveVideo, restoreSelection, markUnavailable, selectionFromOldIds } from '../../resources/js/lib/selection.js';
 
 const v = (id, extra = {}) => ({ id, title: `t${id}`, thumbnail_url: null, outside: false, ...extra });
 
@@ -34,3 +34,27 @@ test('restore refreshes catalog items, keeps url-added, drops junk, caps at max'
   assert.deepEqual(list.map(x => [x.id, x.title]), [['a', 'new'], ['x', 'tx']]);
 });
 test('markUnavailable flags ids', () => { assert.equal(markUnavailable([v('a')], ['a'])[0].unavailable, true); });
+test('restore keeps only i.ytimg.com https thumbnails for url-added items', () => {
+  const stored = [
+    v('a', { thumbnail_url: 'https://i.ytimg.com/vi/a/mqdefault.jpg' }),
+    v('b', { thumbnail_url: 'https://evil.example/x.jpg' }),
+    v('c', { thumbnail_url: 'http://i.ytimg.com/vi/c/mqdefault.jpg' }),
+    v('d', { thumbnail_url: 'https://i.ytimg.com.evil.example/x.jpg' }),
+  ];
+  assert.deepEqual(restoreSelection(stored, new Map(), 10).map(x => x.thumbnail_url),
+    ['https://i.ytimg.com/vi/a/mqdefault.jpg', null, null, null]);
+});
+test('selectionFromOldIds keeps server order and fills unknown ids with placeholders', () => {
+  const catalog = new Map([['aaaaaaaaaaa', v('aaaaaaaaaaa', { title: 'cat' })]]);
+  const stored = [v('bbbbbbbbbbb', { title: 'stored', outside: true })];
+  const list = selectionFromOldIds(['ccccccccccc', 'aaaaaaaaaaa', 'bbbbbbbbbbb', 'bad', 'aaaaaaaaaaa'], catalog, stored);
+  assert.deepEqual(list.map(x => [x.id, x.title, x.placeholder === true]), [
+    ['ccccccccccc', '動画 ccccccccccc', true],
+    ['aaaaaaaaaaa', 'cat', false],
+    ['bbbbbbbbbbb', 'stored', false],
+  ]);
+  // placeholders survive restoreSelection
+  assert.equal(restoreSelection(list, catalog, 99)[0].placeholder, true);
+  // broken storage value
+  assert.deepEqual(selectionFromOldIds(['aaaaaaaaaaa'], catalog, null).map(x => x.id), ['aaaaaaaaaaa']);
+});
