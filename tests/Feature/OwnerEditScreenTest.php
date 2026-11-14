@@ -148,6 +148,19 @@ class OwnerEditScreenTest extends TestCase
         $this->assertMatchesRegularExpression('/<textarea[^>]*name="description"[^>]*>1 行目\n2 行目 https:\/\/example.com\/x<\/textarea>/', $html);
     }
 
+    public function test_row_buttons_messages_use_property_refs_only(): void
+    {
+        $this->cacheChannel();
+        $html = $this->edit($this->createProposal())->getContent();
+        // Alpine CSP build: bindings are bare property/method names, never expressions.
+        $this->assertStringContainsString(':aria-label="moveUpLabel"', $html);
+        $this->assertStringContainsString(':aria-label="moveDownLabel"', $html);
+        $this->assertStringContainsString(':aria-label="removeLabel"', $html);
+        $this->assertStringContainsString('x-show="titleEmpty"', $html);
+        $this->assertStringContainsString('再生リスト名を入力してください', $html);
+        $this->assertStringContainsString('x-show="hasRestoredMessage" x-text="restoredMessage"', $html);
+    }
+
     public function test_editor_payload_has_fixed_keys_and_no_secrets(): void
     {
         $this->cacheChannel([

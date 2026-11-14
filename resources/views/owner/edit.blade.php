@@ -41,6 +41,7 @@
             @endif
 
             <div x-show="showLiveList" x-cloak>
+                <p class="rounded bg-amber-50 p-2 text-sm text-amber-900" role="status" x-show="hasRestoredMessage" x-text="restoredMessage"></p>
                 <p class="text-sm text-gray-600" x-show="isEmpty">まだ動画が選ばれていません</p>
                 <ol class="space-y-2">
                     <template x-for="item in items" :key="item.id">
@@ -50,9 +51,10 @@
                                     <img :src="item.thumbnail_url" loading="lazy" alt="" width="64" height="36" class="h-9 w-16 flex-none rounded object-cover">
                                 </template>
                                 <span class="min-w-0 flex-1 break-words" x-text="item.title"></span>
-                                <button type="button" @click="moveUp" class="rounded border border-gray-300 px-2" aria-label="上へ">↑</button>
-                                <button type="button" @click="moveDown" class="rounded border border-gray-300 px-2" aria-label="下へ">↓</button>
-                                <button type="button" @click="remove" class="rounded border border-gray-300 px-2">削除</button>
+                                {{-- Per-row names for screen readers (owner-edit.js methods; the CSP build allows property refs only). --}}
+                                <button type="button" @click="moveUp" class="rounded border border-gray-300 px-2" aria-label="上へ" :aria-label="moveUpLabel">↑</button>
+                                <button type="button" @click="moveDown" class="rounded border border-gray-300 px-2" aria-label="下へ" :aria-label="moveDownLabel">↓</button>
+                                <button type="button" @click="remove" class="rounded border border-gray-300 px-2" :aria-label="removeLabel">削除</button>
                             </div>
                             <p class="mt-1 text-xs text-amber-800" x-show="item.outside">対象チャンネル外</p>
                             <p class="mt-1 text-xs text-gray-700" x-show="item.unlisted">限定公開</p>
@@ -117,6 +119,7 @@
                 <input type="text" name="title" x-model="title" value="{{ $proposal->title }}" required class="mt-1 w-full rounded border border-gray-300 px-3 py-2">
                 <span class="block text-xs" :class="titleCounterClass" x-text="titleCounter"></span>
                 <span class="block text-xs text-red-700" x-show="titleOver" x-cloak>再生リスト名 は 150 文字以内で入力してください</span>
+                <span class="block text-xs text-red-700" x-show="titleEmpty" x-cloak x-text="titleRequiredText">再生リスト名を入力してください</span>
             </label>
             <label class="block text-sm">
                 <span class="block font-semibold">再生リストの説明（任意）</span>

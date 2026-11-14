@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   PRIVACY_VALUES, normalizePrivacy, remainingFrom, creationQuota, shortageText, isCreateDisabled,
   restoreDraftItems, mergeUnlisted, upgradePlaceholders, sanitizeUnlisted, unlistedResultMessage,
+  rowActionLabel, isBlankTitle, TITLE_REQUIRED, DRAFT_RESTORED,
 } from '../../resources/js/lib/owner-edit.js';
 
 test('creationQuota: within remaining', () => {
@@ -88,4 +89,18 @@ test('unlistedResultMessage reports none, shown, and the 300 cap', () => {
   assert.equal(unlistedResultMessage(3, false), 'あなたの限定公開の動画も一覧に表示しています（あなたにだけ表示されます）');
   assert.equal(unlistedResultMessage(300, true), 'あなたの限定公開の動画も一覧に表示しています（あなたにだけ表示されます）。限定公開の動画は新しい順に300本まで表示しています');
   assert.equal(unlistedResultMessage(300, 'yes'), unlistedResultMessage(300, false));
+});
+test('rowActionLabel names the video and the action for screen readers', () => {
+  assert.equal(rowActionLabel({ title: '猫の動画' }, 'up'), '「猫の動画」を上へ移動');
+  assert.equal(rowActionLabel({ title: '猫の動画' }, 'down'), '「猫の動画」を下へ移動');
+  assert.equal(rowActionLabel({ title: '猫の動画' }, 'remove'), '「猫の動画」を削除');
+  assert.equal(rowActionLabel({ title: '' }, 'remove'), '「タイトル不明の動画」を削除');
+  assert.equal(rowActionLabel(null, 'up'), '「タイトル不明の動画」を上へ移動');
+  assert.equal(rowActionLabel({ title: 'x' }, 'other'), '');
+});
+test('isBlankTitle treats ASCII and full-width spaces as empty', () => {
+  for (const v of ['', ' ', '　', ' 　\n', undefined, null]) assert.equal(isBlankTitle(v), true, String(v));
+  assert.equal(isBlankTitle(' a '), false);
+  assert.equal(TITLE_REQUIRED, '再生リスト名を入力してください');
+  assert.equal(DRAFT_RESTORED, '前回の編集内容を復元しました（タイトルが表示されない動画は追加し直すと表示されます）');
 });

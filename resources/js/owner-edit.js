@@ -6,7 +6,8 @@ import { safeSessionStorage } from './lib/safe-storage.js';
 import { loadDraft, saveDraft, clearDraft } from './lib/draft.js';
 import {
   normalizePrivacy, remainingFrom, creationQuota, shortageText, isCreateDisabled as createDisabled,
-  restoreDraftItems, sanitizeUnlisted, mergeUnlisted, upgradePlaceholders, unlistedResultMessage, TITLE_MAX, DESCRIPTION_MAX,
+  restoreDraftItems, sanitizeUnlisted, mergeUnlisted, upgradePlaceholders, unlistedResultMessage, rowActionLabel, isBlankTitle,
+  TITLE_REQUIRED, DRAFT_RESTORED, TITLE_MAX, DESCRIPTION_MAX,
 } from './lib/owner-edit.js';
 
 const MAX_MISSING = '最大本数を読み込めなかったため、動画を選べません。ページを再読み込みしてください';
@@ -67,6 +68,7 @@ document.addEventListener('alpine:init', () => {
     unlistedMessage: '',
     needsRelogin: false,
     createMessage: '',
+    restoredMessage: '',
     storage: null,
 
     init() {
@@ -99,6 +101,7 @@ document.addEventListener('alpine:init', () => {
         this.title = draft.title;
         this.description = draft.description;
         this.privacy = draft.privacy;
+        this.restoredMessage = DRAFT_RESTORED;
       } else {
         this.applyInitial();
       }
@@ -127,6 +130,9 @@ document.addEventListener('alpine:init', () => {
     get titleCounter() { return `${countChars(this.title)} / ${TITLE_MAX}`; },
     get descriptionCounter() { return `${countChars(this.description)} / ${DESCRIPTION_MAX}`; },
     get titleOver() { return isOverLimit(this.title, TITLE_MAX); },
+    get titleEmpty() { return this.ready && isBlankTitle(this.title); },
+    get titleRequiredText() { return TITLE_REQUIRED; },
+    get hasRestoredMessage() { return this.restoredMessage !== ''; },
     get descriptionOver() { return isOverLimit(this.description, DESCRIPTION_MAX); },
     get titleCounterClass() { return counterClass(this.titleOver); },
     get descriptionCounterClass() { return counterClass(this.descriptionOver); },
@@ -147,6 +153,9 @@ document.addEventListener('alpine:init', () => {
     isSelected() { return this.items.some((x) => x.id === this.video.id); },
     isCheckDisabled() { return this.isFull && !this.isSelected(); },
     publishedLabel() { return formatPublishedDate(this.video.published_at); },
+    moveUpLabel() { return rowActionLabel(this.item, 'up'); },
+    moveDownLabel() { return rowActionLabel(this.item, 'down'); },
+    removeLabel() { return rowActionLabel(this.item, 'remove'); },
 
     // --- actions ---
     applyInitial() {
@@ -193,6 +202,7 @@ document.addEventListener('alpine:init', () => {
       clearDraft(this.storage, this.draftId);
       this.applyInitial();
       this.limitMessage = '';
+      this.restoredMessage = '';
       this.urlMessage = '';
       this.createMessage = '';
     },

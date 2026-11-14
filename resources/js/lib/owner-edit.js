@@ -34,11 +34,29 @@ export function shortageText(shortBy, resetLabel) {
   return `あと ${shortBy} 本減らすか、リセット後に作成してください（次にリセットされるのは 日本時間 ${resetLabel} です）`;
 }
 
+export const TITLE_REQUIRED = '再生リスト名を入力してください';
+export const DRAFT_RESTORED = '前回の編集内容を復元しました（タイトルが表示されない動画は追加し直すと表示されます）';
+
+// String.prototype.trim also removes the full-width space (U+3000).
+export function isBlankTitle(title) {
+  return String(title ?? '').trim() === '';
+}
+
+const ROW_ACTIONS = { up: 'を上へ移動', down: 'を下へ移動', remove: 'を削除' };
+
+// Per-row button names (↑ / ↓ / 削除 alone do not say which video they act on).
+export function rowActionLabel(item, action) {
+  if (!Object.hasOwn(ROW_ACTIONS, action)) return '';
+  const title = item !== null && typeof item === 'object' && typeof item.title === 'string' && item.title !== ''
+    ? item.title : 'タイトル不明の動画';
+  return `「${title}」${ROW_ACTIONS[action]}`;
+}
+
 export function isCreateDisabled({ count, maxItems, remainingItems, title, description }) {
   if (!(count >= 1) || !(maxItems >= 1)) return true;
   if (!creationQuota(count, remainingItems).canCreate) return true;
   const t = String(title ?? '');
-  if (t.trim() === '' || countChars(t) > TITLE_MAX) return true;
+  if (isBlankTitle(t) || countChars(t) > TITLE_MAX) return true;
   return countChars(description) > DESCRIPTION_MAX;
 }
 
