@@ -34,6 +34,8 @@ class OwnerAuthController extends Controller
 
     public const CHANNEL_FAILED_MESSAGE = 'YouTube のチャンネルを確認できませんでした。時間をおいてもう一度ログインしてください';
 
+    public const ALREADY_LOGGED_IN_MESSAGE = 'すでにログインしています';
+
     public const NO_CHANNEL_MESSAGE = 'このアカウントには YouTube チャンネルがありません。チャンネルのあるアカウントでログインしてください';
 
     public function __construct(
@@ -180,9 +182,17 @@ class OwnerAuthController extends Controller
         return redirect()->route('proposals.show', $key)->with('owner_error', $message);
     }
 
-    /** 400 with a way back: the proposal of the pulled login when it is still live, else the top page. */
-    private function invalid(?PendingLogin $pending): Response
+    /**
+     * 400 with a way back: the proposal of the pulled login when it is still live, else the top page.
+     * A logged-in owner (typically the callback URL reloaded or reached with the back button after a
+     * successful login) is sent to the top page with a fixed notice instead; the login is left as it is.
+     */
+    private function invalid(?PendingLogin $pending): Response|RedirectResponse
     {
+        if ($this->owners->current() !== null) {
+            return redirect()->route('home')->with('owner_notice', self::ALREADY_LOGGED_IN_MESSAGE);
+        }
+
         $retryKey = $pending !== null && Proposal::findLiveOr503($pending->proposalKey) !== null
             ? $pending->proposalKey
             : null;

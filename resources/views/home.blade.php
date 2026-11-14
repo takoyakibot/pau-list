@@ -7,6 +7,9 @@
 @section('title', 'List Maker（仮称）')
 
 @section('content')
+    @if (session()->has('owner_notice'))
+        <p class="mb-4 rounded bg-amber-50 p-2 text-sm text-amber-900" role="status">{{ session('owner_notice') }}</p>
+    @endif
     <h1 class="text-2xl font-bold">List Maker（仮称）</h1>
     <p class="mt-4">YouTube の再生リストを、ファンが提案してチャンネル主が作成するためのツールです</p>
 

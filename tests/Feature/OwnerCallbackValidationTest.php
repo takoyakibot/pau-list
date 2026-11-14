@@ -76,8 +76,24 @@ class OwnerCallbackValidationTest extends TestCase
         $this->fakeMyChannel($this->channelId);
         $url = '/auth/google/callback?'.http_build_query(['state' => $state, 'code' => '4/0Acode']);
         $this->get($url)->assertRedirect(route('proposals.edit', $key));
+        app(OwnerSession::class)->forget(); // not logged in any more (e.g. another tab logged out)
         $this->get($url)->assertStatus(400)->assertSee('href="'.route('home').'"', false);
         $this->assertCount(1, $this->googleRequests(GoogleOAuth::TOKEN_URL));
+    }
+
+    public function test_replayed_callback_while_logged_in_goes_home_with_a_notice(): void
+    {
+        $key = $this->createProposal();
+        $state = $this->begin($key);
+        $this->fakeToken();
+        $this->fakeMyChannel($this->channelId);
+        $url = '/auth/google/callback?'.http_build_query(['state' => $state, 'code' => '4/0Acode']);
+        $this->get($url)->assertRedirect(route('proposals.edit', $key));
+        // Back button / reload of the callback URL: no 400 page, the login is kept, nothing is exchanged again.
+        $this->get($url)->assertRedirect(route('home'))->assertSessionHas('owner_notice', 'すでにログインしています');
+        $this->assertSame($this->channelId, app(OwnerSession::class)->current()?->channelId);
+        $this->assertCount(1, $this->googleRequests(GoogleOAuth::TOKEN_URL));
+        $this->get(route('home'))->assertOk()->assertSee('すでにログインしています');
     }
 
     public function test_state_older_than_10_minutes_is_400(): void
