@@ -18,6 +18,8 @@ class ChannelVideoCatalog
 {
     private const PAGE_SIZE = 50;
 
+    private const DEADLINE_SECONDS = 30;
+
     public function __construct(private readonly YouTubeReader $reader) {}
 
     public function load(string $channelId): CatalogResult
@@ -68,13 +70,16 @@ class ChannelVideoCatalog
 
     public function expireStale(): int
     {
+        // Collect ids first: deleting while chunking by offset would skip rows.
+        $ids = ChannelCache::query()->where('expires_at', '<=', now())->pluck('channel_id');
         $count = 0;
-        ChannelCache::query()
-            ->where('expires_at', '<=', now())
-            ->each(function (ChannelCache $cache) use (&$count) {
+        foreach ($ids as $id) {
+            $cache = $this->find($id);
+            if ($cache !== null && $cache->expires_at->lessThanOrEqualTo(now())) {
                 $this->expire($cache);
                 $count++;
-            });
+            }
+        }
 
         return $count;
     }
@@ -82,6 +87,7 @@ class ChannelVideoCatalog
     private function import(string $channelId, ?ChannelCache $existing): CatalogResult
     {
         $hadExpired = DB::table('channel_cache_expirations')->where('channel_id', $channelId)->exists();
+        $deadline = CarbonImmutable::now()->addSeconds(self::DEADLINE_SECONDS);
 
         try {
             $info = $this->reader->channel(ChannelRef::id($channelId));
@@ -89,39 +95,118 @@ class ChannelVideoCatalog
                 return new CatalogResult(CatalogStatus::NotFound, null, $hadExpired);
             }
 
-            [$items, $truncated] = $this->readAll($info);
+            $read = $existing === null
+                ? $this->readAll($info, $deadline)
+                : $this->readDiff($info, $existing, $deadline);
         } catch (ReadBudgetExceeded) {
             return new CatalogResult(CatalogStatus::BudgetExhausted, $existing, $hadExpired);
         } catch (YouTubeApiException) {
             return new CatalogResult(CatalogStatus::Failed, $existing, $hadExpired);
         }
 
-        $this->writeFull($info, $items, $truncated);
+        if ($read === null) {
+            // Ran past the 30-second budget: discard everything read so far (spec 5.3 / D21).
+            return new CatalogResult(CatalogStatus::Failed, $existing, $hadExpired);
+        }
 
-        return new CatalogResult(CatalogStatus::Imported, $this->find($channelId), $hadExpired);
+        if ($existing === null) {
+            $this->writeFull($info, $read['new'], $read['truncated']);
+
+            return new CatalogResult(CatalogStatus::Imported, $this->find($channelId), $hadExpired);
+        }
+
+        $this->writeDiff($info, $read['new'], $read['remove']);
+
+        return new CatalogResult(CatalogStatus::Synced, $this->find($channelId), $hadExpired);
     }
 
-    /** @return array{0: array<string, PlaylistItem>, 1: bool} */
-    private function readAll(ChannelInfo $info): array
+    /**
+     * Full import: read from the newest upload until the end or the page cap.
+     *
+     * @return array{new: array<string, PlaylistItem>, truncated: bool}|null null when the deadline passed
+     */
+    private function readAll(ChannelInfo $info, CarbonImmutable $deadline): ?array
     {
-        $items = [];
+        $new = [];
         $token = null;
         $pages = 0;
         do {
             if ($pages >= $this->maxPages()) {
-                return [$items, true];
+                return ['new' => $new, 'truncated' => true];
+            }
+            if (CarbonImmutable::now()->greaterThan($deadline)) {
+                return null;
             }
             $page = $this->reader->uploadsPage($info->uploadsPlaylistId, $token);
             $pages++;
             foreach ($page->items as $item) {
                 if ($item->privacyStatus === 'public') {
-                    $items[$item->videoId] ??= $item;
+                    $new[$item->videoId] ??= $item;
                 }
             }
             $token = $page->nextPageToken;
         } while ($token !== null);
 
-        return [$items, false];
+        return ['new' => $new, 'truncated' => false];
+    }
+
+    /**
+     * Differential import: read newest first and stop on the page where
+     * `sync_known_run` known IDs appear in a row (or all known rows, if fewer).
+     *
+     * @return array{new: array<string, PlaylistItem>, remove: list<string>}|null null when the deadline passed
+     */
+    private function readDiff(ChannelInfo $info, ChannelCache $existing, CarbonImmutable $deadline): ?array
+    {
+        $known = array_flip(DB::table('channel_cache_videos')
+            ->where('channel_id', $existing->channel_id)
+            ->pluck('video_id')
+            ->all());
+        $threshold = min((int) config('youtube.channel.sync_known_run'), count($known));
+
+        $new = [];
+        $remove = [];
+        $token = null;
+        $pages = 0;
+        while (true) {
+            if ($pages >= $this->maxPages()) {
+                break;
+            }
+            if (CarbonImmutable::now()->greaterThan($deadline)) {
+                return null;
+            }
+            $page = $this->reader->uploadsPage($info->uploadsPlaylistId, $token);
+            $pages++;
+
+            $run = 0;
+            $stop = $threshold === 0;
+            foreach ($page->items as $item) {
+                $isKnown = isset($known[$item->videoId]);
+                if ($item->privacyStatus !== 'public') {
+                    if ($isKnown) {
+                        $remove[$item->videoId] = true;
+                    }
+
+                    continue;
+                }
+                if ($isKnown) {
+                    $run++;
+                    if ($run >= $threshold) {
+                        $stop = true;
+                    }
+                } else {
+                    $new[$item->videoId] ??= $item;
+                    $run = 0;
+                }
+            }
+
+            $token = $page->nextPageToken;
+            if ($stop || $token === null) {
+                break;
+            }
+        }
+
+        return ['new' => $new, 'remove' => array_keys($remove)];
     }
 
     /** @param array<string, PlaylistItem> $items */
@@ -143,8 +228,62 @@ class ChannelVideoCatalog
             ]], ['channel_id']);
             DB::table('channel_cache_videos')->where('channel_id', $info->id)->delete();
             $this->insertVideos($info->id, $items, $now);
+            $this->trimToLimit($info->id);
             DB::table('channel_cache_expirations')->where('channel_id', $info->id)->delete();
         });
+    }
+
+    /**
+     * Adds new rows and removes no-longer-public ones. Existing rows, cached_since,
+     * expires_at and truncated are left untouched.
+     *
+     * @param  array<string, PlaylistItem>  $new
+     * @param  list<string>  $remove
+     */
+    private function writeDiff(ChannelInfo $info, array $new, array $remove): void
+    {
+        $now = CarbonImmutable::now();
+        DB::transaction(function () use ($info, $new, $remove, $now) {
+            DB::table('channel_caches')->where('channel_id', $info->id)->update([
+                'handle' => $info->handle,
+                'title' => $info->title,
+                'thumbnail_url' => $info->thumbnailUrl,
+                'uploads_playlist_id' => $info->uploadsPlaylistId,
+                'meta_fetched_at' => $now,
+                'last_synced_at' => $now,
+            ]);
+            $this->insertVideos($info->id, $new, $now);
+            foreach (array_chunk($remove, 200) as $chunk) {
+                DB::table('channel_cache_videos')
+                    ->where('channel_id', $info->id)
+                    ->whereIn('video_id', $chunk)
+                    ->delete();
+            }
+            $this->trimToLimit($info->id);
+        });
+    }
+
+    /** Deletes rows beyond fetch_max_videos, oldest published_at first (ties: video_id ascending). */
+    private function trimToLimit(string $channelId): void
+    {
+        $excess = DB::table('channel_cache_videos')->where('channel_id', $channelId)->count()
+            - (int) config('youtube.channel.fetch_max_videos');
+        if ($excess <= 0) {
+            return;
+        }
+        $victims = DB::table('channel_cache_videos')
+            ->where('channel_id', $channelId)
+            ->orderBy('published_at')
+            ->orderBy('video_id')
+            ->limit($excess)
+            ->pluck('video_id')
+            ->all();
+        foreach (array_chunk($victims, 200) as $chunk) {
+            DB::table('channel_cache_videos')
+                ->where('channel_id', $channelId)
+                ->whereIn('video_id', $chunk)
+                ->delete();
+        }
     }
 
     /** @param array<string, PlaylistItem> $items */
@@ -191,6 +330,6 @@ class ChannelVideoCatalog
 
     private function maxPages(): int
     {
-        return intdiv((int) config('youtube.channel.fetch_max_videos'), self::PAGE_SIZE);
+        return max(1, intdiv((int) config('youtube.channel.fetch_max_videos'), self::PAGE_SIZE));
     }
 }
