@@ -68,12 +68,13 @@ trait CreatesProposals
     /**
      * A pending creation (with $items pending items, positions 0..n-1) for a new proposal. With $reserve,
      * today's active reservation of that many units is created; quota_usage is left untouched.
+     * With $key, the creation belongs to that (already created) proposal.
      *
      * @param  array<string, mixed>  $attrs
      */
-    protected function makeCreation(int $items = 3, array $attrs = [], ?int $reserve = null): PlaylistCreation
+    protected function makeCreation(int $items = 3, array $attrs = [], ?int $reserve = null, ?string $key = null): PlaylistCreation
     {
-        $proposal = Proposal::where('key_hash', ProposalKey::hash($this->createProposal()))->sole();
+        $proposal = Proposal::where('key_hash', ProposalKey::hash($key ?? $this->createProposal()))->sole();
         $creation = PlaylistCreation::create(array_merge([
             'proposal_id' => $proposal->id,
             'owner_channel_id' => $proposal->channel_id,

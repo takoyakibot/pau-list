@@ -81,6 +81,8 @@ class AppServiceProvider extends ServiceProvider
         // Creation start and the retry of failed items share one limit: 5 per hour per owner channel (IP when logged out).
         RateLimiter::for('creation-start', fn (Request $request) => Limit::perHour(5)
             ->by('creation-start:'.(app(OwnerSession::class)->current()?->channelId ?? 'ip:'.$request->ip())));
+        // S6 steps: 2 per second per session (spec 8.1); the page waits next_delay_ms (1 s) between steps.
+        RateLimiter::for('creation-step', fn (Request $request) => Limit::perSecond(2)->by('creation-step:'.$request->session()->getId()));
         // Every proposal POST, whatever its outcome (#19(1)). Successful saves have their own limits
         // (App\Support\ProposalStoreLimits: 5 per 10 minutes and 30 per day per IP, 500 per day overall).
         RateLimiter::for('proposal-post', fn (Request $request) => Limit::perMinutes(10, 20)->by('proposal-post:'.$request->ip()));

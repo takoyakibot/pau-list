@@ -69,6 +69,14 @@ Route::post('/p/{key}/creation', [CreationController::class, 'start'])
     ->where('key', ProposalKey::ROUTE_PATTERN)
     ->middleware([RequireSameOriginFetch::class, 'throttle:creation-start', RequireOwnerSession::class])
     ->name('proposals.creation.start');
+// S6 operations (spec 7.3–7.5), all JSON POSTs: origin check, then the limiter (step: per session; retry shares
+// the start limit), then the owner check. Pause/resume/abort/recreate only have the global limit.
+foreach (['step' => 'throttle:creation-step', 'pause' => null, 'resume' => null, 'abort' => null, 'retry' => 'throttle:creation-start', 'recreate' => null] as $action => $throttle) {
+    Route::post("/p/{key}/creation/$action", [CreationController::class, $action])
+        ->where('key', ProposalKey::ROUTE_PATTERN)
+        ->middleware(array_values(array_filter([RequireSameOriginFetch::class, $throttle, RequireOwnerSession::class])))
+        ->name("proposals.creation.$action");
+}
 
 Route::get('/deleted', [OwnerDeleteController::class, 'deleted'])->name('proposals.deleted');
 
