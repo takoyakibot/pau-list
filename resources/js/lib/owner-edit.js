@@ -118,3 +118,44 @@ export function unlistedResultMessage(count, truncated) {
   if (!(count > 0)) return UNLISTED_NONE;
   return truncated === true ? `${UNLISTED_SHOWN}。${UNLISTED_TRUNCATED}` : UNLISTED_SHOWN;
 }
+
+// ---- 「作成」 (POST creation, spec 7.2) ----
+
+export const START_FAILED = '作成を開始できませんでした。時間をおいて再度お試しください';
+export const PAGE_EXPIRED = 'ページの有効期限が切れました。ページを再読み込みしてください（編集内容は残っています）';
+
+export function creationRequestBody({ items, title, description, privacy }) {
+  return {
+    video_ids: (Array.isArray(items) ? items : []).map((x) => x.id),
+    title,
+    description,
+    privacy: normalizePrivacy(privacy),
+  };
+}
+
+function bodyMessage(body) {
+  return body !== null && typeof body === 'object' && typeof body.message === 'string' && body.message !== ''
+    ? body.message : null;
+}
+
+// A failed start: the server's Japanese message for the statuses that carry one (401 login, 409 quota/busy,
+// 422 validation/unavailable videos, 429 limit, 503); 419 (CSRF) and anything else get a fixed text.
+export function startFailure(httpStatus, body) {
+  const ids = body !== null && typeof body === 'object' && Array.isArray(body.unavailable_ids)
+    ? body.unavailable_ids.filter((id) => typeof id === 'string' && ID_RE.test(id)) : [];
+  if (httpStatus === 419) return { message: PAGE_EXPIRED, relogin: false, unavailableIds: [] };
+  if (httpStatus === 401) return { message: bodyMessage(body) ?? START_FAILED, relogin: true, unavailableIds: [] };
+  if ([409, 422, 429, 503].includes(httpStatus)) {
+    return { message: bodyMessage(body) ?? START_FAILED, relogin: false, unavailableIds: ids };
+  }
+  return { message: START_FAILED, relogin: false, unavailableIds: [] };
+}
+
+// Rows of videos the final check found deleted or private get `unavailable: true`; every other row loses it.
+export function markUnavailable(items, ids) {
+  const set = new Set(Array.isArray(ids) ? ids : []);
+  return items.map((x) => {
+    const { unavailable: _drop, ...rest } = x;
+    return set.has(x.id) ? { ...rest, unavailable: true } : rest;
+  });
+}

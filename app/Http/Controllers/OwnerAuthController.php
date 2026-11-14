@@ -151,8 +151,12 @@ class OwnerAuthController extends Controller
             }
         }
 
-        // Channel mismatch is decided (and shown) by RequireOwnerSession on the edit page.
-        return redirect()->route('proposals.edit', $key);
+        // Back to the creation's progress (S6) once one exists, e.g. after a re-login mid-creation (spec 6.2, 7.4);
+        // otherwise to the edit page. Channel mismatch is decided (and shown) by RequireOwnerSession there.
+        return redirect()->route(
+            Proposal::findLiveOrAbort($key)->creation()->exists() ? 'proposals.creation' : 'proposals.edit',
+            $key,
+        );
     }
 
     /**

@@ -13,11 +13,12 @@ use App\Support\OwnerLogin;
 use App\Support\OwnerSession;
 use App\Support\QuotaPolicy;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
 /**
- * S5: the owner's edit screen (display only in Phase 2; no writes, no form).
+ * S5: the owner's edit screen. 「作成」 posts JSON to proposals.creation.start (owner-edit.js); no form.
  * Candidates are the channel's public list (shared cache). The owner's own unlisted uploads (user
  * decision #9) come from unlisted() on demand and are kept only in the owner's session and the response.
  */
@@ -33,10 +34,14 @@ class OwnerEditController extends Controller
 
     public const UNLISTED_THROTTLED = '限定公開の動画の読み込みが続いています。10 分ほど待ってから再度お試しください';
 
-    public function show(Request $request, ChannelVideoCatalog $catalog, QuotaLedger $ledger): Response
+    public function show(Request $request, ChannelVideoCatalog $catalog, QuotaLedger $ledger): Response|RedirectResponse
     {
         /** @var Proposal $proposal */
         $proposal = $request->attributes->get('proposal');
+        // Once started (or finished), the creation is the owner's page for this proposal (spec 7.5).
+        if ($proposal->creation()->exists()) {
+            return redirect()->route('proposals.creation', (string) $request->route('key'));
+        }
         /** @var OwnerLogin $owner */
         $owner = $request->attributes->get('owner');
 
@@ -77,6 +82,8 @@ class OwnerEditController extends Controller
             'title' => $proposal->title,
             'description' => $proposal->description,
             'privacy' => 'private',
+            // POST target of 「作成」, relative to /p/{key}/edit: the raw key is never written into the page.
+            'creationUrl' => 'creation',
         ];
 
         return response()->view('owner.edit', [

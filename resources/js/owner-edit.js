@@ -7,11 +7,11 @@ import { loadDraft, saveDraft, clearDraft } from './lib/draft.js';
 import {
   normalizePrivacy, remainingFrom, creationQuota, shortageText, isCreateDisabled as createDisabled,
   restoreDraftItems, sanitizeUnlisted, mergeUnlisted, upgradePlaceholders, unlistedResultMessage, rowActionLabel, isBlankTitle,
+  creationRequestBody, startFailure, markUnavailable,
   TITLE_REQUIRED, DRAFT_RESTORED, TITLE_MAX, DESCRIPTION_MAX,
 } from './lib/owner-edit.js';
 
 const MAX_MISSING = '最大本数を読み込めなかったため、動画を選べません。ページを再読み込みしてください';
-const CREATE_PENDING = '作成機能は準備中です';
 const UNLISTED_FAILED = 'あなたの限定公開の動画を読み込めませんでした。公開動画の一覧と動画 URL で追加できます';
 const NETWORK_FAILED = '通信に失敗しました。時間をおいて再度お試しください';
 
@@ -42,12 +42,24 @@ function serverMessage(body, fallback) {
 
 const JSON_HEADERS = { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' };
 
+function csrfToken() {
+  return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
+}
+
+// Only a relative path of this page (the start API answers 'creation') is followed.
+function relativeRedirect(body) {
+  const url = body !== null && typeof body === 'object' ? body.redirect : null;
+  return typeof url === 'string' && /^[a-z]+$/.test(url) ? url : '';
+}
+
 document.addEventListener('alpine:init', () => {
   window.Alpine.data('ownerEditor', () => ({
     ready: false,
     draftId: '',
     lookupUrl: '',
     unlistedUrl: '',
+    creationUrl: '',
+    createBusy: false,
     resetLabel: '',
     maxItems: 0,
     remainingItems: 0,
@@ -76,6 +88,7 @@ document.addEventListener('alpine:init', () => {
       this.draftId = typeof editor.draftId === 'string' ? editor.draftId : '';
       this.lookupUrl = typeof editor.lookupUrl === 'string' ? editor.lookupUrl : '';
       this.unlistedUrl = typeof editor.unlistedUrl === 'string' ? editor.unlistedUrl : '';
+      this.creationUrl = typeof editor.creationUrl === 'string' && /^[a-z]+$/.test(editor.creationUrl) ? editor.creationUrl : '';
       this.resetLabel = typeof editor.resetLabel === 'string' ? editor.resetLabel : '';
       this.maxItems = maxItemsFrom(editor);
       this.remainingItems = remainingFrom(editor);
@@ -137,7 +150,7 @@ document.addEventListener('alpine:init', () => {
     get titleCounterClass() { return counterClass(this.titleOver); },
     get descriptionCounterClass() { return counterClass(this.descriptionOver); },
     get isCreateDisabled() {
-      return createDisabled({
+      return this.createBusy || this.creationUrl === '' || createDisabled({
         count: this.count, maxItems: this.maxItems, remainingItems: this.remainingItems, title: this.title, description: this.description,
       });
     },
@@ -206,9 +219,37 @@ document.addEventListener('alpine:init', () => {
       this.urlMessage = '';
       this.createMessage = '';
     },
-    onCreate() {
-      // Creating is Phase 3: nothing is sent.
-      this.createMessage = CREATE_PENDING;
+    // 「作成」: POST the edited list (JSON) to the start API; on success S6 takes over and the draft is dropped.
+    async onCreate() {
+      if (this.isCreateDisabled) return;
+      this.createBusy = true;
+      this.createMessage = '';
+      this.needsRelogin = false;
+      try {
+        const res = await fetch(this.creationUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { ...JSON_HEADERS, 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
+          body: JSON.stringify(creationRequestBody({
+            items: this.items, title: this.title, description: this.description, privacy: this.privacy,
+          })),
+        });
+        let body = null;
+        try { body = await res.json(); } catch { body = null; }
+        const redirect = relativeRedirect(body);
+        if ((res.status === 200 || res.status === 201) && redirect !== '') {
+          clearDraft(this.storage, this.draftId);
+          window.location.assign(redirect);
+          return; // stays busy: the page is leaving
+        }
+        const failure = startFailure(res.status, body);
+        this.createMessage = failure.message;
+        if (failure.relogin) this.needsRelogin = true;
+        this.items = markUnavailable(this.items, failure.unavailableIds);
+      } catch {
+        this.createMessage = NETWORK_FAILED;
+      }
+      this.createBusy = false;
     },
 
     async addByUrl() {

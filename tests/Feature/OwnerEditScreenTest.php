@@ -22,7 +22,7 @@ class OwnerEditScreenTest extends TestCase
 
     private const UPLOADS = 'UUaaaaaaaaaaaaaaaaaaaaaa';
 
-    private const EDITOR_KEYS = ['description', 'draftId', 'items', 'lookupUrl', 'maxItems', 'privacy', 'remainingItems', 'resetLabel', 'title', 'unlistedUrl', 'videos'];
+    private const EDITOR_KEYS = ['creationUrl', 'description', 'draftId', 'items', 'lookupUrl', 'maxItems', 'privacy', 'remainingItems', 'resetLabel', 'title', 'unlistedUrl', 'videos'];
 
     protected function setUp(): void
     {
@@ -81,7 +81,7 @@ class OwnerEditScreenTest extends TestCase
             ->assertSee('この内容に必要な枠: 再生リスト 1 つ＋動画 2 本')
             ->assertSee('本日の残り: 再生リスト 1 つ＋動画あと 99 本まで作成できます')
             ->assertSee('あなたのチャンネルに再生リストを作成します')
-            ->assertSee('押すとあなたの YouTube チャンネルに再生リストが作成されます（書き込み操作）。作成機能は準備中で、現在は押しても作成されません')
+            ->assertSee('押すとあなたの YouTube チャンネルに再生リストが作成されます（書き込み操作）')
             ->assertSee('提案の内容に戻す')
             ->assertSee('データ提供: YouTube')
             ->assertSeeText('再生リストに入れる動画（2 / 99）')
@@ -194,6 +194,8 @@ class OwnerEditScreenTest extends TestCase
         $this->assertSame('私の再生リスト', $payload['title']);
         $this->assertSame("1 行目\n2 行目 https://example.com/x", $payload['description']);
         $this->assertSame('private', $payload['privacy']);
+        // Relative to /p/{key}/edit: the raw key is never written into the page.
+        $this->assertSame('creation', $payload['creationUrl']);
 
         $this->assertStringNotContainsString('ya29.session-token', $html);
         $this->assertStringNotContainsString($key, $html);
@@ -237,5 +239,30 @@ class OwnerEditScreenTest extends TestCase
         $before = $snapshot();
         $this->edit($key)->assertOk();
         $this->assertEquals($before, $snapshot());
+    }
+
+    public function test_edit_redirects_to_creation_once_started(): void
+    {
+        $this->cacheChannel();
+        $key = $this->createProposal();
+        $this->makeCreation(2, [], key: $key);
+        $this->edit($key)->assertRedirect(route('proposals.creation', $key));
+
+        // Also once completed (spec 7.5: the edit screen cannot be opened again).
+        $key = $this->createProposal();
+        $this->makeCreation(2, ['status' => 'completed', 'completed_at' => now()], key: $key);
+        $this->edit($key)->assertRedirect(route('proposals.creation', $key));
+    }
+
+    public function test_create_button_text_no_longer_says_pending(): void
+    {
+        $this->cacheChannel();
+        $res = $this->edit($this->createProposal())->assertOk();
+        $res->assertDontSee('準備中')
+            ->assertSee('押すとあなたの YouTube チャンネルに再生リストが作成されます（書き込み操作）')
+            ->assertSee('削除または非公開のため作成できません')
+            ->assertSee('x-show="item.unavailable"', false);
+        $this->assertSame('creation', $this->editorPayload($res->getContent())['creationUrl']);
+        $this->assertMatchesRegularExpression('/<p[^>]*role="alert"[^>]*x-text="createMessage"/', $res->getContent());
     }
 }

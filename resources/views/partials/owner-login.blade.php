@@ -1,4 +1,4 @@
-{{-- S4: the channel owner's login area. Needs $key, $ownerMatches, $ownerChannelTitle. --}}
+{{-- S4: the channel owner's login area. Needs $key, $ownerMatches, $ownerChannelTitle, $creationStatus. --}}
 <section class="mt-6 rounded border border-gray-200 p-4 text-sm" aria-labelledby="owner-heading">
     <h2 id="owner-heading" class="font-semibold">チャンネル主の方へ</h2>
 
@@ -11,7 +11,11 @@
 
     @if ($ownerMatches)
         <p class="mt-2">ログイン中: {{ $ownerChannelTitle }}</p>
-        <p class="mt-2"><a class="font-semibold underline" href="{{ route('proposals.edit', $key) }}">編集画面へ進む</a></p>
+        @if ($creationStatus !== null)
+            <p class="mt-2"><a class="font-semibold underline" href="{{ route('proposals.creation', $key) }}">作成状況を見る</a></p>
+        @else
+            <p class="mt-2"><a class="font-semibold underline" href="{{ route('proposals.edit', $key) }}">編集画面へ進む</a></p>
+        @endif
         @include('partials.owner-logout')
     @else
         @if ($ownerChannelTitle !== null)

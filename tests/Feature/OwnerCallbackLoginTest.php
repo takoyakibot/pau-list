@@ -257,4 +257,14 @@ class OwnerCallbackLoginTest extends TestCase
         $this->assertSame(['token' => 'ya29.test-access-token'], $this->googleRequests(GoogleOAuth::REVOKE_URL)->sole()->data());
         $this->assertNull(app(OwnerSession::class)->current());
     }
+
+    public function test_callback_returns_to_creation_page_when_creation_exists(): void
+    {
+        $key = $this->createProposal();
+        $this->makeCreation(2, ['status' => 'paused', 'pause_reason' => 'auth_expired', 'youtube_playlist_id' => 'PLx'], key: $key);
+        $this->fakeToken();
+        $this->fakeMyChannel($this->channelId, 'チャンネル A');
+        $this->loginCallback($key)->assertStatus(302)->assertRedirect(route('proposals.creation', $key));
+        $this->get(route('proposals.creation', $key))->assertOk()->assertSee('続きから');
+    }
 }

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\PlaylistCreation;
 use App\Models\Proposal;
 use App\Services\YouTube\QuotaLedger;
 use App\Support\OwnerLogin;
@@ -235,5 +236,118 @@ class PreviewScreenTest extends TestCase
             ->assertSee('role="alert"', false)->assertSee('&lt;b&gt;通知&lt;/b&gt;', false);
         $this->withSession(['owner_error' => 'エラー文'])->get(route('proposals.show', $key))
             ->assertSee('role="alert"', false)->assertSee('エラー文');
+    }
+
+    /** @param array<string, mixed> $attrs */
+    private function makeCreationFor(string $key, array $attrs = []): PlaylistCreation
+    {
+        $proposal = Proposal::where('key_hash', ProposalKey::hash($key))->sole();
+        $creation = PlaylistCreation::create(array_merge([
+            'proposal_id' => $proposal->id,
+            'owner_channel_id' => $proposal->channel_id,
+            'title' => $proposal->title,
+            'description' => '',
+            'privacy_status' => 'private',
+            'status' => PlaylistCreation::ADDING,
+            'estimated_units' => 150,
+            'started_at' => now(),
+        ], $attrs));
+        $creation->items()->create([
+            'position' => 0, 'video_id' => 'aaaaaaaaaaa', 'title' => '動画 A', 'thumbnail_url' => null,
+            'is_outside_channel' => false, 'status' => 'done',
+        ]);
+
+        return $creation;
+    }
+
+    private function completed(string $privacy, string $playlistId): array
+    {
+        return ['status' => PlaylistCreation::COMPLETED, 'privacy_status' => $privacy, 'youtube_playlist_id' => $playlistId, 'completed_at' => now()];
+    }
+
+    public function test_status_and_link_for_public_playlist_are_shown_to_anyone(): void
+    {
+        $key = $this->makeProposal();
+        $this->makeCreationFor($key, $this->completed('public', 'PLpub'));
+        $res = $this->get(route('proposals.show', $key))->assertOk()
+            ->assertSee('状態: 作成済み')
+            ->assertDontSee('状態: 未作成')
+            ->assertSee('<a class="font-semibold underline" href="https://www.youtube.com/playlist?list=PLpub" rel="noopener noreferrer" target="_blank">作成された再生リストを YouTube で見る</a>', false)
+            // The remaining-today section is only for proposals not created yet.
+            ->assertDontSee('本日の残り:');
+        $this->assertNoInlineCode($res->getContent());
+
+        $this->actAsOwner('UC'.str_repeat('z', 22), '他人')->get(route('proposals.show', $key))
+            ->assertSee('href="https://www.youtube.com/playlist?list=PLpub"', false);
+    }
+
+    public function test_unlisted_or_private_playlist_link_only_for_matching_owner(): void
+    {
+        foreach (['unlisted' => 'PLunl', 'private' => 'PLprv'] as $privacy => $id) {
+            $key = $this->makeProposal();
+            $this->makeCreationFor($key, $this->completed($privacy, $id));
+
+            $html = $this->get(route('proposals.show', $key))->assertOk()->assertSee('状態: 作成済み')->getContent();
+            $this->assertStringNotContainsString($id, $html, $privacy);
+            $this->assertStringNotContainsString('作成された再生リストを YouTube で見る', $html, $privacy);
+
+            $html = $this->actAsOwner('UC'.str_repeat('z', 22), '他人')->get(route('proposals.show', $key))->assertSee('状態: 作成済み')->getContent();
+            $this->assertStringNotContainsString($id, $html, $privacy);
+
+            $this->actAsOwner($this->channelId, '自分')->get(route('proposals.show', $key))
+                ->assertSee('状態: 作成済み')
+                ->assertSee('href="https://www.youtube.com/playlist?list='.$id.'"', false)
+                ->assertSee('作成された再生リストを YouTube で見る');
+            $this->flushSession();
+        }
+    }
+
+    public function test_creating_status_hides_remaining_and_owner_sees_progress_link(): void
+    {
+        $key = $this->makeProposal();
+        $this->makeCreationFor($key, ['status' => PlaylistCreation::PAUSED, 'pause_reason' => PlaylistCreation::PAUSE_USER, 'youtube_playlist_id' => 'PLmid', 'privacy_status' => 'public']);
+
+        $html = $this->get(route('proposals.show', $key))->assertOk()
+            ->assertSee('状態: 作成中')
+            ->assertDontSee('本日の残り:')
+            ->assertDontSee('href="'.route('proposals.creation', $key).'"', false)
+            ->getContent();
+        // No link while creating, even for a public playlist.
+        $this->assertStringNotContainsString('PLmid', $html);
+
+        $this->actAsOwner($this->channelId, '自分')->get(route('proposals.show', $key))
+            ->assertSee('href="'.route('proposals.creation', $key).'"', false)
+            ->assertSee('作成状況を見る')
+            ->assertDontSee('編集画面へ進む')
+            ->assertDontSee('href="'.route('proposals.edit', $key).'"', false);
+    }
+
+    public function test_not_created_status_after_abort_without_playlist(): void
+    {
+        $key = $this->makeProposal();
+        $this->makeCreationFor($key, ['status' => PlaylistCreation::COMPLETED, 'privacy_status' => 'public', 'completed_at' => now()]);
+        $this->get(route('proposals.show', $key))->assertOk()
+            ->assertSee('状態: 再生リストは作成されませんでした')
+            ->assertDontSee('作成された再生リストを YouTube で見る')
+            ->assertDontSee('本日の残り:');
+    }
+
+    public function test_owner_unlisted_videos_never_appear_on_preview(): void
+    {
+        $key = $this->makeProposal();
+        $creation = $this->makeCreationFor($key, $this->completed('public', 'PLpub'));
+        $creation->items()->create([
+            'position' => 1, 'video_id' => 'uNlIsTeD_01', 'title' => '限定公開の秘密の動画', 'thumbnail_url' => null,
+            'is_outside_channel' => false, 'status' => 'done',
+        ]);
+
+        foreach ([null, $this->channelId] as $as) {
+            if ($as !== null) {
+                $this->actAsOwner($as, '自分');
+            }
+            $html = $this->get(route('proposals.show', $key))->assertOk()->getContent();
+            $this->assertStringNotContainsString('uNlIsTeD_01', $html);
+            $this->assertStringNotContainsString('限定公開の秘密の動画', $html);
+        }
     }
 }
