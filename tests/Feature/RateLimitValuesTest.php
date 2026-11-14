@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Support\ClientKey;
+use App\Support\ContactLimits;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -50,5 +51,16 @@ class RateLimitValuesTest extends TestCase
     {
         $key = ClientKey::for(Request::create('/', server: ['REMOTE_ADDR' => '']));
         $this->assertSame(hash_hmac('sha256', 'unknown', (string) config('app.key')), $key);
+    }
+
+    public function test_contact_limit_values(): void
+    {
+        $request = Request::create('/contact', 'POST', server: ['REMOTE_ADDR' => '203.0.113.5']);
+        $client = ClientKey::for($request);
+        $this->assertSame([
+            ['contact:m:'.$client, 3, 600],
+            ['contact:d:'.$client, 10, 86400],
+            ['contact:all', 50, 86400],
+        ], app(ContactLimits::class)->limits($request));
     }
 }

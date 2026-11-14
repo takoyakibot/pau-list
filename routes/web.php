@@ -20,6 +20,8 @@ Route::get('/', HomeController::class)->name('home');
 Route::get('/privacy', [StaticPageController::class, 'privacy'])->name('privacy');
 Route::get('/terms', [StaticPageController::class, 'terms'])->name('terms');
 Route::get('/contact', [ContactController::class, 'show'])->name('contact.show');
+// S8: mailed only, never stored. Sends are limited in the controller (ContactLimits).
+Route::post('/contact', [ContactController::class, 'store'])->name('contact.store');
 
 Route::get('/channels', [ChannelController::class, 'open'])
     ->middleware(RequireDocumentNavigation::class)
