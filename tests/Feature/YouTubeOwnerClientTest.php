@@ -242,6 +242,28 @@ class YouTubeOwnerClientTest extends TestCase
         $this->assertSame(0, app(QuotaLedger::class)->used(QuotaLedger::OWNER_READ));
     }
 
+    public function test_insert_playlist_rejects_bad_input_before_any_request(): void
+    {
+        $this->fakePlaylistInsert('PLabc');
+        $client = app(YouTubeOwnerClient::class);
+        $cases = [
+            ['t', '', 'friends'],
+            ['t', '', 'Private'],
+            ['', '', 'private'],
+            [str_repeat('あ', 151), '', 'private'],
+            ['t', str_repeat('い', 1001), 'private'],
+        ];
+        foreach ($cases as [$title, $description, $privacy]) {
+            try {
+                $client->insertPlaylist('ya29.tok', $title, $description, $privacy);
+                $this->fail('InvalidArgumentException was not thrown for '.json_encode([$title, $privacy]));
+            } catch (\InvalidArgumentException) {
+            }
+        }
+        $this->assertCount(0, Http::recorded());
+        $this->assertSame('PLabc', $client->insertPlaylist('ya29.tok', str_repeat('あ', 150), str_repeat('い', 1000), 'public'));
+    }
+
     public function test_insert_playlist_with_malformed_id_is_malformed_error(): void
     {
         foreach (['', 'P', 'PL bad', str_repeat('a', 65)] as $bad) {

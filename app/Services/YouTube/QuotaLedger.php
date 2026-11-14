@@ -79,6 +79,10 @@ class QuotaLedger
      * Run $fn(WriteLock) while holding today's quota_usage(write) row lock, so reservations and write
      * consumption of every creation are serialized (spec 5.4).
      *
+     * Lock order (to avoid deadlocks): when a creation row is also needed, lock it FIRST
+     * (`PlaylistCreation ... lockForUpdate()` in the caller's transaction) and only then call withWriteLock()
+     * inside that transaction. Never lock a creation row from inside $fn (write row → creation row).
+     *
      * @template T
      *
      * @param  callable(WriteLock): T  $fn

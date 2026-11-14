@@ -104,13 +104,26 @@ class YouTubeOwnerClient
         return array_slice(array_values($unlisted), 0, $max === PHP_INT_MAX ? null : $max + 1);
     }
 
+    public const PRIVACY_STATUSES = ['private', 'unlisted', 'public'];
+
     /**
      * playlists.insert. Returns the new playlist id. Quota is counted by the caller (WriteLock::consume()).
+     * The input is checked before any request (privacy one of PRIVACY_STATUSES, title 1–150 characters,
+     * description up to 1,000): a value YouTube would reject never reaches it.
      *
+     * @throws \InvalidArgumentException
      * @throws YouTubeApiException
      */
     public function insertPlaylist(#[\SensitiveParameter] string $accessToken, string $title, string $description, string $privacy): string
     {
+        if (! in_array($privacy, self::PRIVACY_STATUSES, true)) {
+            throw new \InvalidArgumentException('Invalid playlist privacy status.');
+        }
+        $titleLength = mb_strlen($title, 'UTF-8');
+        if ($titleLength < 1 || $titleLength > 150 || mb_strlen($description, 'UTF-8') > 1000) {
+            throw new \InvalidArgumentException('Playlist title must be 1-150 characters and the description at most 1000.');
+        }
+
         $json = $this->post($accessToken, 'playlists', ['part' => 'snippet,status'], [
             'snippet' => ['title' => $title, 'description' => $description],
             'status' => ['privacyStatus' => $privacy],

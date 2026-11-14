@@ -36,6 +36,17 @@ class QuotaReservationTest extends TestCase
             ->first();
     }
 
+    public function test_unused_sum_is_signed_even_for_an_over_consumed_row(): void
+    {
+        // Never produced by WriteLock, but the free formula must not fail on it (MySQL unsigned subtraction).
+        $a = $this->makeCreation(1);
+        $b = $this->makeCreation(1);
+        foreach ([[$a->id, 100, 150], [$b->id, 300, 100]] as [$id, $reserved, $consumed]) {
+            QuotaReservation::create(['creation_id' => $id, 'day_pt' => QuotaClock::todayPt(), 'reserved_units' => $reserved, 'consumed_units' => $consumed, 'status' => QuotaReservation::ACTIVE]);
+        }
+        $this->assertSame(150, QuotaReservation::unusedActiveOn(QuotaClock::todayPt()));
+    }
+
     public function test_reservations_reduce_remaining_for_others(): void
     {
         config(['youtube.quota.write_limit' => 5000]);

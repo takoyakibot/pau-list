@@ -75,15 +75,12 @@ class CreationStarter
                     ]);
                 } catch (QueryException $e) {
                     // Last line of defense against a double start (spec 7.2): another request created it after our
-                    // checks. Only this statement failed; a locking read sees the other request's committed row.
-                    $other = self::isUniqueViolation($e)
-                        ? PlaylistCreation::where('proposal_id', $proposal->id)->lockForUpdate()->first()
-                        : null;
-                    if ($other === null) {
-                        throw $e;
+                    // checks. Only this statement failed and nothing else was written: commit and read the other
+                    // request's row after the transaction (a fresh read; no creation-row lock under the write lock).
+                    if (self::isUniqueViolation($e)) {
+                        return null;
                     }
-
-                    return new StartedCreation($other, false);
+                    throw $e;
                 }
 
                 foreach ($ids as $position => $id) {
@@ -104,9 +101,15 @@ class CreationStarter
                 return new StartedCreation($creation, true);
             });
         } catch (QueryException $e) {
-            $other = self::isUniqueViolation($e) ? $proposal->creation()->first() : null;
-            if ($other === null) {
+            if (! self::isUniqueViolation($e)) {
                 throw $e;
+            }
+            $started = null;
+        }
+        if ($started === null) {
+            $other = $proposal->creation()->first();
+            if ($other === null) {
+                throw new \RuntimeException('Creation insert hit a unique violation but no creation exists.');
             }
 
             return new StartedCreation($other, false);
