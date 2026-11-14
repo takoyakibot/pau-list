@@ -80,10 +80,23 @@ class ContactFormTest extends TestCase
         $res->assertSee('name="website"', false);
         $res->assertSee('入力内容は運営者へのメールとして送られ、本サービスのデータベースには保存されません。返信が必要な場合のみメールアドレスを入力してください');
         $res->assertSee('削除依頼の場合は、本文に提案の URL（https://list-maker.alpacasandbag.jp/p/…）を書いてください。7 日以内に削除します');
+        $res->assertSee('チャンネル単位でまとめて削除したい場合は、チャンネルの URL（https://www.youtube.com/channel/UC…）またはチャンネル ID を書いてください');
+        $res->assertSee('このフォームが使えない場合（1 日の受付数の上限に達した場合など）は、「運営者の連絡先（README で設定）」からも削除をご依頼いただけます');
+        $res->assertSee('入力された情報の取り扱いは<a class="underline" href="'.route('privacy').'#contact-form">プライバシーポリシー</a>をご覧ください', false);
         $res->assertSee('action="'.route('contact.store').'"', false);
         $res->assertSee('name="_token"', false);
         $res->assertDontSee(self::SENT);
         $this->assertNoInlineCode($res->getContent());
+    }
+
+    public function test_operator_contact_is_shown_when_configured(): void
+    {
+        config(['listmaker.operator_contact' => 'X（旧 Twitter）の @operator_example']);
+
+        $this->get('/contact')->assertOk()
+            ->assertSee('「X（旧 Twitter）の @operator_example」からも削除をご依頼いただけます')
+            ->assertDontSee('README で設定');
+        $this->get('/privacy')->assertOk()->assertSee('X（旧 Twitter）の @operator_example');
     }
 
     public function test_sends_text_mail_with_fixed_subject_and_reply_address_in_body(): void

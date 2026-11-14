@@ -23,6 +23,9 @@
 
     <p class="mt-4 text-sm">入力内容は運営者へのメールとして送られ、本サービスのデータベースには保存されません。返信が必要な場合のみメールアドレスを入力してください</p>
     <p class="mt-2 text-sm">削除依頼の場合は、本文に提案の URL（https://list-maker.alpacasandbag.jp/p/…）を書いてください。7 日以内に削除します</p>
+    <p class="mt-2 text-sm">チャンネル単位でまとめて削除したい場合は、チャンネルの URL（https://www.youtube.com/channel/UC…）またはチャンネル ID を書いてください（そのチャンネルの持ち主からの依頼か、運営者がチャンネルの公開の連絡先を通じて確認することがあります）</p>
+    <p class="mt-2 text-sm">このフォームが使えない場合（1 日の受付数の上限に達した場合など）は、@include('partials.operator-contact')からも削除をご依頼いただけます</p>
+    <p class="mt-2 text-sm">入力された情報の取り扱いは<a class="underline" href="{{ route('privacy') }}#contact-form">プライバシーポリシー</a>をご覧ください</p>
 
     <form method="post" action="{{ route('contact.store') }}" class="mt-6 space-y-5">
         @csrf

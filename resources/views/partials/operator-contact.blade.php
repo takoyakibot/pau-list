@@ -1,0 +1,2 @@
+{{-- The operator's public contact (OPERATOR_CONTACT in the server's .env; README), in 「」. Plain text, escaped. --}}
+「@if (filled(config('listmaker.operator_contact'))){{ config('listmaker.operator_contact') }}@else運営者の連絡先（README で設定）@endif」
