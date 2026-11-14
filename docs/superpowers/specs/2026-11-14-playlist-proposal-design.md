@@ -80,7 +80,7 @@
 | S3 | `/p/{key}/shared`（直後 1 回のみ） | 提案完了 | 共有 URL とコピー、有効期限、「この URL を知っている人は誰でも閲覧できる」注意、プレビューへのリンク |
 | S4 | `/p/{key}` | プレビュー | 再生リスト風表示（名前・説明・本数・合計時間・動画リスト・対象チャンネル外バッジ）、提案者コメント・ニックネーム、作成日・削除予定日、状態（未作成／作成中／作成済み）、作成済み再生リストのリンク（public のみ。unlisted/private はログイン中の該当チャンネル主にのみ。7.6）、**上限表示（最大 99 本）**、**本日の残り表示**（未作成時）、ログインボタン（未確認アプリ警告の案内・同意文付き）、任意の watch_videos プレビューリンク |
 | S5 | `/p/{key}/edit` | 編集・作成（要ログイン＋一致） | ログイン中チャンネル表示、編集可能リスト（n / 99）、追加 UI（対象チャンネル一覧／URL）、名前・説明・公開範囲、**必要な枠と本日の残り**、不足時のメッセージとリセット時刻、作成ボタン（書込操作であることを明記）、「限定公開の動画も表示する」ボタン（Y11）、「この提案を削除」リンク（Y14）、ログアウト |
-| S6 | `/p/{key}/creation` | 進捗・結果 | 全体進捗バー、項目ごとの状態、一時停止／再開、残りを中止、失敗分再試行（必要な枠と本日の残りを表示）、再ログイン促し、枠不足時のリセット時刻、完了時の再生リスト URL、取り消し案内 |
+| S6 | `/p/{key}/creation` | 進捗・結果（要ログイン＋一致。`RequireOwnerSession`。7.2） | 全体進捗バー、項目ごとの状態、一時停止／再開、残りを中止、失敗分再試行（必要な枠と本日の残りを表示）、再ログイン促し、枠不足時のリセット時刻、完了時の再生リスト URL、取り消し案内 |
 | S5a | `/p/{key}/delete` → `/deleted` | 提案の削除確認・削除完了（要ログイン＋一致、Y14） | 確認: 提案名・本数、元に戻せない旨、「削除する」ボタン（POST）、編集画面へ戻るリンク。完了: 「削除しました」、トップへのリンク。どちらも noindex・no-store |
 | S7 | `/privacy`, `/terms` | 静的ページ | 9 章の必須事項 |
 | S8 | `/contact` | 問い合わせフォーム | 種別（一般／削除依頼／不具合）、本文、返信用メールアドレス（任意）、ハニーポット、送信完了表示（8.7） |
@@ -281,12 +281,14 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 | 個別動画追加・提案保存時の再取得 | videos.list `part=snippet,contentDetails,status` `id=最大50件` | API キー | 1/50件 | read |
 | 作成前の最終確認（チャンネル主操作） | videos.list（同上） | API キー | 1/50件 | owner_read |
 | ログイン後のチャンネル確認 | channels.list `mine=true part=snippet` | OAuth | 1 | owner_read |
+| 自分の限定公開動画の読み込み（Y11。S5 のボタン操作時のみ） | playlistItems.list `part=snippet,contentDetails,status` `maxResults=50` `playlistId=UU…`（UC→UU で導出）ページング | OAuth | 1/ページ。最大 `CHANNEL_FETCH_MAX_VIDEOS`÷50 ＝ 20 ページ（20 ユニット）。限定公開が 300 本を超えた時点で打ち切り（保持・表示は新しい順に 300 本まで） | owner_read（`QuotaPolicy::ownerReadGuard` で全体を制限。5.4） |
 | 再生リスト作成 | playlists.insert `part=snippet,status` | OAuth | 50 | write（予約から消費） |
 | 動画追加 | playlistItems.insert `part=snippet`（`snippet.position` 指定） | OAuth | 50 | write（予約から消費） |
 | 曖昧失敗の照合 | playlists.list `mine=true maxResults=50` / playlistItems.list `playlistId=作成分` | OAuth | 1/ページ | owner_read |
 
 - search.list は使わない。
 - uploads プレイリスト ID は `contentDetails.relatedPlaylists.uploads` を使う（UC→UU 置換は既存コードで実績ありだが、公式フィールドを優先） ［設計判断］。
+- 例外: チャンネル主の限定公開動画の読み込みでは、uploads プレイリスト ID をチャンネル ID から **UC→UU 置換で導出**し、channels.list を呼ばない ［設計判断］。チャンネル ID はログイン時に channels.list `mine=true` で確認済みで、1 回の読み込みごとに 1 ユニット節約できるため。導出した ID が存在しない（`playlistNotFound`）場合は限定公開の動画なしとして扱う。
 - 一覧の公開状態: uploads に API キーで見えるのは公開動画のみと想定 ［要確認］。`status.privacyStatus` が `public` 以外の項目は除外する。メンバー限定は uploads に出ない ［事実: channel-calendar のコメント］。
 - 再生時間は playlistItems では取れないため、一覧画面では出さず、**提案保存時**に選択分だけ videos.list で取得（99 本で 2 ユニット）。この時点で削除・非公開になった動画は保存を拒否し、外して保存し直すよう表示。
 - API キーはクエリ文字列ではなく `X-Goog-Api-Key` ヘッダで送り、例外メッセージやログに URL ごとキーが残るのを避ける ［設計判断・ヘッダ対応は要確認。不可ならログ出力時にマスク］。
@@ -359,7 +361,8 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 **記録（全区分共通）**
 - 全 API 呼び出しを QuotaLedger 経由にし、送信前に `quota_usage` を加算（Laravel の `upsert` で `units = units + ?`）。日付は `America/Los_Angeles` の今日（`QuotaClock`）。
 - `read`: 送信前に `QUOTA_READ_BUDGET` と比較し、超えるなら送信せず「本日の取得上限」を返す。→ **匿名利用が書込枠を食えない**。
-- `owner_read`: チャンネル主操作に伴う少量の読取（ログイン確認、最終確認、照合）。アプリ側の上限は設けず記録のみ ［設計判断］。匿名の読取予算切れでチャンネル主の作成が止まらないようにするため。想定は 1 作成あたり数ユニットで、Google 枠のうち書込・読取上限の外側（約 3,000）に十分収まる。
+- `owner_read`: チャンネル主操作に伴う少量の読取（ログイン確認、最終確認、照合、自分の限定公開動画の読み込み）。アプリ側の上限は設けず記録のみ ［設計判断］。匿名の読取予算切れでチャンネル主の作成が止まらないようにするため。想定は 1 作成あたり数ユニットで、Google 枠のうち書込・読取上限の外側（約 3,000）に十分収まる。
+  - ただし任意の読取である**限定公開動画の読み込み**（Y11）だけは、送信前に当日の `owner_read` を `QuotaPolicy::ownerReadGuard()`（`QUOTA_GOOGLE_DAILY − QUOTA_WRITE_LIMIT − QUOTA_READ_BUDGET` の半分。既定 1,500）と比べ、達していれば送信せず「読み込めませんでした」と案内する ［設計判断］。ログイン確認・最終確認・照合は止めない。
 
 **書込の予約（予約 → 確定 → 解放の 3 段階）** ［設計判断］
 1. **予約**（作成開始時）: 見込み `50 + 50×本数` を予約する。トランザクション内で当日の `quota_usage(write)` 行をロック（無ければ作成してから `SELECT … FOR UPDATE`）し、
@@ -399,8 +402,9 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 | 同（差分取り込み、前回以降の新規 50 本未満） | channels 1 + 1 ページ + 保存時 2 ＋ URL 追加分 ≒ 4〜7 | — | — |
 | 同（6 時間以内でキャッシュ命中） | 保存時 2 ＋ URL 追加分 ≒ 2〜5 | — | — |
 | チャンネル主ログイン | — | 1 | — |
+| 自分の限定公開動画の読み込み（1 回） | — | 1 ページ 1（uploads 50 本ごと）。最大 20（打ち切りは 5.1）。セッションに 10 分保持し、チャンネルごとに 5 回/10 分（8.1） | — |
 | 作成（n 本、n ≤ 99） | — | 最終確認 1〜2 ＋照合（発生時のみ） | 50 + 50n（49 本 ≒ 2,500、99 本 = 5,000） |
-| 1 日の上限（アプリ側） | ≤ 2,000 | 数十想定 | ≤ 5,000 |
+| 1 日の上限（アプリ側） | ≤ 2,000 | 数十想定（限定公開の読み込みは全体で 1,500 に達したら止める） | ≤ 5,000 |
 
 - 一覧取り込みの比較（1,000 本以上のチャンネルを 1 日中よく開かれる＝6 時間ごとに取り込む場合）: 従来の丸ごと取り直しは 21×4 ≒ 84 ユニット/日。差分取り込みは通常 2×4 ≒ 8 ユニット/日で、全件取り込み 21 はチャンネルの期限切れ後に 1 回だけ（30 日に 1 回）加わる（その日でも ≒ 29 ユニット、30 日平均で ≒ 9 ユニット/日）。
 - 1 日に作れるのは、99 本なら 1 件、49 本なら 2 件、24 本なら 4 件まで。
@@ -615,8 +619,12 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 - cron（毎分）で裏で進める案は、トークンをセッション外に持つ必要があり要件違反のため不採用。
 
 ### 7.2 開始（`POST /p/{key}/creation`）
-1. `RequireOwnerSession` を通過。入力（編集後のリスト・名前・説明・公開範囲）を検証（8.2。本数は 1〜99）。
+1. `RequireOwnerSession` を通過（S6 の表示・開始・ステップ・再開・中止はすべてチャンネル主のログイン＋チャンネル一致が必要）。入力（編集後のリスト・名前・説明・公開範囲）を検証（8.2。本数は 1〜99）。
+   - **JSON で呼ばれる経路**（ステップ等、`expectsJson()`）では、`RequireOwnerSession` は画面へのリダイレクトではなく、未ログイン・期限切れに 401 JSON（`RequireOwnerSession::NOTICE`）、チャンネル不一致に 403 JSON を返す（Phase 2 の `RequireOwnerSession` は HTML 画面用のリダイレクト／不一致画面のみなので、Phase 3 で追加する）。
 2. 作成前の最終確認として videos.list で全動画の存在と公開状態を再取得（owner_read）。消えた動画は除外せず、画面に戻して確認させる。
+   - **チャンネル主自身の限定公開動画**（Y11。S5 で追加したもの）は、公開動画と同じ API キーの確認では落とさず、**チャンネル主のトークン**で videos.list を呼び、`snippet.channelId` がログイン中のチャンネルと一致し `status.privacyStatus` が `unlisted` であるものだけを受け付ける。それ以外の非公開・他チャンネルの限定公開は拒否する。
+   - 限定公開動画の ID は `proposal_items` にも、プレビュー（S4）・共有画面など第三者が見られる画面にも**決して書かない／出さない**（作成の記録 `playlist_creation_items` にのみ置き、表示はログイン中の該当チャンネル主の S6 だけ）。
+   - 最終確認やステップで Google が 401 を返したら（トークン失効・取り消し）、`OwnerSession` のログインを消して（`forget()`）再ログインを求める（JSON では 401＋`RequireOwnerSession::NOTICE`。Phase 2 の `RequireOwnerSession::ownerApiFailureJson()` を使う）。
 3. トランザクションで
    - `playlist_creations`（UNIQUE proposal_id）の存在確認。既に存在すれば何もせず進捗画面へリダイレクト（**二重作成防止その 1: DB 一意制約**）。
    - **書込枠の予約**（5.4）。足りなければロールバックし、編集画面に「本日の残り: 動画あと N 本」とリセット時刻を表示（作成は始まらない）。
@@ -641,7 +649,7 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 |---|---|---|---|
 | Google の `quotaExceeded` | `paused(quota_exceeded)` | 保持（日付が変われば失効） | 翌 PT 日以降。リセット時刻を表示 |
 | アプリの書込上限で確定できない | `paused(quota_budget)` | 保持 | 空きができるかリセット後。再予約できたら再開 |
-| 401／セッション期限切れ | `paused(auth_expired)` | 保持 | 「再ログインして続きから」。ログイン後 `/p/{key}/creation` へ戻る（戻り先をセッションに保存） |
+| 401／セッション期限切れ | `paused(auth_expired)`。Google の 401 ではセッションのログインを消す（`forget()`、7.2） | 保持 | 「再ログインして続きから」。ログイン後 `/p/{key}/creation` へ戻る（戻り先をセッションに保存） |
 | タブを閉じた・回線断 | 変化なし | 保持 | URL を開き直して「続きから」 |
 | 利用者の一時停止ボタン | `paused(user)`（表示用） | 保持 | 「続きから」 |
 | 利用者の「残りを中止」 | 未送信を `skipped` → `completed` | 解放 | 不可（失敗分の再試行のみ可） |
@@ -658,6 +666,7 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 | public | 「作成済み」＋再生リストへのリンク | 同左 |
 | unlisted / private | 「作成済み」のみ（リンク・ID は HTML に出さない） | 「作成済み」＋リンク |
 - 理由: 共有 URL は誰でも開けるため、限定公開・非公開の再生リスト ID を第三者に渡さない。
+- 同じ理由で、チャンネル主が追加した**自分の限定公開動画**（Y11）の ID・タイトルはプレビューに一切出さない（`proposal_items` に書かないため、プレビューに出る動画は提案時の内容のみ。7.2）。
 
 ### 7.7 進捗に保持するもの
 - 作成内容、各項目状態、YouTube 側 ID、エラー理由、予約量のみ。**トークンは保持しない**。
