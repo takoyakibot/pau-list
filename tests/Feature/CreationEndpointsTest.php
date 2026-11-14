@@ -585,17 +585,18 @@ class CreationEndpointsTest extends TestCase
         [$key, $c] = $this->owned(3, ['status' => PlaylistCreation::ADDING, 'youtube_playlist_id' => 'PLx'], 150);
         $sql = [];
         DB::listen(function ($q) use (&$sql) {
-            $sql[] = $q->sql;
+            // Identifier quotes differ by driver (SQLite ", MySQL `): compare without them.
+            $sql[] = str_replace(['"', '`'], '', $q->sql);
         });
 
         $this->act($key, 'abort')->assertOk()->assertJson(['status' => 'completed', 'skipped' => 3]);
 
         // Lock order creation → write row → items (the items' range updates run under the write lock).
-        $update = array_key_first(array_filter($sql, fn ($s) => str_starts_with($s, 'update "playlist_creation_items"')));
+        $update = array_key_first(array_filter($sql, fn ($s) => preg_match('/^update playlist_creation_items\b/', $s) === 1));
         $this->assertNotNull($update, implode("\n", $sql));
         $before = array_slice($sql, 0, $update, true);
-        $creation = max(array_keys(array_filter($before, fn ($s) => str_starts_with($s, 'select') && str_contains($s, 'from "playlist_creations"'))));
-        $write = max(array_keys(array_filter($before, fn ($s) => str_starts_with($s, 'select') && str_contains($s, 'from "quota_usage"'))) ?: [-1]);
+        $creation = max(array_keys(array_filter($before, fn ($s) => preg_match('/^select\b.*\bfrom playlist_creations\b/s', $s) === 1)));
+        $write = max(array_keys(array_filter($before, fn ($s) => preg_match('/^select\b.*\bfrom quota_usage\b/s', $s) === 1)) ?: [-1]);
         $this->assertGreaterThan($creation, $write, implode("\n", $sql));
         $this->assertSame(QuotaReservation::RELEASED, QuotaReservation::sole()->status);
     }

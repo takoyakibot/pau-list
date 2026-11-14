@@ -848,7 +848,8 @@ class CreationRunnerTest extends TestCase
     {
         $sql = [];
         DB::listen(function ($q) use (&$sql) {
-            $sql[] = $q->sql;
+            // Identifier quotes differ by driver (SQLite ", MySQL `): compare without them.
+            $sql[] = str_replace(['"', '`'], '', $q->sql);
         });
         $fn();
 
@@ -858,18 +859,18 @@ class CreationRunnerTest extends TestCase
     /** The last creation-row read before the first item update is followed by a write-row read (lock). */
     private function assertWriteLockedBeforeItems(array $sql): void
     {
-        $update = self::firstIndex($sql, 'update "playlist_creation_items"');
+        $update = self::firstIndex($sql, '/^update playlist_creation_items\b/');
         $this->assertNotSame(PHP_INT_MAX, $update, implode("\n", $sql));
         $before = array_slice($sql, 0, $update, true);
-        $creation = max(array_keys(array_filter($before, fn ($s) => str_starts_with($s, 'select') && str_contains($s, 'from "playlist_creations"'))));
-        $write = max(array_keys(array_filter($before, fn ($s) => str_starts_with($s, 'select') && str_contains($s, 'from "quota_usage"'))) ?: [-1]);
+        $creation = max(array_keys(array_filter($before, fn ($s) => preg_match('/^select\b.*\bfrom playlist_creations\b/s', $s) === 1)));
+        $write = max(array_keys(array_filter($before, fn ($s) => preg_match('/^select\b.*\bfrom quota_usage\b/s', $s) === 1)) ?: [-1]);
         $this->assertGreaterThan($creation, $write, implode("\n", $sql));
     }
 
-    private static function firstIndex(array $sql, string $needle): int
+    private static function firstIndex(array $sql, string $pattern): int
     {
         foreach ($sql as $i => $s) {
-            if (str_contains($s, $needle)) {
+            if (preg_match($pattern, $s) === 1) {
                 return $i;
             }
         }
