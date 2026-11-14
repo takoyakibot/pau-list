@@ -7,6 +7,7 @@ use App\Models\Proposal;
 use App\Services\YouTube\QuotaLedger;
 use App\Support\ProposalKey;
 use Carbon\CarbonImmutable;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\DB;
@@ -201,7 +202,20 @@ class StoreProposalTest extends TestCase
         for ($i = 0; $i < 5; $i++) {
             $this->store(['title' => '', 'video_ids' => [self::A]])->assertStatus(302);
         }
-        $this->store(['title' => 't', 'video_ids' => [self::A]])->assertStatus(429);
+        // throttled: back to the form with the input kept (not a dead-end 429 page)
+        $this->store(['title' => '残す', 'comment' => 'c', 'video_ids' => [self::A, self::B], 'website' => ''])
+            ->assertRedirect(route('channels.propose', $this->id))
+            ->assertSessionHasErrors(['save' => '保存の操作が集中しています。しばらく待ってから再度お試しください（入力内容は残っています）'])
+            ->assertSessionHasInput('title', '残す')
+            ->assertSessionHasInput('comment', 'c')
+            ->assertSessionHasInput('video_ids', [self::A, self::B]);
+        $this->assertFalse(session()->hasOldInput('_token'));
+        $this->assertFalse(session()->hasOldInput('website'));
+        // a cross-site POST gets the plain 429 page (no input injected into the visitor's form)
+        $this->post(route('proposals.store', $this->id), ['title' => 'x', 'video_ids' => [self::A]], ['Sec-Fetch-Site' => 'cross-site'])
+            ->assertStatus(429);
+        // JSON clients keep the JSON 429
+        $this->postJson(route('proposals.store', $this->id), ['title' => 'x'])->assertStatus(429)->assertJsonStructure(['message']);
         $this->travel(11)->minutes();
         $this->store(['title' => '', 'video_ids' => [self::A]])->assertStatus(302);
     }
@@ -453,5 +467,34 @@ class StoreProposalTest extends TestCase
         $p = Proposal::sole();
         $this->assertSame($this->id, $p->channel_id);
         $this->assertFalse($p->items[0]->is_outside_channel);
+    }
+
+    public function test_expired_csrf_token_returns_to_the_form_with_input(): void
+    {
+        $this->app->instance(PreventRequestForgery::class, new class($this->app, $this->app['encrypter']) extends PreventRequestForgery
+        {
+            protected function runningUnitTests()
+            {
+                return false;
+            }
+        });
+        Http::fake();
+
+        $this->post(route('proposals.store', $this->id), [
+            '_token' => 'stale', 'title' => '残す', 'description' => 'd', 'video_ids' => [self::A], 'website' => '',
+        ])
+            ->assertRedirect(route('channels.propose', $this->id))
+            ->assertSessionHasErrors(['save' => 'ページの有効期限が切れたため保存できませんでした。入力内容は残っているので、もう一度保存してください'])
+            ->assertSessionHasInput('title', '残す')
+            ->assertSessionHasInput('description', 'd')
+            ->assertSessionHasInput('video_ids', [self::A]);
+        $this->assertFalse(session()->hasOldInput('_token'));
+        $this->assertFalse(session()->hasOldInput('website'));
+        $this->assertSame(0, Proposal::count());
+        $this->assertNoApiCalls();
+
+        // cross-site: the plain 419 page
+        $this->post(route('proposals.store', $this->id), ['_token' => 'stale', 'title' => 'x'], ['Sec-Fetch-Site' => 'cross-site'])
+            ->assertStatus(419);
     }
 }
