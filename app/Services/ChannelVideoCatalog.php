@@ -50,6 +50,32 @@ class ChannelVideoCatalog
         }
     }
 
+    /** Channel id from an unexpired cache row for this (lowercased) handle; never uses an expired row. */
+    public function cachedChannelIdForHandle(string $handle): ?string
+    {
+        $id = ChannelCache::query()
+            ->where('handle', mb_strtolower(ltrim($handle, '@')))
+            ->where('expires_at', '>', now())
+            ->orderByDesc('last_synced_at')
+            ->value('channel_id');
+
+        return is_string($id) ? $id : null;
+    }
+
+    /**
+     * Resolves a handle to a channel id: unexpired cache first, otherwise one channels.list call.
+     * Writes no cache row. ReadBudgetExceeded / YouTubeApiException propagate.
+     */
+    public function resolveHandle(string $handle): ?string
+    {
+        $cached = $this->cachedChannelIdForHandle($handle);
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        return $this->reader->channel(ChannelRef::handle($handle))?->id;
+    }
+
     public function isReusable(string $channelId): bool
     {
         $cache = $this->find($channelId);
