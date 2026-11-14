@@ -76,6 +76,7 @@ jobs:
           --health-cmd="mysqladmin ping -h 127.0.0.1"
           --health-interval=5s --health-timeout=5s --health-retries=20
     # phpunit.xml の <env> は force 無しなので、ここで渡す値が優先される
+    # DB 名は _test で終わること（tests/TestCase.php のガード: それ以外の MySQL ではテストを実行せずスキップする）
     env:
       DB_CONNECTION: mysql
       DB_HOST: 127.0.0.1
