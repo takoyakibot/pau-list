@@ -154,4 +154,11 @@
 
         <p class="text-xs text-gray-600">データ提供: YouTube</p>
     </div>
+
+    {{-- Owner-only deletion (user decision #12): the link opens a confirmation page; only its POST deletes.
+         Relative to /p/{key}/edit so the raw key is not written into this page. --}}
+    <section class="mt-10 border-t border-gray-200 pt-4 text-sm">
+        <p><a class="text-red-700 underline" href="delete">この提案を削除</a></p>
+        <p class="mt-1 text-xs text-gray-600">削除すると、共有された URL でも表示できなくなります（30 日の保存期限を待たずに削除できます）</p>
+    </section>
 @endsection

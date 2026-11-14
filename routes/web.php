@@ -4,6 +4,7 @@ use App\Http\Controllers\ChannelController;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\OwnerAuthController;
+use App\Http\Controllers\OwnerDeleteController;
 use App\Http\Controllers\OwnerEditController;
 use App\Http\Controllers\ProposalController;
 use App\Http\Controllers\StaticPageController;
@@ -50,6 +51,17 @@ Route::get('/p/{key}/edit', [OwnerEditController::class, 'show'])
     ->where('key', ProposalKey::ROUTE_PATTERN)
     ->middleware([RequireDocumentNavigation::class, RequireOwnerSession::class])
     ->name('proposals.edit');
+
+// Owner-only deletion (user decision #12): a confirmation page, then a CSRF-protected POST.
+Route::get('/p/{key}/delete', [OwnerDeleteController::class, 'confirm'])
+    ->where('key', ProposalKey::ROUTE_PATTERN)
+    ->middleware([RequireDocumentNavigation::class, RequireOwnerSession::class])
+    ->name('proposals.delete');
+Route::post('/p/{key}/deletion', [OwnerDeleteController::class, 'destroy'])
+    ->where('key', ProposalKey::ROUTE_PATTERN)
+    ->middleware(RequireOwnerSession::class)
+    ->name('proposals.destroy');
+Route::get('/deleted', [OwnerDeleteController::class, 'deleted'])->name('proposals.deleted');
 
 Route::get('/owner/videos/unlisted', [OwnerEditController::class, 'unlisted'])
     // The origin check runs before the limiter: rejected requests must not use up the owner's limit.
