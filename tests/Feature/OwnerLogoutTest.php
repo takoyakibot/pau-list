@@ -10,12 +10,13 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 use Tests\Support\AssertsNoInlineCode;
 use Tests\Support\CreatesProposals;
+use Tests\Support\EnforcesCsrf;
 use Tests\Support\FakesGoogle;
 use Tests\TestCase;
 
 class OwnerLogoutTest extends TestCase
 {
-    use AssertsNoInlineCode, CreatesProposals, FakesGoogle, RefreshDatabase;
+    use AssertsNoInlineCode, CreatesProposals, EnforcesCsrf, FakesGoogle, RefreshDatabase;
 
     public function test_logout_revokes_and_invalidates_session(): void
     {
@@ -70,6 +71,21 @@ class OwnerLogoutTest extends TestCase
         // CSRF is not checked while running tests; the route must be in the standard web group (VerifyCsrfToken).
         $this->assertContains('web', Route::getRoutes()->getByName('owner.logout')->gatherMiddleware());
         $this->assertSame(['POST'], Route::getRoutes()->getByName('owner.logout')->methods());
+    }
+
+    public function test_logout_without_csrf_token_is_419_and_keeps_the_login(): void
+    {
+        $this->enforceCsrf();
+        $this->fakeRevoke();
+        $this->actAsOwner($this->channelId)->get('/');
+        $this->post(route('owner.logout'))->assertStatus(419);
+        $this->post(route('owner.logout'), ['_token' => 'wrong'])->assertStatus(419);
+        $this->post(route('owner.logout'), [], ['Sec-Fetch-Site' => 'cross-site'])->assertStatus(419);
+        $this->assertTrue(session()->has(OwnerSession::OWNER_KEY));
+        $this->assertCount(0, $this->googleRequests(GoogleOAuth::REVOKE_URL));
+
+        $this->post(route('owner.logout'), ['_token' => session()->token()])->assertRedirect(route('owner.logged-out'));
+        $this->assertFalse(session()->has(OwnerSession::OWNER_KEY));
     }
 
     public function test_csrf_token_changes_on_logout(): void
