@@ -32,6 +32,8 @@ class ConfigurationTest extends TestCase
     protected function tearDown(): void
     {
         foreach ($this->saved as $key => $s) {
+            unset($_ENV[$key], $_SERVER[$key]);
+            putenv($key);
             if ($s['env'] !== null) {
                 $_ENV[$key] = $s['env'];
             }
@@ -72,16 +74,28 @@ class ConfigurationTest extends TestCase
         $this->assertTrue(array_key_exists('contact_to_address', config('listmaker')));
     }
 
-    public function test_defaults_match_spec_when_env_is_absent(): void
+    private function setEnv(string $key, ?string $value): void
     {
-        foreach (self::DEFAULT_KEYS as $key) {
+        if (! array_key_exists($key, $this->saved)) {
             $this->saved[$key] = [
                 'env' => $_ENV[$key] ?? null,
                 'server' => $_SERVER[$key] ?? null,
                 'getenv' => getenv($key),
             ];
-            unset($_ENV[$key], $_SERVER[$key]);
-            putenv($key);
+        }
+        unset($_ENV[$key], $_SERVER[$key]);
+        putenv($key);
+
+        if ($value !== null) {
+            $_ENV[$key] = $_SERVER[$key] = $value;
+            putenv("$key=$value");
+        }
+    }
+
+    public function test_defaults_match_spec_when_env_is_absent(): void
+    {
+        foreach (self::DEFAULT_KEYS as $key) {
+            $this->setEnv($key, null);
         }
 
         $youtube = require config_path('youtube.php');
@@ -95,5 +109,27 @@ class ConfigurationTest extends TestCase
         $this->assertSame(3, $youtube['channel']['sync_known_run']);
         $this->assertSame(30, $listmaker['retention_days']);
         $this->assertFalse($listmaker['captcha_enabled']);
+    }
+
+    /**
+     * サーバーの .env に行が抜けていても、セキュリティ・運用上の既定値が安全側になること（spec 3 / 6.5 / 8.6）。
+     */
+    public function test_security_and_ops_defaults_when_env_is_absent(): void
+    {
+        foreach (['SESSION_ENCRYPT', 'SESSION_SECURE_COOKIE', 'QUEUE_CONNECTION', 'LOG_CHANNEL'] as $key) {
+            $this->setEnv($key, null);
+        }
+
+        $this->setEnv('APP_ENV', 'production');
+        $session = require config_path('session.php');
+        $this->assertTrue($session['encrypt']);
+        $this->assertTrue($session['secure']);
+        $this->assertSame('sync', (require config_path('queue.php'))['default']);
+        $this->assertSame('daily', (require config_path('logging.php'))['default']);
+
+        $this->setEnv('APP_ENV', 'local');
+        $session = require config_path('session.php');
+        $this->assertTrue($session['encrypt']);
+        $this->assertFalse($session['secure']);
     }
 }
