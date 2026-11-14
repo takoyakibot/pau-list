@@ -7,6 +7,7 @@ use App\Http\Controllers\OwnerAuthController;
 use App\Http\Controllers\OwnerEditController;
 use App\Http\Controllers\ProposalController;
 use App\Http\Controllers\StaticPageController;
+use App\Http\Middleware\RejectCrossSiteRequest;
 use App\Http\Middleware\RequireDocumentNavigation;
 use App\Http\Middleware\RequireOwnerSession;
 use App\Http\Middleware\RequireSameOriginFetch;
@@ -51,7 +52,7 @@ Route::get('/p/{key}/edit', [OwnerEditController::class, 'show'])
     ->name('proposals.edit');
 
 Route::get('/auth/google', [OwnerAuthController::class, 'redirect'])
-    ->middleware([RequireDocumentNavigation::class, 'throttle:oauth'])
+    ->middleware([RequireDocumentNavigation::class, RejectCrossSiteRequest::class, 'throttle:oauth'])
     ->name('owner.login');
 Route::get('/auth/google/callback', [OwnerAuthController::class, 'callback'])
     ->middleware([RequireDocumentNavigation::class, 'throttle:oauth'])

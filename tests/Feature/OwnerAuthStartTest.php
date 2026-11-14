@@ -9,6 +9,7 @@ use App\Support\ProposalKey;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\CreatesProposals;
 use Tests\Support\FakesGoogle;
 use Tests\TestCase;
@@ -114,6 +115,44 @@ class OwnerAuthStartTest extends TestCase
         $this->withHeaders(['Sec-Fetch-Mode' => 'cors', 'Sec-Fetch-Dest' => 'empty'])
             ->get('/auth/google?p='.$key)->assertStatus(400);
         $this->assertFalse(session()->has(OwnerSession::PENDING_KEY));
+    }
+
+    public static function crossSiteStarts(): array
+    {
+        return ['cross-site' => ['cross-site'], 'same-site' => ['same-site'], 'unknown' => ['other']];
+    }
+
+    #[DataProvider('crossSiteStarts')]
+    public function test_start_from_another_site_is_400_and_keeps_the_pending_login(string $site): void
+    {
+        $key = $this->createProposal();
+        $this->get('/auth/google?p='.$key)->assertRedirect();
+        $pending = session(OwnerSession::PENDING_KEY);
+        $this->withHeader('Sec-Fetch-Site', $site)->get('/auth/google?p='.$key)->assertStatus(400);
+        $this->assertSame($pending, session(OwnerSession::PENDING_KEY));
+    }
+
+    public function test_cross_site_starts_do_not_use_up_the_rate_limit(): void
+    {
+        $key = $this->createProposal();
+        for ($i = 0; $i < 12; $i++) {
+            $this->withHeader('Sec-Fetch-Site', 'cross-site')->get('/auth/google?p='.$key)->assertStatus(400);
+        }
+        $this->withHeader('Sec-Fetch-Site', 'same-origin')->get('/auth/google?p='.$key)->assertRedirect();
+    }
+
+    public static function allowedStarts(): array
+    {
+        return ['same-origin (S4 link)' => ['same-origin'], 'none (typed or bookmarked)' => ['none'], 'absent' => [null]];
+    }
+
+    #[DataProvider('allowedStarts')]
+    public function test_start_from_this_site_or_the_address_bar_is_allowed(?string $site): void
+    {
+        $key = $this->createProposal();
+        $headers = $site === null ? [] : ['Sec-Fetch-Site' => $site, 'Sec-Fetch-Mode' => 'navigate', 'Sec-Fetch-Dest' => 'document'];
+        $this->withHeaders($headers)->get('/auth/google?p='.$key)->assertRedirect();
+        $this->assertTrue(session()->has(OwnerSession::PENDING_KEY));
     }
 
     public function test_oauth_routes_are_rate_limited(): void

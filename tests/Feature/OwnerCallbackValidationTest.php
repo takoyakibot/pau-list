@@ -75,9 +75,9 @@ class OwnerCallbackValidationTest extends TestCase
         $this->fakeToken();
         $this->fakeMyChannel($this->channelId);
         $url = '/auth/google/callback?'.http_build_query(['state' => $state, 'code' => '4/0Acode']);
-        $this->get($url);                       // Task 4 時点では 501、Task 5 以降は 302
+        $this->get($url)->assertRedirect(route('proposals.edit', $key));
         $this->get($url)->assertStatus(400)->assertSee('href="'.route('home').'"', false);
-        $this->assertLessThanOrEqual(1, $this->googleRequests(GoogleOAuth::TOKEN_URL)->count());
+        $this->assertCount(1, $this->googleRequests(GoogleOAuth::TOKEN_URL));
     }
 
     public function test_state_older_than_10_minutes_is_400(): void

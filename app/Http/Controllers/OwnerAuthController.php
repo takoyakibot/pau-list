@@ -4,6 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\Proposal;
 use App\Services\YouTube\GoogleOAuth;
+use App\Services\YouTube\OAuthFailed;
+use App\Services\YouTube\YouTubeApiException;
+use App\Services\YouTube\YouTubeOwnerClient;
+use App\Support\OwnerLogin;
 use App\Support\OwnerSession;
 use App\Support\PendingLogin;
 use App\Support\Pkce;
@@ -24,9 +28,18 @@ class OwnerAuthController extends Controller
 
     public const ERROR_MESSAGE = 'ログインできませんでした。もう一度お試しください';
 
+    public const TOKEN_FAILED_MESSAGE = 'Google との通信に失敗しました。もう一度ログインしてください';
+
+    public const SCOPE_MISSING_MESSAGE = 'YouTube の管理が許可されなかったため作成できません。もう一度ログインし、YouTube の管理を許可してください';
+
+    public const CHANNEL_FAILED_MESSAGE = 'YouTube のチャンネルを確認できませんでした。時間をおいてもう一度ログインしてください';
+
+    public const NO_CHANNEL_MESSAGE = 'このアカウントには YouTube チャンネルがありません。チャンネルのあるアカウントでログインしてください';
+
     public function __construct(
         private readonly OwnerSession $owners,
         private readonly GoogleOAuth $oauth,
+        private readonly YouTubeOwnerClient $youtube,
     ) {}
 
     public function redirect(Request $request): RedirectResponse
@@ -97,8 +110,45 @@ class OwnerAuthController extends Controller
             return $this->invalid($pending);
         }
 
-        // Token exchange and channel check: Task 5.
-        abort(501);
+        try {
+            $token = $this->oauth->exchangeCode($code, $pending->verifier);
+        } catch (OAuthFailed) {
+            // Not retried: an authorization code is single-use (6.7 D1, D2).
+            return $this->backToPreview($key, self::TOKEN_FAILED_MESSAGE);
+        }
+
+        // Partial consent: the youtube scope was unchecked on the consent screen (6.7 E3).
+        if (! $token->hasScope(GoogleOAuth::SCOPE)) {
+            $this->oauth->revoke($token->accessToken);
+
+            return $this->backToPreview($key, self::SCOPE_MISSING_MESSAGE);
+        }
+
+        try {
+            $channel = $this->youtube->myChannel($token->accessToken);
+        } catch (YouTubeApiException) {
+            $this->oauth->revoke($token->accessToken);
+
+            return $this->backToPreview($key, self::CHANNEL_FAILED_MESSAGE);
+        }
+        if ($channel === null) {
+            $this->oauth->revoke($token->accessToken);
+
+            return $this->backToPreview($key, self::NO_CHANNEL_MESSAGE);
+        }
+
+        // New session id on privilege change (6.7 G1). An existing owner login is overwritten without
+        // revoking its token: revoking the same grant could also invalidate the new token.
+        $request->session()->regenerate();
+        $this->owners->login(new OwnerLogin($token->accessToken, $token->expiresAt, $channel->id, $channel->title));
+
+        // Channel mismatch is decided (and shown) by RequireOwnerSession on the edit page.
+        return redirect()->route('proposals.edit', $key);
+    }
+
+    private function backToPreview(string $key, string $message): RedirectResponse
+    {
+        return redirect()->route('proposals.show', $key)->with('owner_error', $message);
     }
 
     /** 400 with a way back: the proposal of the pulled login when it is still live, else the top page. */
