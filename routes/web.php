@@ -21,3 +21,7 @@ Route::get('/channels/{channelId}/videos/lookup', [ChannelController::class, 'vi
     ->where('channelId', 'UC[A-Za-z0-9_-]{22}')
     ->middleware('throttle:video-lookup')
     ->name('channels.video');
+
+Route::post('/channels/{channelId}/proposals', [ProposalController::class, 'store'])
+    ->where('channelId', 'UC[A-Za-z0-9_-]{22}')
+    ->name('proposals.store');

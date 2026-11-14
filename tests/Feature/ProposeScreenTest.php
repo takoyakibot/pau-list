@@ -187,4 +187,24 @@ class ProposeScreenTest extends TestCase
         }
         $this->get(route('channels.propose', $this->id('z')))->assertStatus(429)->assertHeader('Retry-After');
     }
+
+    public function test_form_has_limits_honeypot_and_consent(): void
+    {
+        $id = $this->setUpChannel();
+        $res = $this->get(route('channels.propose', $id))->assertOk();
+        foreach (['x-data="proposer"', 'name="title"', 'maxlength="150"', 'maxlength="1000"', 'maxlength="500"', 'maxlength="30"',
+            'name="website"', 'name="video_ids[]"', 'action="'.route('proposals.store', $id).'"'] as $s) {
+            $res->assertSee($s, false);
+        }
+        $res->assertSee('同意したものとみなされます');
+        $res->assertSee('この画面の操作には JavaScript が必要です');
+        $this->assertNoInlineCode($res->getContent());
+    }
+
+    public function test_unavailable_ids_are_passed_to_js(): void
+    {
+        $id = $this->setUpChannel();
+        $res = $this->withSession(['unavailable_video_ids' => ['dQw4w9WgXcQ']])->get(route('channels.propose', $id));
+        $this->assertSame(['dQw4w9WgXcQ'], $this->catalogPayload($res)['unavailableIds']);
+    }
 }

@@ -80,4 +80,10 @@ class ProposalController extends Controller
             'reimported' => $result->status === CatalogStatus::Imported && $result->hadExpired,
         ]);
     }
+
+    public function store(Request $request, string $channelId): never
+    {
+        // Implemented in Task 13.
+        abort(404);
+    }
 }
