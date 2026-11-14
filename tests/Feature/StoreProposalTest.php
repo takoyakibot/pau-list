@@ -1,0 +1,276 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\ChannelCache;
+use App\Models\Proposal;
+use App\Services\YouTube\QuotaLedger;
+use App\Support\ProposalKey;
+use Carbon\CarbonImmutable;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Factory;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Tests\Support\FakesYouTube;
+use Tests\TestCase;
+
+class StoreProposalTest extends TestCase
+{
+    use FakesYouTube, RefreshDatabase;
+
+    private const A = 'aaaaaaaaaaa';
+
+    private const B = 'bbbbbbbbbbb';
+
+    private string $id;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->travelTo(CarbonImmutable::parse('2026-11-14 03:00:00'));
+        $this->id = 'UC'.str_repeat('a', 22);
+        $now = now();
+        ChannelCache::create([
+            'channel_id' => $this->id,
+            'handle' => '@a',
+            'title' => 'チャンネル A',
+            'thumbnail_url' => 'https://yt3.ggpht.com/a',
+            'uploads_playlist_id' => 'UU'.substr($this->id, 2),
+            'meta_fetched_at' => $now,
+            'cached_since' => $now,
+            'last_synced_at' => $now,
+            'truncated' => false,
+            'expires_at' => $now->addDays(30),
+        ]);
+    }
+
+    private function store(array $data, ?string $channelId = null)
+    {
+        return $this->post(route('proposals.store', $channelId ?? $this->id), $data);
+    }
+
+    private function assertNoApiCalls(): void
+    {
+        $this->assertCount(0, app(Factory::class)->recorded());
+    }
+
+    public function test_saves_server_values_in_submitted_order_and_hashes_key(): void
+    {
+        $id = $this->id;
+        $this->fakeVideos([
+            $this->videoResource(self::B, $id, ['title' => 'サーバー値', 'duration' => 'PT1M5S']),
+            $this->videoResource(self::A, $id),
+        ]);
+        $res = $this->store(['title' => ' 案 ', 'video_ids' => [self::B, self::A], 'video_titles' => ['偽装']]);
+        $p = Proposal::sole();
+        $key = session('proposal_key_shown');
+        $this->assertIsString($key);
+        $this->assertTrue(ProposalKey::isWellFormed($key));
+        $res->assertRedirect(route('proposals.shared', $key));
+        $this->assertSame(ProposalKey::hash($key), $p->key_hash);
+        $this->assertSame('案', $p->title);
+        $this->assertSame('', $p->description);
+        $this->assertNull($p->comment);
+        $this->assertNull($p->proposer_name);
+        $this->assertSame(2, $p->item_count);
+        $this->assertSame('チャンネル A', $p->channel_title);
+        $this->assertSame('https://yt3.ggpht.com/a', $p->channel_thumbnail_url);
+        $this->assertSame([self::B, self::A], $p->items->pluck('video_id')->all());
+        $this->assertSame([0, 1], $p->items->pluck('position')->all());
+        $this->assertSame('サーバー値', $p->items[0]->title);
+        $this->assertSame(65, $p->items[0]->duration_seconds);
+        $this->assertSame('https://i.ytimg.com/vi/'.self::B.'/mqdefault.jpg', $p->items[0]->thumbnail_url);
+        $this->assertFalse($p->items[0]->is_outside_channel);
+        $this->assertTrue($p->items[0]->published_at->equalTo(CarbonImmutable::parse('2025-01-02T03:04:05Z')));
+        $this->assertTrue($p->expires_at->equalTo(now()->addDays(30)));
+        $this->assertSame(1, app(QuotaLedger::class)->used(QuotaLedger::READ));
+        foreach (['proposals', 'proposal_items'] as $t) {
+            $this->assertStringNotContainsString($key, json_encode(DB::table($t)->get()));
+        }
+        $this->assertSame($p->id, Proposal::findLiveByKey($key)?->id);
+    }
+
+    public function test_find_live_by_key_rejects_malformed_unknown_and_expired(): void
+    {
+        $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
+        $this->store(['title' => 't', 'video_ids' => [self::A]]);
+        $key = session('proposal_key_shown');
+        $this->assertNull(Proposal::findLiveByKey('short'));
+        $this->assertNull(Proposal::findLiveByKey(ProposalKey::generate()));
+        $this->travel(30)->days();
+        $this->assertNull(Proposal::findLiveByKey($key));
+    }
+
+    public function test_rejects_more_than_max_items(): void
+    {
+        Http::fake();
+        $ids = [];
+        for ($i = 0; $i < 100; $i++) {
+            $ids[] = 'v'.str_pad((string) $i, 10, '0', STR_PAD_LEFT);
+        }
+        $this->store(['title' => 't', 'video_ids' => $ids])->assertSessionHasErrors(['video_ids' => '1 つの再生リストに入れられるのは最大 99 本です']);
+        $this->assertSame(0, Proposal::count());
+        $this->assertNoApiCalls();
+    }
+
+    public function test_rejects_duplicates_and_bad_ids(): void
+    {
+        Http::fake();
+        $this->store(['title' => 't', 'video_ids' => [self::A, self::A]])->assertSessionHasErrors(['video_ids.0' => '同じ動画が重複しています']);
+        $this->store(['title' => 't', 'video_ids' => ['bad id!']])->assertSessionHasErrors(['video_ids.0' => '動画 ID の形式が正しくありません']);
+        $this->store(['title' => 't', 'video_ids' => ["aaaaa\naaaaa"]])->assertSessionHasErrors('video_ids.0');
+        $this->store(['title' => 't', 'video_ids' => []])->assertSessionHasErrors(['video_ids' => '動画を 1 本以上選んでください']);
+        $this->store(['title' => 't'])->assertSessionHasErrors(['video_ids' => '動画を 1 本以上選んでください']);
+        $this->travel(11)->minutes(); // stay under the 5 per 10 minutes limit
+        $this->store(['title' => '', 'video_ids' => [self::A]])->assertSessionHasErrors(['title' => '再生リスト名を入力してください']);
+        $this->store(['title' => 't', 'video_ids' => [self::A], 'comment' => str_repeat('a', 501)])
+            ->assertSessionHasErrors(['comment' => 'チャンネル主へのコメント は 500 文字以内で入力してください']);
+        $this->store(['title' => 't', 'video_ids' => [self::A], 'proposer_name' => str_repeat('a', 31)])
+            ->assertSessionHasErrors(['proposer_name' => 'ニックネーム は 30 文字以内で入力してください']);
+        $this->assertSame(0, Proposal::count());
+        $this->assertNoApiCalls();
+    }
+
+    public function test_deleted_or_private_video_rejects_save_and_flags_ids(): void
+    {
+        // only A is returned (B deleted)
+        $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
+        $this->from(route('channels.propose', $this->id))
+            ->store(['title' => 't', 'video_ids' => [self::A, self::B]])
+            ->assertRedirect(route('channels.propose', $this->id))
+            ->assertSessionHasErrors(['video_ids' => 'この動画は削除または非公開になっています。外して保存してください'])
+            ->assertSessionHas('unavailable_video_ids', [self::B])
+            ->assertSessionHasInput('title', 't');
+        $this->assertSame(0, Proposal::count());
+    }
+
+    public function test_private_video_rejects_save(): void
+    {
+        $this->fakeVideos([$this->videoResource(self::A, $this->id), $this->videoResource(self::B, $this->id, ['privacy' => 'private'])]);
+        $this->store(['title' => 't', 'video_ids' => [self::A, self::B]])
+            ->assertSessionHasErrors(['video_ids' => 'この動画は削除または非公開になっています。外して保存してください'])
+            ->assertSessionHas('unavailable_video_ids', [self::B]);
+        $this->assertSame(0, Proposal::count());
+    }
+
+    public function test_outside_channel_video_is_included_with_flag(): void
+    {
+        $other = 'UC'.str_repeat('b', 22);
+        $this->fakeVideos([
+            $this->videoResource(self::A, $this->id),
+            $this->videoResource(self::B, $other, ['channelTitle' => '別チャンネル']),
+        ]);
+        $this->store(['title' => 't', 'video_ids' => [self::A, self::B]])->assertSessionHasNoErrors();
+        $items = Proposal::sole()->items;
+        $this->assertFalse($items[0]->is_outside_channel);
+        $this->assertTrue($items[1]->is_outside_channel);
+        $this->assertSame($other, $items[1]->video_channel_id);
+        $this->assertSame('別チャンネル', $items[1]->video_channel_title);
+    }
+
+    public function test_honeypot_saves_nothing(): void
+    {
+        Http::fake();
+        $this->store(['title' => 't', 'video_ids' => [self::A], 'website' => 'x'])
+            ->assertRedirect(route('home'))
+            ->assertSessionHasNoErrors();
+        $this->assertSame(0, Proposal::count());
+        $this->assertNull(session('proposal_key_shown'));
+        // invalid input with the honeypot filled gets the same silent redirect
+        $this->store(['title' => '', 'video_ids' => ['bad'], 'website' => 'x'])
+            ->assertRedirect(route('home'))
+            ->assertSessionHasNoErrors();
+        $this->assertSame(0, Proposal::count());
+        $this->assertNoApiCalls();
+    }
+
+    public function test_rate_limited_after_5_in_10_minutes(): void
+    {
+        Http::fake();
+        // validation failures count too (controller ruling)
+        for ($i = 0; $i < 5; $i++) {
+            $this->store(['title' => '', 'video_ids' => [self::A]])->assertStatus(302);
+        }
+        $this->store(['title' => 't', 'video_ids' => [self::A]])->assertStatus(429);
+        $this->travel(11)->minutes();
+        $this->store(['title' => '', 'video_ids' => [self::A]])->assertStatus(302);
+    }
+
+    public function test_description_crlf_counts_as_one_char_and_emoji_title_at_limit_passes(): void
+    {
+        $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
+        $this->store(['title' => str_repeat('😀', 150), 'description' => str_repeat("あ\r\n", 500), 'video_ids' => [self::A]])
+            ->assertSessionHasNoErrors();
+        $p = Proposal::sole();
+        $this->assertStringNotContainsString("\r", $p->description);
+        // trailing newline trimmed: 500 "あ" + 499 "\n"
+        $this->assertSame(999, mb_strlen($p->description));
+        $this->assertSame(150, mb_strlen($p->title));
+
+        $this->store(['title' => str_repeat('😀', 151), 'video_ids' => [self::A]])
+            ->assertSessionHasErrors(['title' => '再生リスト名 は 150 文字以内で入力してください']);
+        $this->store(['title' => 't', 'description' => str_repeat("あ\r\n", 500).'x', 'video_ids' => [self::A]])
+            ->assertSessionHasErrors('description');
+    }
+
+    public function test_control_characters_are_stripped(): void
+    {
+        $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
+        $this->store([
+            'title' => "a\u{0007}b\nc",
+            'description' => "x\r\ny\tz\u{0000}\u{001B}",
+            'comment' => "  \n ",
+            'proposer_name' => "な\tまえ\u{007F}",
+            'video_ids' => [self::A],
+        ])->assertSessionHasNoErrors();
+        $p = Proposal::sole();
+        $this->assertSame('abc', $p->title);
+        $this->assertSame("x\ny\tz", $p->description);
+        $this->assertNull($p->comment);
+        $this->assertSame('なまえ', $p->proposer_name);
+    }
+
+    public function test_missing_channel_cache_redirects_to_propose(): void
+    {
+        Http::fake();
+        ChannelCache::query()->update(['expires_at' => now()]);
+        $this->store(['title' => 't', 'video_ids' => [self::A]])
+            ->assertRedirect(route('channels.propose', $this->id))
+            ->assertSessionHasErrors(['video_ids' => '一覧の保存期限が切れたため開き直しました。もう一度保存してください']);
+        $other = 'UC'.str_repeat('z', 22);
+        $this->store(['title' => 't', 'video_ids' => [self::A]], $other)
+            ->assertRedirect(route('channels.propose', $other));
+        $this->assertSame(0, Proposal::count());
+        $this->assertNoApiCalls();
+    }
+
+    public function test_budget_exhausted_and_api_error_messages(): void
+    {
+        config(['youtube.quota.read_budget' => 0]);
+        Http::fake();
+        $this->store(['title' => 't', 'video_ids' => [self::A]])
+            ->assertSessionHasErrors(['video_ids' => '本日の取得上限に達したため、いまは保存できません。時間をおいて再度お試しください']);
+        $this->assertNoApiCalls();
+
+        config(['youtube.quota.read_budget' => 2000]);
+        $this->fakeYouTubeError('videos', 500, 'backendError');
+        $this->store(['title' => 't', 'video_ids' => [self::A]])
+            ->assertSessionHasErrors(['video_ids' => 'YouTube との通信に失敗しました。時間をおいて再度お試しください']);
+        $this->assertSame(0, Proposal::count());
+    }
+
+    public function test_log_has_only_hash_prefix(): void
+    {
+        $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
+        Log::spy();
+        $this->store(['title' => 't', 'video_ids' => [self::A]]);
+        $key = session('proposal_key_shown');
+        $hash = ProposalKey::hash($key);
+        Log::shouldHaveReceived('info')->withArgs(function ($msg, $ctx = []) use ($key, $hash) {
+            $all = $msg.json_encode($ctx);
+
+            return ! str_contains($all, $key) && ! str_contains($all, $hash) && str_contains($all, substr($hash, 0, 8));
+        })->once();
+    }
+}
