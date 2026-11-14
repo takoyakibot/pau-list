@@ -52,7 +52,7 @@
                 表示 <span x-text="shownCount"></span> 件／選択 <span x-text="selectedCount"></span> / <span x-text="maxItems"></span>
                 <button type="button" class="ml-3 underline" @click="clearAll">全解除</button>
             </p>
-            <p class="text-sm text-red-700" role="alert" x-show="hasLimitMessage" x-text="limitMessage"></p>
+            <p class="text-sm text-red-700" role="alert" x-show="hasLimitMessage" x-cloak x-text="limitMessage"></p>
             <p class="text-sm text-red-700" role="alert" x-show="maxItemsMissing" x-cloak>最大本数を読み込めなかったため、動画を選べません。ページを再読み込みしてください</p>
 
             <ul class="max-h-[32rem] divide-y divide-gray-200 overflow-y-auto rounded border border-gray-200">
@@ -79,15 +79,15 @@
                 <input type="url" x-model="urlInput" @keydown.enter.prevent="addByUrl" placeholder="https://www.youtube.com/watch?v=..." class="min-w-0 flex-1 rounded border border-gray-300 px-3 py-2 text-sm" aria-label="動画の URL" autocomplete="off">
                 <button type="button" @click="addByUrl" :disabled="urlBusy" class="rounded border border-gray-400 px-3 py-2 text-sm">追加</button>
             </div>
-            <p class="text-sm text-red-700" role="alert" x-show="hasUrlMessage" x-text="urlMessage"></p>
+            <p class="text-sm text-red-700" role="alert" x-show="hasUrlMessage" x-cloak x-text="urlMessage"></p>
         </section>
 
         <form method="POST" action="{{ route('proposals.store', $channel->channel_id) }}" @submit="onSubmit" class="space-y-6">
             @csrf
             <section aria-labelledby="selected-heading" class="space-y-2">
                 <h2 id="selected-heading" class="text-lg font-semibold">選択した動画（<span x-text="selectedCount"></span> / <span x-text="maxItems"></span>）</h2>
-                <p class="text-sm text-gray-600" x-show="!hasSelection">まだ動画が選ばれていません</p>
-                <p class="text-sm text-amber-800" x-show="hasPlaceholders">一部の動画はタイトルを表示できませんが、選択は保たれています（保存時に YouTube から取得し直します）</p>
+                <p class="text-sm text-gray-600" x-show="!hasSelection" x-cloak>まだ動画が選ばれていません</p>
+                <p class="text-sm text-amber-800" x-show="hasPlaceholders" x-cloak>一部の動画はタイトルを表示できませんが、選択は保たれています（保存時に YouTube から取得し直します）</p>
                 <ol class="space-y-2">
                     <template x-for="item in selected" :key="item.id">
                         <li class="rounded border border-gray-200 p-2 text-sm">

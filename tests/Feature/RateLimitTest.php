@@ -108,6 +108,12 @@ class RateLimitTest extends TestCase
             $res->assertDontSee('Service Unavailable');
             $res->assertSee('<html lang="ja"', false);
             $this->assertMatchesRegularExpression('/\p{Hiragana}/u', strip_tags($res->getContent()));
+            // the real status code, never the "4xx"/"5xx" fallback name
+            $this->assertMatchesRegularExpression('#<h1[^>]*>\s*'.$code.'\s*</h1>#', $res->getContent());
+            $res->assertDontSee('4xx');
+            $res->assertDontSee('5xx');
+            $res->assertSee('トップへ戻る');
+            $res->assertSee('href="'.route('home').'"', false);
         }
     }
 }

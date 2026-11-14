@@ -208,6 +208,10 @@ class ProposeScreenTest extends TestCase
             $res->assertSee($s);
         }
         $res->assertDontSee('提案者の名前');
+        // Alpine-driven messages and empty states stay hidden until Alpine has initialised
+        foreach (['x-show="!hasSelection"', 'x-show="hasPlaceholders"', 'x-show="hasLimitMessage"', 'x-show="hasUrlMessage"'] as $attr) {
+            $this->assertMatchesRegularExpression('/'.preg_quote($attr, '/').'[^>]*x-cloak/', $res->getContent(), $attr);
+        }
         $res->assertSee('同意したものとみなされます');
         $res->assertSee('この画面の操作には JavaScript が必要です');
         $this->assertNoInlineCode($res->getContent());
