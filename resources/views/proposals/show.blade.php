@@ -59,8 +59,5 @@
         @include('partials.remaining-today', ['remaining' => $remaining, 'itemCount' => $proposal->item_count])
     </section>
 
-    <section class="mt-6 rounded border border-gray-200 p-4 text-sm" aria-labelledby="owner-heading">
-        <h2 id="owner-heading" class="font-semibold">チャンネル主の方へ</h2>
-        <p class="mt-1">チャンネル主の方のログインは準備中です</p>
-    </section>
+    @include('partials.owner-login')
 @endsection

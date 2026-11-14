@@ -14,6 +14,7 @@ use App\Services\YouTube\QuotaLedger;
 use App\Services\YouTube\ReadBudgetExceeded;
 use App\Services\YouTube\YouTubeApiException;
 use App\Support\ChannelFetchThrottle;
+use App\Support\OwnerSession;
 use App\Support\ProposalKey;
 use App\Support\QuotaPolicy;
 use Illuminate\Database\QueryException;
@@ -160,9 +161,10 @@ class ProposalController extends Controller
     /**
      * S4: public preview. Unknown and expired keys return the same 404.
      */
-    public function show(string $key, QuotaLedger $ledger): Response
+    public function show(string $key, QuotaLedger $ledger, OwnerSession $owners): Response
     {
         $proposal = Proposal::findLiveOrAbort($key);
+        $owner = $owners->current();
         $items = $proposal->items()->get();
 
         return response()->view('proposals.show', [
@@ -171,6 +173,9 @@ class ProposalController extends Controller
             'totalSeconds' => (int) $items->sum('duration_seconds'),
             'hasUnknownDuration' => $items->contains(fn ($item) => $item->duration_seconds === null),
             'remaining' => $ledger->remainingToday(),
+            'key' => $key,
+            'ownerMatches' => $owner !== null && $owner->channelId === $proposal->channel_id,
+            'ownerChannelTitle' => $owner?->channelTitle,
         ]);
     }
 }

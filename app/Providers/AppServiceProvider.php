@@ -49,6 +49,8 @@ class AppServiceProvider extends ServiceProvider
     {
         RateLimiter::for('global', fn (Request $request) => Limit::perMinute(120)->by($request->ip()));
         RateLimiter::for('video-lookup', fn (Request $request) => Limit::perMinute(30)->by($request->ip()));
+        // Login start and callback share one limit (spec 8.1, 6.7 J2).
+        RateLimiter::for('oauth', fn (Request $request) => Limit::perMinute(10)->by('oauth:'.$request->ip()));
         RateLimiter::for('proposal-store', fn (Request $request) => [
             Limit::perMinutes(10, 5)->by('m:'.$request->ip()),
             Limit::perDay(30)->by('d:'.$request->ip()),

@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Proposal;
 use App\Services\YouTube\QuotaLedger;
+use App\Support\OwnerLogin;
+use App\Support\OwnerSession;
 use App\Support\ProposalKey;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -93,7 +95,7 @@ class PreviewScreenTest extends TestCase
         $res->assertSee('本日の残り: 再生リスト 1 つ＋動画あと 99 本まで作成できます');
         $res->assertDontSee('本日の残りを超えています');
         $res->assertSee('データ提供: YouTube');
-        $res->assertSee('チャンネル主の方のログインは準備中です');
+        $res->assertDontSee('準備中');
         $res->assertHeader('X-Robots-Tag', 'noindex, nofollow')->assertHeader('Referrer-Policy', 'no-referrer');
         $this->assertStringContainsString('no-store', (string) $res->headers->get('Cache-Control'));
         $this->assertNoInlineCode($res->getContent());
@@ -175,5 +177,63 @@ class PreviewScreenTest extends TestCase
             $this->assertDoesNotMatchRegularExpression('/[0-9a-f]{64}/', $line);
             $this->assertStringNotContainsString($key, $line);
         }
+    }
+
+    private function actAsOwner(string $channelId, string $title): static
+    {
+        return $this->withSession([OwnerSession::OWNER_KEY => OwnerSession::serialize(
+            new OwnerLogin('ya29.session-token', now()->toImmutable()->addMinutes(30), $channelId, $title),
+        )]);
+    }
+
+    public function test_preview_shows_login_link_consent_and_warning(): void
+    {
+        $key = $this->makeProposal();
+        $res = $this->get(route('proposals.show', $key))->assertDontSee('準備中')
+            ->assertSee('href="'.e(route('owner.login', ['p' => $key])).'"', false)
+            ->assertSee('チャンネル主の方: Google でログインして作成へ')
+            ->assertSeeText('利用規約・プライバシーポリシーに同意のうえログインしてください')
+            ->assertSee('確認されていないアプリの警告が表示されます。「詳細」→「List Maker（安全ではないページ）に移動」で続行できます')
+            ->assertSee('YouTube の管理権限を求めますが、使うのは再生リストの作成と動画の追加だけです')
+            ->assertSee('href="'.route('terms').'"', false)->assertSee('href="'.route('privacy').'"', false)
+            ->assertDontSee('ログイン中:')
+            ->assertDontSee('href="'.route('proposals.edit', $key).'"', false);
+        $this->assertNoInlineCode($res->getContent());
+    }
+
+    public function test_preview_links_to_edit_for_matching_owner_only(): void
+    {
+        $key = $this->makeProposal();
+        $this->actAsOwner($this->channelId, '<i>自分</i>')->get(route('proposals.show', $key))
+            ->assertSee('href="'.route('proposals.edit', $key).'"', false)
+            ->assertSee('編集画面へ進む')
+            ->assertSee('ログイン中: &lt;i&gt;自分&lt;/i&gt;', false)
+            ->assertDontSee('ya29.session-token');
+
+        $this->actAsOwner('UC'.str_repeat('z', 22), '他人')->get(route('proposals.show', $key))
+            ->assertDontSee('href="'.route('proposals.edit', $key).'"', false)
+            ->assertDontSee('編集画面へ進む')
+            ->assertSee('別のチャンネルでログインし直す')
+            ->assertDontSee('チャンネル主の方: Google でログインして作成へ')
+            ->assertSee('href="'.e(route('owner.login', ['p' => $key])).'"', false);
+    }
+
+    public function test_expired_owner_sees_login_link(): void
+    {
+        $key = $this->makeProposal();
+        $this->withSession([OwnerSession::OWNER_KEY => OwnerSession::serialize(
+            new OwnerLogin('ya29.session-token', now()->toImmutable(), $this->channelId, '自分'),
+        )])->get(route('proposals.show', $key))
+            ->assertDontSee('編集画面へ進む')
+            ->assertSee('チャンネル主の方: Google でログインして作成へ');
+    }
+
+    public function test_preview_shows_owner_flash_messages_as_alerts(): void
+    {
+        $key = $this->makeProposal();
+        $this->withSession(['owner_notice' => '<b>通知</b>'])->get(route('proposals.show', $key))
+            ->assertSee('role="alert"', false)->assertSee('&lt;b&gt;通知&lt;/b&gt;', false);
+        $this->withSession(['owner_error' => 'エラー文'])->get(route('proposals.show', $key))
+            ->assertSee('role="alert"', false)->assertSee('エラー文');
     }
 }

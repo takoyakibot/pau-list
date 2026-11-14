@@ -3,6 +3,7 @@
 use App\Http\Controllers\ChannelController;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\HomeController;
+use App\Http\Controllers\OwnerAuthController;
 use App\Http\Controllers\OwnerEditController;
 use App\Http\Controllers\ProposalController;
 use App\Http\Controllers\StaticPageController;
@@ -48,3 +49,10 @@ Route::get('/p/{key}/edit', [OwnerEditController::class, 'show'])
     ->where('key', ProposalKey::ROUTE_PATTERN)
     ->middleware([RequireDocumentNavigation::class, RequireOwnerSession::class])
     ->name('proposals.edit');
+
+Route::get('/auth/google', [OwnerAuthController::class, 'redirect'])
+    ->middleware([RequireDocumentNavigation::class, 'throttle:oauth'])
+    ->name('owner.login');
+Route::get('/auth/google/callback', [OwnerAuthController::class, 'callback'])
+    ->middleware([RequireDocumentNavigation::class, 'throttle:oauth'])
+    ->name('owner.callback');

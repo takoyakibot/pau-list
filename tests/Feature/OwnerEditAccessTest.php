@@ -51,7 +51,7 @@ class OwnerEditAccessTest extends TestCase
             ->assertSee('別のチャンネルでログインし直す')
             ->assertSee('ブランドアカウントのチャンネルは、Google のアカウント選択画面で対象のチャンネルを選んでください')
             ->assertSee('別のチャンネルに作りたい場合は、そのチャンネルを対象に提案を作り直してもらってください')
-            ->assertSee('/auth/google?p='.$key, false) // Task 4 で route('owner.login', ['p' => $key]) の href 検査に置き換える
+            ->assertSee('href="'.e(route('owner.login', ['p' => $key])).'"', false)
             ->assertDontSee('ya29.session-token');
         $this->assertNoInlineCode($res->getContent());
     }
