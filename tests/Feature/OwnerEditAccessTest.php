@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Services\YouTube\YouTubeReader;
 use App\Support\OwnerSession;
 use App\Support\ProposalKey;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\Support\AssertsNoInlineCode;
 use Tests\Support\CreatesProposals;
 use Tests\TestCase;
@@ -13,6 +15,15 @@ use Tests\TestCase;
 class OwnerEditAccessTest extends TestCase
 {
     use AssertsNoInlineCode, CreatesProposals, RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // The edit page reads the channel list and the owner's uploads: answer every YouTube call with an empty list.
+        Http::fake(fn ($request) => str_starts_with($request->url(), YouTubeReader::BASE_URL)
+            ? Http::response(['items' => []])
+            : null);
+    }
 
     public function test_edit_without_login_redirects_to_preview_with_notice(): void
     {

@@ -17,7 +17,7 @@ class YouTubeReader
 
     private const CHANNEL_THUMB_PREFIXES = ['https://yt3.ggpht.com/', 'https://i.ytimg.com/'];
 
-    private const UPLOADS_PATTERN = '/^UU[A-Za-z0-9_-]{22}$/D';
+    public const UPLOADS_PATTERN = '/^UU[A-Za-z0-9_-]{22}$/D';
 
     private const VIDEO_THUMB_PREFIXES = ['https://i.ytimg.com/'];
 
@@ -79,8 +79,18 @@ class YouTubeReader
             throw $e;
         }
 
+        return self::playlistItemsPage($this->items($json, 'playlistItems'), $json['nextPageToken'] ?? null);
+    }
+
+    /**
+     * Shared with YouTubeOwnerClient (the owner's own uploads): the same validation for every playlistItems page.
+     *
+     * @param  list<array<string, mixed>>  $rawItems
+     */
+    public static function playlistItemsPage(array $rawItems, mixed $nextPageToken): PlaylistItemsPage
+    {
         $items = [];
-        foreach ($this->items($json, 'playlistItems') as $item) {
+        foreach ($rawItems as $item) {
             $videoId = $item['contentDetails']['videoId'] ?? $item['snippet']['resourceId']['videoId'] ?? null;
             if (! is_string($videoId) || preg_match(VideoUrl::ID_PATTERN, $videoId) !== 1) {
                 continue;
@@ -93,9 +103,8 @@ class YouTubeReader
                 self::str($item['status']['privacyStatus'] ?? null, 'unknown'),
             );
         }
-        $next = $json['nextPageToken'] ?? null;
 
-        return new PlaylistItemsPage($items, is_string($next) && $next !== '' ? $next : null);
+        return new PlaylistItemsPage($items, is_string($nextPageToken) && $nextPageToken !== '' ? $nextPageToken : null);
     }
 
     /**

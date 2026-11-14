@@ -13,11 +13,12 @@ use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\FakesGoogle;
+use Tests\Support\FakesYouTube;
 use Tests\TestCase;
 
 class YouTubeOwnerClientTest extends TestCase
 {
-    use FakesGoogle, RefreshDatabase;
+    use FakesGoogle, FakesYouTube, RefreshDatabase;
 
     /** @var list<string> */
     private array $logged = [];
@@ -126,6 +127,102 @@ class YouTubeOwnerClientTest extends TestCase
     public function test_token_argument_is_sensitive(): void
     {
         $param = (new \ReflectionMethod(YouTubeOwnerClient::class, 'myChannel'))->getParameters()[0];
+        $this->assertNotEmpty($param->getAttributes(\SensitiveParameter::class));
+    }
+
+    private const OWNER = 'UCaaaaaaaaaaaaaaaaaaaaaa';
+
+    private const UPLOADS = 'UUaaaaaaaaaaaaaaaaaaaaaa';
+
+    public function test_unlisted_uploads_reads_own_uploads_with_bearer_and_keeps_only_unlisted(): void
+    {
+        config(['youtube.api_key' => 'secret-api-key']);
+        $this->fakeChannel(self::OWNER);
+        $this->fakeUploads(self::UPLOADS, [
+            [
+                $this->uploadItem('pub00000001', '2026-11-01T00:00:00Z'),
+                $this->uploadItem('unl00000001', '2026-11-02T00:00:00Z', 'unlisted', '<b>限定 1</b>'),
+                $this->uploadItem('prv00000001', '2026-11-03T00:00:00Z', 'private'),
+            ],
+            [$this->uploadItem('unl00000002', '2026-10-01T00:00:00Z', 'unlisted')],
+        ]);
+        $items = app(YouTubeOwnerClient::class)->unlistedUploads('ya29.tok', self::OWNER);
+        $this->assertSame(['unl00000001', 'unl00000002'], array_map(fn ($i) => $i->videoId, $items));
+        $this->assertSame('<b>限定 1</b>', $items[0]->title);
+        $this->assertSame('https://i.ytimg.com/vi/unl00000001/mqdefault.jpg', $items[0]->thumbnailUrl);
+        $this->assertSame('2026-11-02T00:00:00Z', $items[0]->publishedAt->utc()->format('Y-m-d\TH:i:s\Z'));
+
+        $requests = Http::recorded()->map(fn ($pair) => $pair[0]);
+        $this->assertCount(3, $requests);
+        foreach ($requests as $req) {
+            $this->assertSame('Bearer ya29.tok', $req->header('Authorization')[0]);
+            $this->assertFalse($req->hasHeader('X-Goog-Api-Key'));
+            $this->assertStringNotContainsString('secret-api-key', $req->url());
+        }
+        parse_str(parse_url($requests[0]->url(), PHP_URL_QUERY), $q);
+        $this->assertSame(['part' => 'contentDetails', 'mine' => 'true'], $q);
+        parse_str(parse_url($requests[1]->url(), PHP_URL_QUERY), $q);
+        $this->assertSame(['part' => 'snippet,contentDetails,status', 'maxResults' => '50', 'playlistId' => self::UPLOADS], $q);
+        $this->assertSame(3, app(QuotaLedger::class)->used(QuotaLedger::OWNER_READ));
+        $this->assertSame(0, app(QuotaLedger::class)->used(QuotaLedger::READ));
+    }
+
+    public function test_unlisted_uploads_paging_is_bounded_by_the_fetch_cap(): void
+    {
+        config(['youtube.channel.fetch_max_videos' => 100]);
+        $this->fakeChannel(self::OWNER);
+        $pages = [];
+        for ($p = 0; $p < 5; $p++) {
+            $pages[] = [$this->uploadItem(sprintf('unl%08d', $p), '2026-11-01T00:00:00Z', 'unlisted')];
+        }
+        $this->fakeUploads(self::UPLOADS, $pages);
+        $items = app(YouTubeOwnerClient::class)->unlistedUploads('ya29.tok', self::OWNER);
+        $this->assertCount(2, $items);
+        $this->assertCount(2, $this->googleRequests(YouTubeReader::BASE_URL.'playlistItems?'));
+    }
+
+    public function test_unlisted_uploads_is_empty_for_a_channel_without_uploads(): void
+    {
+        $this->fakeChannel(self::OWNER);
+        $this->fakeUploads(self::UPLOADS, []);
+        $this->assertSame([], app(YouTubeOwnerClient::class)->unlistedUploads('ya29.tok', self::OWNER));
+    }
+
+    public function test_unlisted_uploads_is_empty_when_the_token_belongs_to_another_channel(): void
+    {
+        $this->fakeChannel('UC'.str_repeat('z', 22));
+        $this->assertSame([], app(YouTubeOwnerClient::class)->unlistedUploads('ya29.tok', self::OWNER));
+        $this->assertCount(0, $this->googleRequests(YouTubeReader::BASE_URL.'playlistItems?'));
+    }
+
+    public function test_unlisted_uploads_error_mid_paging_throws_without_token_in_log(): void
+    {
+        $this->captureLogs();
+        $this->fakeChannel(self::OWNER);
+        Http::fake(function ($request) {
+            if (! str_starts_with($request->url(), YouTubeReader::BASE_URL.'playlistItems?')) {
+                return null;
+            }
+            parse_str(parse_url($request->url(), PHP_URL_QUERY), $q);
+
+            return isset($q['pageToken'])
+                ? Http::response(['error' => ['code' => 500, 'message' => 'ya29.tok', 'errors' => [['reason' => 'backendError']]]], 500)
+                : Http::response(['items' => [$this->uploadItem('unl00000001', '2026-11-01T00:00:00Z', 'unlisted')], 'nextPageToken' => 'p2']);
+        });
+        try {
+            app(YouTubeOwnerClient::class)->unlistedUploads('ya29.tok', self::OWNER);
+            $this->fail('YouTubeApiException was not thrown');
+        } catch (YouTubeApiException $e) {
+            $this->assertSame(500, $e->error->status);
+        }
+        foreach ($this->logged as $line) {
+            $this->assertStringNotContainsString('ya29', $line);
+        }
+    }
+
+    public function test_unlisted_uploads_token_argument_is_sensitive(): void
+    {
+        $param = (new \ReflectionMethod(YouTubeOwnerClient::class, 'unlistedUploads'))->getParameters()[0];
         $this->assertNotEmpty($param->getAttributes(\SensitiveParameter::class));
     }
 }
