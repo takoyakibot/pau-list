@@ -40,19 +40,29 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Spec 8.8: unhandled database / HTTP client errors are logged without their message, which carries
-        // SQL bindings (e.g. key_hash) or the request URL with its query. `return false` stops the default log.
-        $exceptions->report(function (QueryException $e) {
-            Log::error('Database error', ['sqlstate' => (string) $e->getCode()]);
+        // SQL bindings (e.g. key_hash) or the request URL with its query. The previous-exception chain is
+        // walked so a wrapped one (whose wrapper may repeat that message) is caught too; only class names are
+        // logged. `return false` stops the default log.
+        $exceptions->report(function (Throwable $e) {
+            for ($cause = $e; $cause !== null; $cause = $cause->getPrevious()) {
+                $wrapped = $cause === $e ? [] : ['wrapped_in' => $e::class];
+                if ($cause instanceof QueryException) {
+                    Log::error('Database error', ['sqlstate' => (string) $cause->getCode(), ...$wrapped]);
 
-            return false;
-        });
-        $exceptions->report(function (RequestException|ConnectionException $e) {
-            Log::error('HTTP client error', [
-                'exception' => $e::class,
-                'status' => $e instanceof RequestException ? $e->response->status() : null,
-            ]);
+                    return false;
+                }
+                if ($cause instanceof RequestException || $cause instanceof ConnectionException) {
+                    Log::error('HTTP client error', [
+                        'exception' => $cause::class,
+                        'status' => $cause instanceof RequestException ? $cause->response->status() : null,
+                        ...$wrapped,
+                    ]);
 
-            return false;
+                    return false;
+                }
+            }
+
+            return null;
         });
         $exceptions->render(function (ThrottleRequestsException $e, Request $request) {
             if (! $request->attributes->get(RateLimitLog::LOGGED, false)) {

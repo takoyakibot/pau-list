@@ -223,7 +223,7 @@ class ProposeScreenTest extends TestCase
         $html = $this->get(route('channels.propose', $id))->assertOk()->getContent();
         // the link sits in the <li>, outside the checkbox <label>, so clicking it does not toggle the selection
         $this->assertMatchesRegularExpression(
-            '#<template x-for="video in filtered"[^>]*>\s*<li[^>]*>\s*<label[^>]*>.*?</label>\s*<a class="shrink-0 text-xs underline" :href="watchHref" rel="noopener noreferrer" target="_blank">YouTube で見る</a>\s*</li>#s',
+            '#<template x-for="video in filtered"[^>]*>\s*<li[^>]*>\s*<label[^>]*>.*?</label>\s*<a class="shrink-0 text-xs underline" :href="watchHref" x-show="watchHref" rel="noopener noreferrer" target="_blank">YouTube で見る</a>\s*</li>#s',
             $html,
         );
         $this->assertStringContainsString('データ提供: YouTube', $html);

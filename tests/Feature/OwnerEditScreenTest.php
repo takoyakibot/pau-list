@@ -271,7 +271,7 @@ class OwnerEditScreenTest extends TestCase
         $this->cacheChannel([['aaaaaaaaaaa', 'Video A', '2026-11-01 00:00:00']]);
         $html = $this->edit($this->createProposal())->assertOk()->getContent();
         $this->assertMatchesRegularExpression(
-            '#<template x-for="video in filtered"[^>]*>\s*<li[^>]*>\s*<label[^>]*>.*?</label>\s*<a class="shrink-0 text-xs underline" :href="watchHref" rel="noopener noreferrer" target="_blank">YouTube で見る</a>\s*</li>#s',
+            '#<template x-for="video in filtered"[^>]*>\s*<li[^>]*>\s*<label[^>]*>.*?</label>\s*<a class="shrink-0 text-xs underline" :href="watchHref" x-show="watchHref" rel="noopener noreferrer" target="_blank">YouTube で見る</a>\s*</li>#s',
             $html,
         );
         $this->assertStringContainsString('データ提供: YouTube', $html);

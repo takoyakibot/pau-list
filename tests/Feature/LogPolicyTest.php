@@ -54,8 +54,9 @@ class LogPolicyTest extends TestCase
         foreach ($this->logs as $e) {
             $out .= $e->message.json_encode($e->context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR);
             foreach ($e->context as $value) {
-                if ($value instanceof \Throwable) {
-                    $out .= $value->getMessage().$value->getTraceAsString();
+                // Like the log formatter, follow the previous-exception chain.
+                for ($t = $value instanceof \Throwable ? $value : null; $t !== null; $t = $t->getPrevious()) {
+                    $out .= $t->getMessage().$t->getTraceAsString();
                 }
             }
         }
@@ -91,6 +92,43 @@ class LogPolicyTest extends TestCase
 
         $this->assertCount(1, $this->logsWithMessage('HTTP client error'));
         $this->assertSame(['exception' => RequestException::class, 'status' => 500], $this->logsWithMessage('HTTP client error')[0]->context);
+        $this->assertLogsDoNotContain('SECRETKEY');
+        $this->assertLogsDoNotContain('example.test');
+    }
+
+    public function test_wrapped_query_exception_logs_sqlstate_only(): void
+    {
+        $query = new QueryException('sqlite', 'select * from proposals where key_hash = ?', ['SECRETBINDING'], new \PDOException('x'));
+        Route::get('/_boom', fn () => throw new \RuntimeException('wrapped: '.$query->getMessage(), 0, $query));
+        config(['app.debug' => false]);
+
+        $this->get('/_boom')->assertStatus(500);
+
+        $this->assertCount(1, $this->logsWithMessage('Database error'));
+        $this->assertSame(['sqlstate' => '0', 'wrapped_in' => \RuntimeException::class], $this->logsWithMessage('Database error')[0]->context);
+        $this->assertLogsDoNotContain('SECRETBINDING');
+        $this->assertLogsDoNotContain('key_hash = ?');
+    }
+
+    public function test_wrapped_http_client_exception_logs_without_url(): void
+    {
+        Http::fake(['*' => Http::response('', 503)]);
+        Route::get('/_boom', function () {
+            try {
+                Http::get('https://example.test/x?key=SECRETKEY')->throw();
+            } catch (RequestException $e) {
+                throw new \LogicException('outer: '.$e->getMessage(), 0, new \RuntimeException('middle', 0, $e));
+            }
+        });
+        config(['app.debug' => false]);
+
+        $this->get('/_boom')->assertStatus(500);
+
+        $this->assertCount(1, $this->logsWithMessage('HTTP client error'));
+        $this->assertSame(
+            ['exception' => RequestException::class, 'status' => 503, 'wrapped_in' => \LogicException::class],
+            $this->logsWithMessage('HTTP client error')[0]->context,
+        );
         $this->assertLogsDoNotContain('SECRETKEY');
         $this->assertLogsDoNotContain('example.test');
     }

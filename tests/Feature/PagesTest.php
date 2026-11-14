@@ -78,7 +78,10 @@ class PagesTest extends TestCase
             ->assertSee('<h1 class="text-2xl font-bold">List Maker</h1>', false)
             ->assertSee('本サービスは YouTube API Services を使用しています')
             ->assertSee('ログインの流れ（確認されていないアプリの警告について）')
-            ->assertSee('『このアプリは Google で確認されていません』と表示されたら、『詳細』を押し、『List Maker（安全ではないページ）に移動』を選びます。本サービスは Google の審査を申請する前のため、この警告が表示されます')
+            ->assertSee('『このアプリは Google で確認されていません』と表示されたら、『詳細』を押し、『（アプリ名またはドメイン）（安全ではないページ）に移動』のようなリンクを選びます。本サービスは Google の審査を申請する前のため、この警告が表示されます')
+            ->assertSee('権限の確認画面にチェックボックスが表示された場合は、YouTube の権限にチェックを入れてください（入れないと再生リストを作成できません）')
+            ->assertSee('Google の画面には YouTube アカウントの管理という広い権限が表示されますが、使うのは')
+            ->assertDontSee('『List Maker（安全ではないページ）に移動』を選びます')
             ->getContent();
         $this->assertSame(1, preg_match('#<main[^>]*>(.*)</main>#s', $html, $m));
         $main = $m[1];

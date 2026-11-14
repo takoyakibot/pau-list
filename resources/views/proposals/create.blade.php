@@ -68,7 +68,7 @@
                                 <span class="block text-xs text-gray-600" x-text="publishedLabel"></span>
                             </span>
                         </label>
-                        <a class="shrink-0 text-xs underline" :href="watchHref" rel="noopener noreferrer" target="_blank">YouTube で見る</a>
+                        <a class="shrink-0 text-xs underline" :href="watchHref" x-show="watchHref" rel="noopener noreferrer" target="_blank">YouTube で見る</a>
                     </li>
                 </template>
             </ul>
