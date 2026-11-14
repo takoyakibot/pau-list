@@ -64,7 +64,12 @@ class YouTubeReader
             $json = $this->get('playlistItems', $query, QuotaLedger::READ, true);
         } catch (YouTubeApiException $e) {
             if ($e->error->status === 404 && $e->error->reason === 'playlistNotFound') {
-                return new PlaylistItemsPage([], null);
+                if ($pageToken === null) {
+                    // A channel with no uploads: its uploads playlist does not exist yet.
+                    return new PlaylistItemsPage([], null);
+                }
+                // Vanishing mid-pagination is not "end of list": fail so nothing partial is stored.
+                throw $this->fail('playlistItems', $e->error);
             }
             throw $e;
         }

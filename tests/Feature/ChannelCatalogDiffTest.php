@@ -12,6 +12,7 @@ use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Tests\Support\FakesYouTube;
 use Tests\TestCase;
 
@@ -353,5 +354,100 @@ class ChannelCatalogDiffTest extends TestCase
         $this->assertSame($this->id, $r->channel->channel_id);
         $this->assertSame(20, DB::table('channel_cache_videos')->count());
         $this->assertTrue(ChannelCache::find($this->id)->last_synced_at->equalTo($before->last_synced_at));
+    }
+
+    /**
+     * playlistItems fake whose pages are produced by $page(index): an items array, or a response.
+     */
+    private function fakePages(int $count, callable $page): void
+    {
+        Http::fake(function (Request $request) use ($count, $page) {
+            if (! str_contains($request->url(), 'playlistItems')) {
+                return null;
+            }
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $q);
+            $index = isset($q['pageToken']) ? ((int) substr($q['pageToken'], 1)) - 1 : 0;
+            $result = $page($index);
+            if (! is_array($result)) {
+                return $result;
+            }
+            $body = ['items' => $result];
+            if ($index + 1 < $count) {
+                $body['nextPageToken'] = 'p'.($index + 2);
+            }
+
+            return Http::response($body);
+        });
+    }
+
+    public function test_row_expired_by_someone_else_during_diff_import_is_not_used(): void
+    {
+        $this->importThenAdvance();
+        $this->fakePages(1, function () {
+            app(ChannelVideoCatalog::class)->expire(ChannelCache::findOrFail($this->id));
+
+            return array_merge($this->fresh(0, 3), $this->known(0, 20));
+        });
+
+        $r = $this->catalog()->load($this->id);
+
+        $this->assertSame(CatalogStatus::Failed, $r->status);
+        $this->assertNull($r->channel);
+        $this->assertSame(0, DB::table('channel_caches')->count());
+        $this->assertSame(0, DB::table('channel_cache_videos')->count());
+        $this->assertSame(1, DB::table('channel_cache_expirations')->count());
+    }
+
+    public function test_row_reaching_expiry_during_diff_import_is_expired_not_extended(): void
+    {
+        $this->importThenAdvance();
+        ChannelCache::query()->update(['expires_at' => now()->addSeconds(10)]);
+        $this->fakePages(1, function () {
+            $this->travel(20)->seconds();
+
+            return array_merge($this->fresh(0, 3), $this->known(0, 20));
+        });
+
+        $r = $this->catalog()->load($this->id);
+
+        $this->assertSame(CatalogStatus::Failed, $r->status);
+        $this->assertNull($r->channel);
+        $this->assertSame(0, DB::table('channel_caches')->count());
+        $this->assertSame(0, DB::table('channel_cache_videos')->count());
+        $this->assertTrue(CarbonImmutable::parse(DB::table('channel_cache_expirations')->value('expired_at'))->equalTo(now()));
+    }
+
+    public function test_deadline_is_rechecked_after_the_last_page(): void
+    {
+        $this->fakeChannel($this->id);
+        $this->fakePages(1, function () {
+            $this->travel(31)->seconds();
+
+            return $this->fresh(0, 10);
+        });
+
+        $r = $this->catalog()->load($this->id);
+
+        $this->assertSame(CatalogStatus::Failed, $r->status);
+        $this->assertSame(0, DB::table('channel_caches')->count());
+        $this->assertSame(0, DB::table('channel_cache_videos')->count());
+    }
+
+    public function test_playlist_disappearing_mid_import_fails_without_writing(): void
+    {
+        Log::spy();
+        $this->fakeChannel($this->id);
+        $this->fakePages(3, fn (int $i) => $i === 0
+            ? $this->fresh(0, 50)
+            : Http::response(['error' => ['code' => 404, 'errors' => [['reason' => 'playlistNotFound']]]], 404));
+
+        $r = $this->catalog()->load($this->id);
+
+        $this->assertSame(CatalogStatus::Failed, $r->status);
+        $this->assertNull($r->channel);
+        $this->assertSame(0, DB::table('channel_caches')->count());
+        Log::shouldHaveReceived('warning')->withArgs(
+            fn ($msg, $ctx) => $msg === 'youtube api error' && $ctx['reason'] === 'playlistNotFound' && $ctx['status'] === 404,
+        )->once();
     }
 }

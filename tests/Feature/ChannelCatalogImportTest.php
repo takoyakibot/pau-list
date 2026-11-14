@@ -9,8 +9,10 @@ use App\Services\YouTube\QuotaLedger;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use Tests\Support\FakesYouTube;
 use Tests\TestCase;
 
@@ -276,5 +278,75 @@ class ChannelCatalogImportTest extends TestCase
         $this->assertTrue($r->hadExpired);
         $this->assertSame(0, DB::table('channel_caches')->count());
         $this->assertSame(1, DB::table('channel_cache_expirations')->count());
+    }
+
+    public function test_reuse_does_not_wait_for_the_fetch_lock(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-14 03:00:00'));
+        $this->importInitial();
+        $this->travel(1)->hours();
+        $this->resetHttp();
+        Http::fake();
+        Sleep::fake();
+        $this->assertTrue(Cache::lock('channel-fetch:'.$this->id, 60)->get());
+
+        $r = $this->catalog()->load($this->id);
+
+        $this->assertSame(CatalogStatus::Reused, $r->status);
+        $this->assertSame($this->id, $r->channel->channel_id);
+        Http::assertNothingSent();
+        Sleep::assertNeverSlept();
+    }
+
+    public function test_lock_timeout_returns_failed_with_live_row(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-14 03:00:00'));
+        $this->importInitial();
+        $this->travel(7)->hours();
+        $this->resetHttp();
+        Http::fake();
+        Sleep::fake(syncWithCarbon: true);
+        $this->assertTrue(Cache::lock('channel-fetch:'.$this->id, 60)->get());
+        $start = now()->toImmutable();
+
+        $r = $this->catalog()->load($this->id);
+
+        $this->assertSame(CatalogStatus::Failed, $r->status);
+        $this->assertSame($this->id, $r->channel->channel_id);
+        $this->assertGreaterThanOrEqual(39, $start->diffInSeconds(now())); // waited the full 40 s block (faked sleep)
+        Http::assertNothingSent();
+    }
+
+    public function test_lock_timeout_does_not_return_an_expired_row(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-14 03:00:00'));
+        $this->importInitial();
+        $this->travelTo(CarbonImmutable::parse('2026-12-15 03:00:00'));
+        $this->resetHttp();
+        Http::fake();
+        Sleep::fake(syncWithCarbon: true);
+        $this->assertTrue(Cache::lock('channel-fetch:'.$this->id, 60)->get());
+
+        $r = $this->catalog()->load($this->id);
+
+        $this->assertSame(CatalogStatus::Failed, $r->status);
+        $this->assertNull($r->channel);
+        Http::assertNothingSent();
+    }
+
+    public function test_expire_stale_skips_channel_being_imported(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-14 03:00:00'));
+        $this->importInitial();
+        $this->travelTo(CarbonImmutable::parse('2026-12-14 03:00:00'));
+        $lock = Cache::lock('channel-fetch:'.$this->id, 60);
+        $this->assertTrue($lock->get());
+
+        $this->assertSame(0, $this->catalog()->expireStale());
+        $this->assertSame(1, DB::table('channel_caches')->count());
+
+        $lock->release();
+        $this->assertSame(1, $this->catalog()->expireStale());
+        $this->assertSame(0, DB::table('channel_caches')->count());
     }
 }

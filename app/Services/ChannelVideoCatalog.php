@@ -10,6 +10,7 @@ use App\Services\YouTube\YouTubeApiException;
 use App\Services\YouTube\YouTubeReader;
 use App\Support\ChannelRef;
 use Carbon\CarbonImmutable;
+use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -20,16 +21,22 @@ class ChannelVideoCatalog
 
     private const DEADLINE_SECONDS = 30;
 
+    private const LOCK_SECONDS = 60;
+
+    private const LOCK_WAIT_SECONDS = 40;
+
     public function __construct(private readonly YouTubeReader $reader) {}
 
     public function load(string $channelId): CatalogResult
     {
-        if ($this->expireIfStale($channelId) === null && $this->isReusable($channelId)) {
-            return new CatalogResult(CatalogStatus::Reused, $this->find($channelId));
+        // Lock-free fast path. isReusable() is false for an expired row; expiring it is left to the locked path.
+        $cached = $this->find($channelId);
+        if ($cached !== null && $this->isReusable($channelId)) {
+            return new CatalogResult(CatalogStatus::Reused, $cached);
         }
 
         try {
-            return Cache::lock("channel-fetch:{$channelId}", 60)->block(40, function () use ($channelId) {
+            return $this->lock($channelId)->block(self::LOCK_WAIT_SECONDS, function () use ($channelId) {
                 // Re-check under the lock: a concurrent request may have just imported this channel.
                 $existing = $this->expireIfStale($channelId);
                 if ($existing !== null && $this->isReusable($channelId)) {
@@ -74,10 +81,20 @@ class ChannelVideoCatalog
         $ids = ChannelCache::query()->where('expires_at', '<=', now())->pluck('channel_id');
         $count = 0;
         foreach ($ids as $id) {
-            $cache = $this->find($id);
-            if ($cache !== null && $cache->expires_at->lessThanOrEqualTo(now())) {
-                $this->expire($cache);
-                $count++;
+            // Skip channels being imported right now; the import itself refuses to keep an expired row,
+            // and the next batch (or the next load) expires it.
+            $lock = $this->lock($id);
+            if (! $lock->get()) {
+                continue;
+            }
+            try {
+                $cache = $this->find($id);
+                if ($cache !== null && $cache->expires_at->lessThanOrEqualTo(now())) {
+                    $this->expire($cache);
+                    $count++;
+                }
+            } finally {
+                $lock->release();
             }
         }
 
@@ -99,14 +116,14 @@ class ChannelVideoCatalog
                 ? $this->readAll($info, $deadline)
                 : $this->readDiff($info, $existing, $deadline);
         } catch (ReadBudgetExceeded) {
-            return new CatalogResult(CatalogStatus::BudgetExhausted, $existing, $hadExpired);
+            return new CatalogResult(CatalogStatus::BudgetExhausted, $this->live($channelId), $hadExpired);
         } catch (YouTubeApiException) {
-            return new CatalogResult(CatalogStatus::Failed, $existing, $hadExpired);
+            return new CatalogResult(CatalogStatus::Failed, $this->live($channelId), $hadExpired);
         }
 
-        if ($read === null) {
-            // Ran past the 30-second budget: discard everything read so far (spec 5.3 / D21).
-            return new CatalogResult(CatalogStatus::Failed, $existing, $hadExpired);
+        if ($read === null || CarbonImmutable::now()->greaterThan($deadline)) {
+            // Ran past the 30-second total (spec 5.3 / 5.7): discard everything read so far (D21).
+            return new CatalogResult(CatalogStatus::Failed, $this->live($channelId), $hadExpired);
         }
 
         if ($existing === null) {
@@ -115,7 +132,15 @@ class ChannelVideoCatalog
             return new CatalogResult(CatalogStatus::Imported, $this->find($channelId), $hadExpired);
         }
 
-        $this->writeDiff($info, $read['new'], $read['remove']);
+        if (! $this->writeDiff($info, $read['new'], $read['remove'])) {
+            // The row expired (or was expired by someone else) while we were reading. Never show or extend
+            // an expired list: make sure it is expired and recorded so the next load is a full import.
+            if (($stale = $this->find($channelId)) !== null) {
+                $this->expire($stale);
+            }
+
+            return new CatalogResult(CatalogStatus::Failed, null, $hadExpired);
+        }
 
         return new CatalogResult(CatalogStatus::Synced, $this->find($channelId), $hadExpired);
     }
@@ -240,18 +265,25 @@ class ChannelVideoCatalog
      * @param  array<string, PlaylistItem>  $new
      * @param  list<string>  $remove
      */
-    private function writeDiff(ChannelInfo $info, array $new, array $remove): void
+    private function writeDiff(ChannelInfo $info, array $new, array $remove): bool
     {
         $now = CarbonImmutable::now();
-        DB::transaction(function () use ($info, $new, $remove, $now) {
-            DB::table('channel_caches')->where('channel_id', $info->id)->update([
-                'handle' => $info->handle,
-                'title' => $info->title,
-                'thumbnail_url' => $info->thumbnailUrl,
-                'uploads_playlist_id' => $info->uploadsPlaylistId,
-                'meta_fetched_at' => $now,
-                'last_synced_at' => $now,
-            ]);
+
+        return DB::transaction(function () use ($info, $new, $remove, $now) {
+            $updated = DB::table('channel_caches')
+                ->where('channel_id', $info->id)
+                ->where('expires_at', '>', $now)
+                ->update([
+                    'handle' => $info->handle,
+                    'title' => $info->title,
+                    'thumbnail_url' => $info->thumbnailUrl,
+                    'uploads_playlist_id' => $info->uploadsPlaylistId,
+                    'meta_fetched_at' => $now,
+                    'last_synced_at' => $now,
+                ]);
+            if ($updated === 0) {
+                return false;
+            }
             $this->insertVideos($info->id, $new, $now);
             foreach (array_chunk($remove, 200) as $chunk) {
                 DB::table('channel_cache_videos')
@@ -260,6 +292,8 @@ class ChannelVideoCatalog
                     ->delete();
             }
             $this->trimToLimit($info->id);
+
+            return true;
         });
     }
 
@@ -326,6 +360,11 @@ class ChannelVideoCatalog
     private function find(string $channelId): ?ChannelCache
     {
         return ChannelCache::query()->find($channelId);
+    }
+
+    private function lock(string $channelId): Lock
+    {
+        return Cache::lock("channel-fetch:{$channelId}", self::LOCK_SECONDS);
     }
 
     private function maxPages(): int
