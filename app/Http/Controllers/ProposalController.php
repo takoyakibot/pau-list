@@ -139,7 +139,15 @@ class ProposalController extends Controller
             return $fail('保存に失敗しました。時間をおいて再度お試しください');
         }
 
-        $limits->hit($request);
+        // The proposal is already saved: a failing limiter (cache/database trouble) must not turn that into
+        // a 500 that hides the share URL. Logged like the save failure above (SQLSTATE only, no bindings).
+        try {
+            $limits->hit($request);
+        } catch (\Throwable $e) {
+            Log::error('Proposal save limiter failed', [
+                'sqlstate' => $e instanceof QueryException ? (string) $e->getCode() : 'none',
+            ]);
+        }
 
         // Never log the raw key or the full hash.
         Log::info('Proposal saved', [

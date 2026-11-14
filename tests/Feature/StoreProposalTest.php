@@ -7,6 +7,7 @@ use App\Models\Proposal;
 use App\Services\YouTube\QuotaLedger;
 use App\Support\ProposalKey;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
@@ -15,6 +16,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
+use Mockery;
 use Tests\Support\FakesYouTube;
 use Tests\TestCase;
 
@@ -430,6 +432,32 @@ class StoreProposalTest extends TestCase
             $all = $msg.json_encode($ctx);
 
             return preg_match('/[0-9a-f]{64}/', $all) === 0 && ! str_contains($all, 'insert');
+        })->once();
+    }
+
+    public function test_limiter_failure_after_save_still_shows_the_saved_proposal(): void
+    {
+        $this->fakeVideos([$this->videoResource(self::A, $this->id)]);
+        $real = app(\Illuminate\Cache\RateLimiter::class);
+        $limiter = Mockery::mock($real); // proxy: everything else goes to the real limiter
+        $limiter->shouldReceive('hit')->andReturnUsing(function (string $key, int $decay = 60) use ($real) {
+            if (str_starts_with($key, 'proposal-store:')) {
+                throw new QueryException('mysql', 'update cache set value = ? where key = ?', ['secret-binding', 'k'], new \PDOException('SQLSTATE[HY000]: General error', 0));
+            }
+
+            return $real->hit($key, $decay);
+        });
+        RateLimiter::swap($limiter);
+        Log::spy();
+
+        $key = $this->keyFrom($this->store(['title' => 't', 'video_ids' => [self::A]]));
+        $this->assertSame(1, Proposal::count());
+        $this->get(route('proposals.shared', $key))->assertOk();
+        Log::shouldHaveReceived('error')->withArgs(function ($msg, $ctx = []) {
+            $all = $msg.json_encode($ctx);
+
+            return $msg === 'Proposal save limiter failed' && array_keys($ctx) === ['sqlstate']
+                && ! str_contains($all, 'secret-binding') && ! str_contains($all, 'update cache');
         })->once();
     }
 

@@ -239,6 +239,35 @@ class OwnerSecurityTest extends TestCase
         $this->assertContains('APP_DEBUG is enabled in production []', $this->logged);
     }
 
+    public function test_insecure_session_cookie_in_production_logs_warning(): void
+    {
+        $this->app['env'] = 'production';
+        try {
+            foreach ([false, null, 'true'] as $secure) {
+                config(['session.secure' => $secure]);
+                $this->logged = [];
+                (new AppServiceProvider($this->app))->warnAboutInsecureSessionCookie();
+                $this->assertContains('SESSION_SECURE_COOKIE is not true in production []', $this->logged, var_export($secure, true));
+            }
+            config(['session.secure' => true]);
+            $this->logged = [];
+            (new AppServiceProvider($this->app))->warnAboutInsecureSessionCookie();
+            $this->assertSame([], $this->logged);
+
+            config(['session.secure' => false]);
+            $this->logged = [];
+            (new AppServiceProvider($this->app))->boot();
+            $this->assertContains('SESSION_SECURE_COOKIE is not true in production []', $this->logged);
+        } finally {
+            $this->app['env'] = 'testing';
+        }
+
+        config(['session.secure' => false]);
+        $this->logged = [];
+        (new AppServiceProvider($this->app))->warnAboutInsecureSessionCookie();
+        $this->assertSame([], $this->logged);
+    }
+
     public function test_no_stateless_mode_exists(): void
     {
         foreach (File::allFiles(app_path()) as $f) {

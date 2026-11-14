@@ -33,6 +33,7 @@ class AppServiceProvider extends ServiceProvider
         $this->configureRateLimiting();
         $this->configureSessions();
         $this->warnAboutDebugInProduction();
+        $this->warnAboutInsecureSessionCookie();
     }
 
     /** Debug pages expose configuration and stack traces (spec 6.7 I2). */
@@ -40,6 +41,17 @@ class AppServiceProvider extends ServiceProvider
     {
         if ($this->app->isProduction() && config('app.debug')) {
             Log::warning('APP_DEBUG is enabled in production');
+        }
+    }
+
+    /**
+     * The session carries the owner's access token: in production its cookie must be Secure
+     * (SESSION_SECURE_COOKIE=true; config/session.php defaults to true, this catches an explicit false).
+     */
+    public function warnAboutInsecureSessionCookie(): void
+    {
+        if ($this->app->isProduction() && config('session.secure') !== true) {
+            Log::warning('SESSION_SECURE_COOKIE is not true in production');
         }
     }
 
