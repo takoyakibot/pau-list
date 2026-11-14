@@ -6,13 +6,11 @@ import { safeSessionStorage } from './lib/safe-storage.js';
 import { loadDraft, saveDraft, clearDraft } from './lib/draft.js';
 import {
   normalizePrivacy, remainingFrom, creationQuota, shortageText, isCreateDisabled as createDisabled,
-  restoreDraftItems, sanitizeUnlisted, mergeUnlisted, upgradePlaceholders, TITLE_MAX, DESCRIPTION_MAX,
+  restoreDraftItems, sanitizeUnlisted, mergeUnlisted, upgradePlaceholders, unlistedResultMessage, TITLE_MAX, DESCRIPTION_MAX,
 } from './lib/owner-edit.js';
 
 const MAX_MISSING = '最大本数を読み込めなかったため、動画を選べません。ページを再読み込みしてください';
 const CREATE_PENDING = '作成機能は準備中です';
-const UNLISTED_SHOWN = 'あなたの限定公開の動画も一覧に表示しています（あなたにだけ表示されます）';
-const UNLISTED_NONE = '限定公開の動画はありませんでした';
 const UNLISTED_FAILED = 'あなたの限定公開の動画を読み込めませんでした。公開動画の一覧と動画 URL で追加できます';
 const NETWORK_FAILED = '通信に失敗しました。時間をおいて再度お試しください';
 
@@ -258,7 +256,7 @@ document.addEventListener('alpine:init', () => {
         for (const v of unlisted) this.byId.set(v.id, { ...toItem(v), outside: false, unlisted: true });
         this.items = upgradePlaceholders(this.items, unlisted);
         this.unlistedLoaded = true;
-        this.unlistedMessage = unlisted.length > 0 ? UNLISTED_SHOWN : UNLISTED_NONE;
+        this.unlistedMessage = unlistedResultMessage(unlisted.length, body.truncated);
       } catch {
         this.unlistedMessage = NETWORK_FAILED;
       } finally {

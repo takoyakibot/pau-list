@@ -75,6 +75,44 @@ class OwnerSessionTest extends TestCase
         $this->assertFalse(session()->has(OwnerSession::OWNER_KEY));
     }
 
+    public function test_expired_or_malformed_unlisted_cache_is_forgotten(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-14 03:00:00'));
+        $channel = 'UC'.str_repeat('a', 22);
+        $s = app(OwnerSession::class);
+        $s->rememberUnlisted($channel, [['id' => 'unl00000001']], false);
+        $this->travel(OwnerSession::UNLISTED_TTL_SECONDS)->seconds();
+        $this->assertNull($s->unlisted($channel));
+        $this->assertFalse(session()->has(OwnerSession::UNLISTED_KEY));
+
+        foreach (['junk', ['channel_id' => $channel, 'fetched_at' => '1', 'videos' => []],
+            ['channel_id' => $channel, 'fetched_at' => now()->getTimestamp(), 'videos' => 'x']] as $raw) {
+            session([OwnerSession::UNLISTED_KEY => $raw]);
+            $this->assertNull($s->unlisted($channel), json_encode($raw));
+            $this->assertFalse(session()->has(OwnerSession::UNLISTED_KEY));
+        }
+    }
+
+    public function test_unlisted_cache_keeps_the_truncated_flag(): void
+    {
+        $channel = 'UC'.str_repeat('a', 22);
+        $s = app(OwnerSession::class);
+        $s->rememberUnlisted($channel, [['id' => 'unl00000001']], true);
+        $this->assertSame(['videos' => [['id' => 'unl00000001']], 'truncated' => true], $s->unlisted($channel));
+    }
+
+    public function test_expired_login_also_forgets_the_unlisted_cache(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-14 03:00:00'));
+        $channel = 'UC'.str_repeat('a', 22);
+        $s = app(OwnerSession::class);
+        $s->login(new OwnerLogin('tok', now()->toImmutable()->addSeconds(10), $channel, 'A'));
+        $s->rememberUnlisted($channel, [['id' => 'unl00000001']], false);
+        $this->travel(10)->seconds();
+        $this->assertNull($s->current());
+        $this->assertFalse(session()->has(OwnerSession::UNLISTED_KEY));
+    }
+
     public function test_token_for_revoke_survives_expiry_and_forget_clears(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-14 03:00:00'));

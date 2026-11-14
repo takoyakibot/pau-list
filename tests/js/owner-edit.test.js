@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   PRIVACY_VALUES, normalizePrivacy, remainingFrom, creationQuota, shortageText, isCreateDisabled,
-  restoreDraftItems, mergeUnlisted, upgradePlaceholders, sanitizeUnlisted,
+  restoreDraftItems, mergeUnlisted, upgradePlaceholders, sanitizeUnlisted, unlistedResultMessage,
 } from '../../resources/js/lib/owner-edit.js';
 
 test('creationQuota: within remaining', () => {
@@ -82,4 +82,10 @@ test('upgradePlaceholders fills restored unlisted placeholders', () => {
   const r = upgradePlaceholders(items, [{ id: U, title: 'U', thumbnail_url: 'https://i.ytimg.com/u', published_at: null, unlisted: true }]);
   assert.deepEqual(r[0], { id: U, title: 'U', thumbnail_url: 'https://i.ytimg.com/u', outside: false, unlisted: true });
   assert.deepEqual(r[1], items[1]);
+});
+test('unlistedResultMessage reports none, shown, and the 300 cap', () => {
+  assert.equal(unlistedResultMessage(0, false), '限定公開の動画はありませんでした');
+  assert.equal(unlistedResultMessage(3, false), 'あなたの限定公開の動画も一覧に表示しています（あなたにだけ表示されます）');
+  assert.equal(unlistedResultMessage(300, true), 'あなたの限定公開の動画も一覧に表示しています（あなたにだけ表示されます）。限定公開の動画は新しい順に300本まで表示しています');
+  assert.equal(unlistedResultMessage(300, 'yes'), unlistedResultMessage(300, false));
 });

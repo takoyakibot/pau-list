@@ -90,3 +90,13 @@ export function upgradePlaceholders(items, unlisted) {
     return v ? { id: v.id, title: v.title, thumbnail_url: v.thumbnail_url, outside: false, unlisted: true } : x;
   });
 }
+
+export const UNLISTED_SHOWN = 'あなたの限定公開の動画も一覧に表示しています（あなたにだけ表示されます）';
+export const UNLISTED_NONE = '限定公開の動画はありませんでした';
+// Same text as OwnerEditController::UNLISTED_TRUNCATED (the server keeps at most 300, newest first).
+export const UNLISTED_TRUNCATED = '限定公開の動画は新しい順に300本まで表示しています';
+
+export function unlistedResultMessage(count, truncated) {
+  if (!(count > 0)) return UNLISTED_NONE;
+  return truncated === true ? `${UNLISTED_SHOWN}。${UNLISTED_TRUNCATED}` : UNLISTED_SHOWN;
+}

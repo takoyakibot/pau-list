@@ -29,6 +29,8 @@ class OwnerEditController extends Controller
 
     public const UNLISTED_FAILED = 'あなたの限定公開の動画を読み込めませんでした。公開動画の一覧と動画 URL で追加できます';
 
+    public const UNLISTED_TRUNCATED = '限定公開の動画は新しい順に300本まで表示しています';
+
     public const UNLISTED_THROTTLED = '限定公開の動画の読み込みが続いています。10 分ほど待ってから再度お試しください';
 
     public function show(Request $request, ChannelVideoCatalog $catalog, QuotaLedger $ledger): Response
@@ -94,17 +96,18 @@ class OwnerEditController extends Controller
      * JSON for the S5 button 「限定公開の動画も表示する」: the logged-in owner's unlisted uploads only.
      * Same-origin fetch only, rate limited per owner channel, cached in the (encrypted) session for
      * 10 minutes, and skipped when today's owner_read reaches QuotaPolicy::ownerReadGuard().
+     * At most OwnerSession::UNLISTED_MAX (300) newest are returned; `truncated` (+ `notice`) says when more exist.
      */
     public function unlisted(OwnerSession $owners, QuotaLedger $ledger, YouTubeOwnerClient $youtube): JsonResponse
     {
         $owner = $owners->current();
         if ($owner === null) {
-            return response()->json(['message' => RequireOwnerSession::NOTICE], 401);
+            return RequireOwnerSession::loginRequiredJson();
         }
 
         $cached = $owners->unlisted($owner->channelId);
         if ($cached !== null) {
-            return response()->json(['videos' => $cached]);
+            return self::unlistedJson($cached['videos'], $cached['truncated']);
         }
 
         if ($ledger->used(QuotaLedger::OWNER_READ) >= QuotaPolicy::ownerReadGuard()) {
@@ -112,9 +115,10 @@ class OwnerEditController extends Controller
         }
 
         try {
-            $items = $youtube->unlistedUploads($owner->accessToken, $owner->channelId);
-        } catch (YouTubeApiException) {
-            return response()->json(['message' => self::UNLISTED_FAILED], 503);
+            $items = $youtube->unlistedUploads($owner->accessToken, $owner->channelId, OwnerSession::UNLISTED_MAX);
+        } catch (YouTubeApiException $e) {
+            // Google 401: the token is gone → logged out and asked to log in again (JS shows the link).
+            return RequireOwnerSession::ownerApiFailureJson($e, $owners, self::UNLISTED_FAILED);
         }
 
         $videos = array_map(fn (PlaylistItem $item) => [
@@ -124,8 +128,23 @@ class OwnerEditController extends Controller
             'published_at' => $item->publishedAt?->utc()->format('Y-m-d\TH:i:s\Z'),
             'unlisted' => true,
         ], $items);
-        $owners->rememberUnlisted($owner->channelId, $videos);
+        // Newest first (stable: YouTube's order is kept for equal or missing dates), then the cap.
+        usort($videos, fn (array $a, array $b) => ($b['published_at'] ?? '') <=> ($a['published_at'] ?? ''));
+        $truncated = count($videos) > OwnerSession::UNLISTED_MAX;
+        $videos = array_slice($videos, 0, OwnerSession::UNLISTED_MAX);
+        $owners->rememberUnlisted($owner->channelId, $videos, $truncated);
 
-        return response()->json(['videos' => $videos]);
+        return self::unlistedJson($videos, $truncated);
+    }
+
+    /** @param list<array<string, mixed>> $videos */
+    private static function unlistedJson(array $videos, bool $truncated): JsonResponse
+    {
+        $body = ['videos' => $videos, 'truncated' => $truncated];
+        if ($truncated) {
+            $body['notice'] = self::UNLISTED_TRUNCATED;
+        }
+
+        return response()->json($body);
     }
 }

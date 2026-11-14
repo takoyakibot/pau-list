@@ -22,6 +22,12 @@ final class OwnerSession
 
     public const UNLISTED_TTL_SECONDS = 600;
 
+    /**
+     * At most this many unlisted uploads (newest first) are loaded and kept per session, which bounds
+     * the encrypted session row (titles are already clipped to 200 characters). The JSON says when more exist.
+     */
+    public const UNLISTED_MAX = 300;
+
     private const RANDOM_PATTERN = '/^[A-Za-z0-9_-]{43}$/D';
 
     public function __construct(private readonly Session $session) {}
@@ -64,35 +70,52 @@ final class OwnerSession
         $this->session->put(self::OWNER_KEY, self::serialize($login));
     }
 
-    /** @param list<array<string, mixed>> $videos */
-    public function rememberUnlisted(string $channelId, array $videos): void
+    /** @param list<array<string, mixed>> $videos at most UNLISTED_MAX are kept */
+    public function rememberUnlisted(string $channelId, array $videos, bool $truncated): void
     {
         $this->session->put(self::UNLISTED_KEY, [
             'channel_id' => $channelId,
             'fetched_at' => now()->getTimestamp(),
-            'videos' => array_values($videos),
+            'videos' => array_slice(array_values($videos), 0, self::UNLISTED_MAX),
+            'truncated' => $truncated || count($videos) > self::UNLISTED_MAX,
         ]);
     }
 
-    /** @return list<array<string, mixed>>|null null when absent, for another channel, expired or malformed */
+    /**
+     * Null when absent, for another channel, expired or malformed (the last two are also forgotten).
+     *
+     * @return array{videos: list<array<string, mixed>>, truncated: bool}|null
+     */
     public function unlisted(string $channelId): ?array
     {
+        if (! $this->session->has(self::UNLISTED_KEY)) {
+            return null;
+        }
         $raw = $this->session->get(self::UNLISTED_KEY);
-        if (! is_array($raw) || ($raw['channel_id'] ?? null) !== $channelId
+        if (! is_array($raw) || ! is_string($raw['channel_id'] ?? null)
             || ! is_int($raw['fetched_at'] ?? null)
             || now()->getTimestamp() - $raw['fetched_at'] >= self::UNLISTED_TTL_SECONDS
             || ! is_array($raw['videos'] ?? null) || ! array_is_list($raw['videos'])) {
+            $this->session->forget(self::UNLISTED_KEY);
+
             return null;
         }
+        if ($raw['channel_id'] !== $channelId) {
+            return null; // replaced by the next load for this channel
+        }
 
-        return array_values(array_filter($raw['videos'], 'is_array'));
+        return [
+            'videos' => array_slice(array_values(array_filter($raw['videos'], 'is_array')), 0, self::UNLISTED_MAX),
+            'truncated' => ($raw['truncated'] ?? false) === true,
+        ];
     }
 
     public function current(): ?OwnerLogin
     {
         $login = self::deserialize($this->session->get(self::OWNER_KEY));
         if ($login === null || $login->isExpired()) {
-            $this->session->forget(self::OWNER_KEY);
+            // The unlisted list is owner-only data: it goes with the login.
+            $this->session->forget([self::OWNER_KEY, self::UNLISTED_KEY]);
 
             return null;
         }

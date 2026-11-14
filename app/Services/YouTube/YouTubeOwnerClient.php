@@ -42,14 +42,15 @@ class YouTubeOwnerClient
     /**
      * The owner's unlisted uploads (private ones excluded), newest first as YouTube returns them.
      * The uploads playlist id is derived from the channel id (UC… → UU…), so no channels.list call.
-     * Paging stops at the same cap as the channel list (fetch_max_videos). Empty for a malformed
-     * channel id or a channel without uploads. Never stored in shared caches.
+     * Paging stops at the same cap as the channel list (fetch_max_videos / 50 pages, 1 unit each), or as soon
+     * as more than $max unlisted uploads are found (so the caller can tell that more exist; up to $max + 1 are
+     * returned). Empty for a malformed channel id or a channel without uploads. Never stored in shared caches.
      *
      * @return list<PlaylistItem>
      *
      * @throws YouTubeApiException
      */
-    public function unlistedUploads(#[\SensitiveParameter] string $accessToken, string $channelId): array
+    public function unlistedUploads(#[\SensitiveParameter] string $accessToken, string $channelId, int $max = PHP_INT_MAX): array
     {
         if (preg_match(ChannelInput::ID_PATTERN, $channelId) !== 1) {
             return [];
@@ -87,12 +88,12 @@ class YouTubeOwnerClient
                 }
             }
             $token = $page->nextPageToken;
-            if ($token === null) {
+            if ($token === null || count($unlisted) > $max) {
                 break;
             }
         }
 
-        return array_values($unlisted);
+        return array_slice(array_values($unlisted), 0, $max === PHP_INT_MAX ? null : $max + 1);
     }
 
     /**

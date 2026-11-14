@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\OwnerEditController;
+use App\Http\Middleware\RequireOwnerSession;
 use App\Services\YouTube\QuotaLedger;
 use App\Services\YouTube\YouTubeReader;
 use App\Support\OwnerLogin;
@@ -54,7 +55,7 @@ class OwnerUnlistedVideosTest extends TestCase
         $res = $this->actAsOwner($this->channelId)->fetchUnlisted()->assertOk();
         $res->assertExactJson(['videos' => [
             ['id' => 'unl00000001', 'title' => '<b>限定の動画</b>', 'thumbnail_url' => 'https://i.ytimg.com/vi/unl00000001/mqdefault.jpg', 'published_at' => '2026-11-12T00:00:00Z', 'unlisted' => true],
-        ]]);
+        ], 'truncated' => false]);
         $this->assertStringNotContainsString('ya29.session-token', $res->getContent());
         $this->assertSame(1, app(QuotaLedger::class)->used(QuotaLedger::OWNER_READ));
         $this->assertSame(0, app(QuotaLedger::class)->used(QuotaLedger::READ));
@@ -101,20 +102,20 @@ class OwnerUnlistedVideosTest extends TestCase
         $this->fakeOwnerUploads([[$this->uploadItem('unl00000001', '2026-11-12T00:00:00Z', 'unlisted')]]);
         $this->fakeUploads('UU'.str_repeat('z', 22), [[]]);
         $this->actAsOwner($this->channelId)->fetchUnlisted()->assertOk();
-        $this->actAsOwner($other)->fetchUnlisted()->assertOk()->assertExactJson(['videos' => []]);
+        $this->actAsOwner($other)->fetchUnlisted()->assertOk()->assertExactJson(['videos' => [], 'truncated' => false]);
         $this->assertSame(2, $this->playlistRequests());
     }
 
     public function test_login_and_forget_clear_the_cache(): void
     {
         $owners = app(OwnerSession::class);
-        $owners->rememberUnlisted($this->channelId, [['id' => 'unl00000001']]);
+        $owners->rememberUnlisted($this->channelId, [['id' => 'unl00000001']], false);
         $this->assertNotNull($owners->unlisted($this->channelId));
         $owners->login(new OwnerLogin('tok', now()->toImmutable()->addHour(), $this->channelId, 'A'));
         $this->assertNull($owners->unlisted($this->channelId));
         $this->assertFalse(session()->has(OwnerSession::UNLISTED_KEY));
 
-        $owners->rememberUnlisted($this->channelId, [['id' => 'unl00000001']]);
+        $owners->rememberUnlisted($this->channelId, [['id' => 'unl00000001']], false);
         $owners->forget();
         $this->assertFalse(session()->has(OwnerSession::UNLISTED_KEY));
     }
@@ -139,10 +140,63 @@ class OwnerUnlistedVideosTest extends TestCase
 
     public function test_api_failure_is_503_with_fixed_message_and_not_cached(): void
     {
-        $this->fakeYouTubeError('playlistItems', 401, 'authError');
+        $this->fakeYouTubeError('playlistItems', 500, 'backendError');
         $this->actAsOwner($this->channelId)->fetchUnlisted()->assertStatus(503)
             ->assertExactJson(['message' => OwnerEditController::UNLISTED_FAILED]);
         $this->assertFalse(session()->has(OwnerSession::UNLISTED_KEY));
+        $this->assertTrue(session()->has(OwnerSession::OWNER_KEY));
+    }
+
+    public function test_google_401_logs_the_owner_out_and_asks_to_log_in_again(): void
+    {
+        $this->fakeYouTubeError('playlistItems', 401, 'authError');
+        $this->actAsOwner($this->channelId)->fetchUnlisted()->assertStatus(401)
+            ->assertExactJson(['message' => RequireOwnerSession::NOTICE]);
+        $this->assertFalse(session()->has(OwnerSession::OWNER_KEY));
+        $this->assertFalse(session()->has(OwnerSession::UNLISTED_KEY));
+    }
+
+    public function test_keeps_at_most_300_newest_unlisted_videos_and_says_so(): void
+    {
+        $pages = [];
+        for ($p = 0; $p < 7; $p++) {
+            $page = [];
+            for ($i = 0; $i < 50; $i++) {
+                $n = $p * 50 + $i; // newest first, as YouTube returns the uploads playlist
+                $page[] = $this->uploadItem(sprintf('unl%08d', $n), CarbonImmutable::parse('2026-11-12')->subMinutes($n)->utc()->format('Y-m-d\TH:i:s\Z'), 'unlisted');
+            }
+            $pages[] = $page;
+        }
+        $this->fakeOwnerUploads($pages);
+        $res = $this->actAsOwner($this->channelId)->fetchUnlisted()->assertOk()
+            ->assertJsonPath('truncated', true)
+            ->assertJsonCount(300, 'videos')
+            ->assertJsonPath('videos.0.id', 'unl00000000')
+            ->assertJsonPath('videos.299.id', 'unl00000299');
+        $this->assertSame(OwnerSession::UNLISTED_MAX, 300);
+        // Paging stops once more than 300 are found: 7 pages (350 items) are never all needed.
+        $this->assertSame(7, $this->playlistRequests());
+        $this->assertCount(300, session(OwnerSession::UNLISTED_KEY)['videos']);
+        $this->fetchUnlisted()->assertOk()->assertJsonPath('truncated', true)->assertJsonCount(300, 'videos');
+        $this->assertSame(7, $this->playlistRequests());
+        $this->assertStringContainsString('300', OwnerEditController::UNLISTED_TRUNCATED);
+        $res->assertJsonMissingPath('message')->assertJsonPath('notice', '限定公開の動画は新しい順に300本まで表示しています');
+    }
+
+    public function test_exactly_300_unlisted_videos_are_not_truncated(): void
+    {
+        $pages = [];
+        for ($p = 0; $p < 6; $p++) {
+            $page = [];
+            for ($i = 0; $i < 50; $i++) {
+                $n = $p * 50 + $i;
+                $page[] = $this->uploadItem(sprintf('unl%08d', $n), '2026-11-12T00:00:00Z', 'unlisted');
+            }
+            $pages[] = $page;
+        }
+        $this->fakeOwnerUploads($pages);
+        $this->actAsOwner($this->channelId)->fetchUnlisted()->assertOk()
+            ->assertJsonPath('truncated', false)->assertJsonCount(300, 'videos');
     }
 
     public function test_rate_limited_per_owner_channel_with_japanese_json(): void
