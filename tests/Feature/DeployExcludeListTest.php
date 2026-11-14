@@ -100,4 +100,21 @@ class DeployExcludeListTest extends TestCase
         $this->assertNotContains('.exclude-list', $sent);
         $this->assertSame([], File::allFiles($dst, true), 'dry run must not copy anything');
     }
+
+    public function test_root_htaccess_denies_everything_and_public_is_granted(): void
+    {
+        $root = File::get(base_path('.htaccess'));
+        $this->assertMatchesRegularExpression('/^Require all denied$/m', $root);
+
+        // 親ディレクトリの .htaccess は子にも継承されるので、公開ディレクトリ側で明示的に許可する
+        $public = File::get(public_path('.htaccess'));
+        $this->assertMatchesRegularExpression('/^Require all granted$/m', $public);
+        $this->assertStringContainsString('RewriteRule ^ index.php [L]', $public);
+
+        $this->assertDoesNotMatchRegularExpression(
+            '#^/?\.htaccess$#m',
+            File::get(base_path('.exclude-list')),
+            'root .htaccess must be deployed',
+        );
+    }
 }

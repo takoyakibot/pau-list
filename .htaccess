@@ -1,0 +1,10 @@
+# 安全網: このディレクトリ（プロジェクトルート = deploy.sh の REMOTE_PATH）は Web 公開しない。
+#
+# サブドメインのドキュメントルートは必ず <REMOTE_PATH>/public に設定する（README「初回のみ」参照）。
+# 設定漏れでルートが公開されてしまっても、.env / vendor / storage / composer.json などを
+# 配信させないために、ここではすべてのアクセスを拒否する。
+#
+# Apache は親ディレクトリの .htaccess も子ディレクトリに適用するため、
+# public/.htaccess 側で `Require all granted` を明示して公開ディレクトリだけ許可している。
+# このファイルは .exclude-list の対象外（本番へ転送する）。
+Require all denied

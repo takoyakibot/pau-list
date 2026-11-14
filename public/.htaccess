@@ -1,3 +1,7 @@
+# プロジェクトルートの .htaccess（Require all denied の安全網）は子ディレクトリにも
+# 継承されるため、公開ディレクトリであるここだけ明示的に許可する。
+Require all granted
+
 <IfModule mod_rewrite.c>
     <IfModule mod_negotiation.c>
         Options -MultiViews -Indexes

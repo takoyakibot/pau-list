@@ -32,6 +32,8 @@ php artisan test
 1. `cp deploy.env.example deploy.env` して、サーバーの SSH 接続先・鍵・配置パス・公開 URL を記入する（`deploy.env` は git 管理外。`deploy.env.example` を参照）。
 2. DirectAdmin で MySQL のデータベースとユーザーを作成する。
 3. サブドメイン `list-maker.alpacasandbag.jp` を作成し、ホスティングの管理画面で SSL 証明書（Let's Encrypt）を発行する。
+   - **DirectAdmin でサブドメインのドキュメントルートを `<REMOTE_PATH>/public` に設定する**（`<REMOTE_PATH>` は `deploy.env` の配置パス）。deploy.sh はプロジェクトルートを丸ごと `<REMOTE_PATH>` に送るため、ドキュメントルートが `<REMOTE_PATH>` のままだと `.env`・`vendor`・`storage` が Web から見えてしまう（安全網としてルートの `.htaccess` が全拒否するが、それに頼らないこと）。
+   - 管理画面の「SSL を強制（HTTP→HTTPS リダイレクト）」を有効にする。`public/.htaccess` にはリダイレクト規則を書かない（プロキシ構成が未確認でループの恐れがあるため）。
 4. サーバーの `.env` を作成する（rsync では送られない）。**`.env.example` はローカル開発用の値（`APP_ENV=local`、`APP_DEBUG=true`、`DB_CONNECTION=sqlite`、`MAIL_MAILER=log` など）なので、本番へそのままコピーしないこと。** 以下の本番値にする。秘密は管理画面・サーバー上で直接入力し、リポジトリには書かない。
 
    ```env
@@ -47,7 +49,7 @@ php artisan test
    DB_CONNECTION=mysql
    DB_HOST=localhost
    DB_PORT=3306
-   DB_SOCKET=/var/lib/mysql/mysql.sock   # 共有ホスティングでは socket 接続が必要な場合のみ（環境に合わせて確認）
+   # DB_SOCKET=/var/lib/mysql/mysql.sock   # 共有ホスティングで socket 接続が必要な場合のみ有効にする（パスは要確認）
    DB_DATABASE=（作成したDB名）
    DB_USERNAME=（作成したユーザー）
    DB_PASSWORD=（パスワード）
@@ -85,7 +87,15 @@ php artisan test
    CONTACT_TO_ADDRESS=           # 問い合わせの宛先
    ```
 
-5. `./deploy.sh` を実行する（origin/main 一致確認 → テスト → ビルド → rsync → migrate。APP_KEY が空なら生成される）。
+5. `./deploy.sh` を実行する（origin/main 一致確認 → テスト → ビルド → rsync → migrate → キャッシュクリア。APP_KEY が空なら生成される）。
+   デプロイ後、秘密ファイルが公開されていないことを確認する（どちらも **403 か 404** であること。200 ならすぐにドキュメントルート設定を見直す）:
+
+   ```bash
+   curl -sI https://list-maker.alpacasandbag.jp/.env | head -1
+   curl -sI https://list-maker.alpacasandbag.jp/composer.json | head -1
+   curl -sI http://list-maker.alpacasandbag.jp/ | head -1    # 301/302 で https へ転送されること
+   ```
+
 6. サーバーの cron に以下を追加する（毎分。Laravel のスケジューラが日次 04:00 JST に `app:prune-expired` を起動します）:
 
    ```
@@ -98,7 +108,7 @@ php artisan test
 ./deploy.sh
 ```
 
-`.exclude-list` に載っているもの（`.env`、`deploy.env`、`docs`、`tests`、`*.ini`、`storage/logs`、`storage/framework`、`public/hot` など）は転送されません。
+`.exclude-list` に載っているもの（`.env`・`.env.*`（`.env.example` を含む）、`deploy.env`、`auth.json`、`.DS_Store`、`docs`、`tests`、`*.ini`、`storage/logs`、`storage/framework`、`public/hot` など）は転送されません。
 
 `deploy.sh` は HEAD が `origin/main` と一致し、追跡ファイルに未コミットの変更が無い場合だけ進みます。緊急時のみ `ALLOW_NON_MAIN_DEPLOY=1 ./deploy.sh` で迂回できます（古いブランチから出すと本番が巻き戻るため通常は使わない）。
 
