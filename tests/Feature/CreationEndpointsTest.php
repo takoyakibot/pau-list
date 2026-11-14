@@ -256,7 +256,7 @@ class CreationEndpointsTest extends TestCase
 
     public function test_resume_returns_to_the_state_before_the_pause(): void
     {
-        [$key, $c] = $this->owned(2, ['status' => PlaylistCreation::PAUSED, 'pause_reason' => PlaylistCreation::PAUSE_QUOTA_EXCEEDED], 150);
+        [$key, $c] = $this->owned(2, ['status' => PlaylistCreation::PAUSED, 'pause_reason' => PlaylistCreation::PAUSE_AUTH], 150);
         $this->act($key, 'resume')->assertOk()->assertJson(['status' => 'pending']);
 
         $c->refresh()->update(['status' => PlaylistCreation::PAUSED, 'playlist_attempted_at' => now()->subMinute()]);
@@ -353,6 +353,58 @@ class CreationEndpointsTest extends TestCase
         [$key2, $c2] = $this->owned(2, ['status' => PlaylistCreation::CREATING_PLAYLIST, 'playlist_attempted_at' => now(), 'playlist_leased_at' => now()->subSeconds(59)], 150);
         $this->act($key2, 'abort')->assertStatus(409)->assertExactJson(['message' => self::BUSY]);
         $this->assertSame(PlaylistCreation::CREATING_PLAYLIST, $c2->refresh()->status);
+    }
+
+    public function test_abort_while_a_playlist_may_exist_asks_the_owner_to_check(): void
+    {
+        $maybe = 'YouTube に作りかけの再生リストが残っている可能性があります。YouTube Studio で確認してください';
+        foreach ([
+            'needs_check' => ['status' => PlaylistCreation::NEEDS_CHECK, 'playlist_attempted_at' => now()->subMinutes(2), 'playlist_attempts' => 1],
+            'creating_playlist' => ['status' => PlaylistCreation::CREATING_PLAYLIST, 'playlist_attempted_at' => now()->subMinutes(2), 'playlist_leased_at' => now()->subSeconds(61), 'playlist_attempts' => 1],
+        ] as $case => $attrs) {
+            [$key, $c] = $this->owned(2, $attrs, 150);
+            $this->act($key, 'abort')->assertOk()->assertJson(['status' => 'completed', 'playlist_url' => null, 'message' => $maybe], $case);
+            $this->assertNotNull($c->refresh()->playlist_attempted_at, $case);
+        }
+
+        // From pending nothing is outstanding (a failed attempt was answered or reconciled): not created.
+        [$key, $c] = $this->owned(2, ['status' => PlaylistCreation::PENDING, 'playlist_attempted_at' => now()->subMinutes(2), 'playlist_attempts' => 1], 150);
+        $this->act($key, 'abort')->assertOk()->assertJson(['message' => '再生リストは作成されませんでした']);
+        $this->assertNull($c->refresh()->playlist_attempted_at);
+    }
+
+    public function test_resume_after_google_quota_waits_for_the_pt_reset(): void
+    {
+        [$key, $c] = $this->owned(2, ['status' => PlaylistCreation::ADDING, 'youtube_playlist_id' => 'PLx'], 100);
+        $this->fakePlaylistItemInsert([[403, 'quotaExceeded'], 'I0']);
+        $this->act($key, 'step')->assertOk()->assertJson(['status' => 'paused', 'pause_reason' => 'quota_exceeded']);
+
+        // 2026-11-14 23:59:59 PST: the same PT day.
+        $this->travelTo(CarbonImmutable::parse('2026-11-15 07:59:59'));
+        $this->actAsOwner($this->channelId);
+        $this->act($key, 'resume')->assertStatus(409)->assertExactJson([
+            'message' => 'YouTube 側の本日の上限に達しているため、まだ再開できません。次にリセットされるのは 日本時間 11月15日 17時 です',
+        ]);
+        $this->assertSame([PlaylistCreation::PAUSED, PlaylistCreation::PAUSE_QUOTA_EXCEEDED], [$c->refresh()->status, $c->pause_reason]);
+
+        // 2026-11-15 00:00:00 PST: reset; resumes (and re-reserves for the new day).
+        $this->travelTo(CarbonImmutable::parse('2026-11-15 08:00:00'));
+        $this->actAsOwner($this->channelId);
+        $this->act($key, 'resume')->assertOk()->assertJson(['status' => 'adding']);
+        $this->assertSame(100, QuotaReservation::where('creation_id', $c->id)->where('day_pt', QuotaClock::todayPt())->sole()->reserved_units);
+    }
+
+    public function test_shortage_wording_does_not_count_the_playlist_once_it_exists(): void
+    {
+        $done = ['status' => PlaylistCreation::COMPLETED, 'youtube_playlist_id' => 'PLx', 'completed_at' => now()];
+        [$key, $c] = $this->owned(3, $done);
+        $c->items()->update(['status' => PlaylistCreationItem::FAILED]);
+        $this->useWrite((int) config('youtube.quota.write_limit') - 120); // free 120: two videos, no playlist needed
+
+        $this->assertSame(
+            '本日の残り: 再生リスト 1 つ＋動画あと 2 本まで作成できます。あと 1 本減らすか、リセット後に作成してください（次にリセットされるのは 日本時間 11月15日 17時 です）',
+            $this->act($key, 'retry')->assertStatus(409)->json('message'),
+        );
     }
 
     // ---- retry failed ----

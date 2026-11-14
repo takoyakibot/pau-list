@@ -12,6 +12,8 @@ use App\Support\RemainingToday;
  */
 final class CreationProgress
 {
+    public const MAYBE_CREATED = 'YouTube に作りかけの再生リストが残っている可能性があります。YouTube Studio で確認してください';
+
     /** Item status labels (S6; resources/js/lib/creation-runner.js has the same map). */
     public const ITEM_LABELS = [
         'pending' => '待機中',
@@ -74,7 +76,10 @@ final class CreationProgress
         }
         if ($c->status === PlaylistCreation::COMPLETED) {
             if ($c->youtube_playlist_id === null) {
-                return '再生リストは作成されませんでした';
+                // An attempt whose outcome was never settled (stopped from creating_playlist / needs_check).
+                return $c->playlist_attempted_at !== null
+                    ? self::MAYBE_CREATED
+                    : '再生リストは作成されませんでした';
             }
             $counts = $c->items()->reorder()->selectRaw('status, count(*) as n')->groupBy('status')->pluck('n', 'status');
 

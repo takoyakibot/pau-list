@@ -11,6 +11,7 @@ use App\Services\Creation\CreationLifecycle;
 use App\Services\Creation\CreationProgress;
 use App\Services\Creation\CreationRunner;
 use App\Services\Creation\CreationStarter;
+use App\Services\Creation\GoogleQuotaNotReset;
 use App\Services\Creation\InsufficientWriteQuota;
 use App\Services\UnavailableVideos;
 use App\Services\YouTube\QuotaLedger;
@@ -182,6 +183,8 @@ class CreationController extends Controller
             $operation($creation);
         } catch (InsufficientWriteQuota $e) {
             return response()->json(['message' => $e->remaining->shortageSentence($e->items)], 409);
+        } catch (GoogleQuotaNotReset $e) {
+            return response()->json(['message' => $e->sentence()], 409);
         } catch (CreationBusy) {
             return response()->json(['message' => CreationBusy::MESSAGE], 409);
         }

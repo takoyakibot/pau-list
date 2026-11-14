@@ -356,6 +356,7 @@ final class CreationRunner
 
                 return new StepResult(0, self::REJECTED_INPUT, redirect: 'edit');
             default:
+                $c->playlist_attempted_at = null; // refused by YouTube: nothing was created (S6 does not ask to check)
                 $c->items()->whereIn('status', [PlaylistCreationItem::PENDING, PlaylistCreationItem::IN_FLIGHT])
                     ->update(['status' => PlaylistCreationItem::SKIPPED, 'leased_at' => null]);
                 Log::warning('Creation playlist failed', ['creation_id' => $c->id, 'status' => $error->status, 'reason' => $error->reason, 'kind' => $error->kind->value]);

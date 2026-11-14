@@ -46,13 +46,21 @@ final class CreationLifecycle
      * Back to where it stopped, after making sure today's reservation covers what is left (re-reserved after a
      * PT date change, spec 7.4). An item left in_flight stays in_flight: the next step reconciles it.
      *
+     * After Google's quotaExceeded, not before the next PT reset: the pause's PT day is taken from updated_at
+     * (nothing else writes the creation row while it is paused).
+     *
      * @throws InsufficientWriteQuota
+     * @throws GoogleQuotaNotReset
      */
     public function resume(PlaylistCreation $creation): void
     {
         $this->locked($creation, function (PlaylistCreation $c) {
             if ($c->status !== PlaylistCreation::PAUSED) {
                 return;
+            }
+            if ($c->pause_reason === PlaylistCreation::PAUSE_QUOTA_EXCEEDED
+                && ($c->updated_at === null || $c->updated_at->setTimezone(QuotaClock::TIMEZONE)->format('Y-m-d') >= QuotaClock::todayPt())) {
+                throw new GoogleQuotaNotReset(QuotaClock::nextResetJst());
             }
             $this->reserveOrFail($c, $this->runner->remainingUnitsNeeded($c), $this->openItems($c));
             $c->fill([
@@ -76,6 +84,11 @@ final class CreationLifecycle
                 return;
             }
             $this->assertNotBusy($c);
+            if ($c->youtube_playlist_id === null && $c->status === PlaylistCreation::PENDING) {
+                // Nothing outstanding: every earlier attempt was answered or reconciled as not created. Otherwise
+                // (creating_playlist, needs_check, paused) playlist_attempted_at stays: a playlist may exist.
+                $c->playlist_attempted_at = null;
+            }
 
             $c->items()->where('status', PlaylistCreationItem::PENDING)
                 ->update(['status' => PlaylistCreationItem::SKIPPED, 'leased_at' => null]);
@@ -170,10 +183,13 @@ final class CreationLifecycle
     {
         $this->ledger->withWriteLock(function (WriteLock $lock) use ($c, $units, $items) {
             if (! $lock->ensure($c->id, $units)) {
-                throw new InsufficientWriteQuota(
-                    new RemainingToday(QuotaPolicy::itemsAffordable($lock->free()), QuotaClock::nextResetJst()),
-                    $items,
-                );
+                $free = $lock->free();
+                // With the playlist already created, every free 50 is one more video (the wording must not
+                // subtract the playlist's 50); recreate always needs a new playlist (id cleared afterwards).
+                $affordable = $c->youtube_playlist_id !== null && $c->status !== PlaylistCreation::NEEDS_CHECK
+                    ? max(0, intdiv($free, QuotaPolicy::ITEM_UNITS))
+                    : QuotaPolicy::itemsAffordable($free);
+                throw new InsufficientWriteQuota(new RemainingToday($affordable, QuotaClock::nextResetJst()), $items);
             }
         });
     }

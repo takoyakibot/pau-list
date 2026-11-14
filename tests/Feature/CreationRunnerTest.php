@@ -288,6 +288,8 @@ class CreationRunnerTest extends TestCase
         $this->assertSame(['skipped', 'skipped'], $c->items()->pluck('status')->all());
         $this->assertSame(QuotaReservation::RELEASED, QuotaReservation::sole()->status);
         $this->assertSame('再生リストを作成できませんでした', CreationRunner::PLAYLIST_FAILED);
+        // YouTube answered with a definite refusal: nothing was created (S6 does not ask the owner to check).
+        $this->assertNull($c->playlist_attempted_at);
     }
 
     // ---- items ----
