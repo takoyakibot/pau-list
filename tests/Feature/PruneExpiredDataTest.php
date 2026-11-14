@@ -146,6 +146,28 @@ class PruneExpiredDataTest extends TestCase
         $this->assertSame([$kept], DB::table('quota_reservations')->pluck('creation_id')->all());
     }
 
+    public function test_expired_creations_are_locked_then_the_write_row_then_deleted(): void
+    {
+        $this->creation($this->proposal(now()->subDays(31), 'aaaaaaaaaaa'));
+        $sql = [];
+        DB::listen(function ($q) use (&$sql) {
+            $sql[] = $q->sql;
+        });
+
+        $this->artisan('app:prune-expired')->expectsOutput('proposals: 1')->assertSuccessful();
+
+        // Lock order (5.4, final review race 2): creation rows (in id order) → today's write row → children.
+        $find = fn (callable $match) => array_key_first(array_filter($sql, $match));
+        $lockCreations = $find(fn ($s) => str_starts_with($s, 'select') && str_contains($s, 'from "playlist_creations" where "id" in') && str_contains($s, 'order by "id"'));
+        $lockWrite = $find(fn ($s) => str_starts_with($s, 'select') && str_contains($s, 'from "quota_usage" where "day_pt"'));
+        $deleteChildren = $find(fn ($s) => str_starts_with($s, 'delete from "quota_reservations"'));
+        $this->assertNotNull($lockCreations, implode("\n", $sql));
+        $this->assertNotNull($lockWrite, implode("\n", $sql));
+        $this->assertLessThan($lockWrite, $lockCreations);
+        $this->assertLessThan($deleteChildren, $lockWrite);
+        $this->assertSame(0, DB::table('playlist_creations')->count());
+    }
+
     private function channel(string $id, CarbonInterface $cachedSince): void
     {
         $cachedSince = CarbonImmutable::instance($cachedSince);

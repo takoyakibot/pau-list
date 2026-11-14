@@ -404,4 +404,26 @@ class CreationStartTest extends TestCase
         $this->travel(61)->minutes();
         $this->actAsOwner($this->channelId)->start($key, $body)->assertStatus(422);
     }
+
+    // ---- final review fix (race 6) ----
+
+    public function test_proposal_deleted_during_the_final_check_is_404_and_creates_nothing(): void
+    {
+        $key = $this->createProposal();
+        // The owner deletes the proposal (another tab) while the videos are being checked.
+        Http::fake(function () {
+            if (Proposal::count() > 0) {
+                ProposalItem::query()->delete();
+                Proposal::query()->delete();
+            }
+
+            return null;
+        });
+        $this->fakeBothPublic();
+
+        $this->actAsOwner($this->channelId)->start($key, $this->body())
+            ->assertNotFound()
+            ->assertExactJson(['message' => 'この提案は削除されたため、作成を開始できませんでした']);
+        $this->assertSame([0, 0, 0], [PlaylistCreation::count(), PlaylistCreationItem::count(), QuotaReservation::count()]);
+    }
 }

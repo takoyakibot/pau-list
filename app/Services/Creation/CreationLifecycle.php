@@ -47,7 +47,8 @@ final class CreationLifecycle
      * PT date change, spec 7.4). An item left in_flight stays in_flight: the next step reconciles it.
      *
      * After Google's quotaExceeded, not before the next PT reset: the pause's PT day is paused_day_pt (set by
-     * CreationRunner when it paused; a missing day is treated as today).
+     * CreationRunner when it paused). A missing day (never written by this version) is resumable: Google answers
+     * quotaExceeded again if its limit is still reached, which only pauses again.
      *
      * @throws InsufficientWriteQuota
      * @throws GoogleQuotaNotReset
@@ -59,7 +60,7 @@ final class CreationLifecycle
                 return;
             }
             if ($c->pause_reason === PlaylistCreation::PAUSE_QUOTA_EXCEEDED
-                && ($c->paused_day_pt === null || (string) $c->paused_day_pt >= QuotaClock::todayPt())) {
+                && $c->paused_day_pt !== null && (string) $c->paused_day_pt >= QuotaClock::todayPt()) {
                 throw new GoogleQuotaNotReset(QuotaClock::nextResetJst());
             }
             $this->reserveOrFail($c, $this->runner->remainingUnitsNeeded($c), $this->openItems($c));
@@ -91,14 +92,17 @@ final class CreationLifecycle
                 $c->playlist_attempted_at = null;
             }
 
-            $c->items()->where('status', PlaylistCreationItem::PENDING)
-                ->update(['status' => PlaylistCreationItem::SKIPPED, 'leased_at' => null]);
-            // Every in_flight lease is stale here (assertNotBusy): the result is unknown, never resent.
-            $c->items()->where('status', PlaylistCreationItem::IN_FLIGHT)
-                ->update(['status' => PlaylistCreationItem::SKIPPED, 'leased_at' => null, 'last_error' => self::UNKNOWN_RESULT]);
+            // Lock order creation → write row → items: the items' range updates run under the write lock.
+            $this->ledger->withWriteLock(function (WriteLock $lock) use ($c) {
+                $c->items()->where('status', PlaylistCreationItem::PENDING)
+                    ->update(['status' => PlaylistCreationItem::SKIPPED, 'leased_at' => null]);
+                // Every in_flight lease is stale here (assertNotBusy): the result is unknown, never resent.
+                $c->items()->where('status', PlaylistCreationItem::IN_FLIGHT)
+                    ->update(['status' => PlaylistCreationItem::SKIPPED, 'leased_at' => null, 'last_error' => self::UNKNOWN_RESULT]);
 
-            $c->fill(['status' => PlaylistCreation::COMPLETED, 'pause_reason' => null, 'paused_day_pt' => null, 'completed_at' => now()])->save();
-            $this->ledger->withWriteLock(fn (WriteLock $lock) => $lock->release($c->id));
+                $c->fill(['status' => PlaylistCreation::COMPLETED, 'pause_reason' => null, 'paused_day_pt' => null, 'completed_at' => now()])->save();
+                $lock->release($c->id);
+            });
             Log::info('Creation aborted', ['creation_id' => $c->id]);
         });
     }
@@ -161,6 +165,7 @@ final class CreationLifecycle
                 'playlist_attempted_at' => null,
                 'playlist_leased_at' => null,
                 'playlist_attempts' => 0,
+                'reconcile_failures' => 0,
                 'completed_at' => null,
             ])->save();
             Log::info('Creation recreate', ['creation_id' => $c->id, 'items' => $items]);

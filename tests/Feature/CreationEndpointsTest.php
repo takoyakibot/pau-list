@@ -574,4 +574,33 @@ class CreationEndpointsTest extends TestCase
         $this->assertSame('追加できませんでした', CreationProgress::errorLabel('backendError'));
         $this->assertNull(CreationProgress::errorLabel(null));
     }
+
+    // ---- final review fixes (race 1, 5) ----
+
+    public function test_abort_locks_the_write_row_before_skipping_items(): void
+    {
+        [$key, $c] = $this->owned(3, ['status' => PlaylistCreation::ADDING, 'youtube_playlist_id' => 'PLx'], 150);
+        $sql = [];
+        DB::listen(function ($q) use (&$sql) {
+            $sql[] = $q->sql;
+        });
+
+        $this->act($key, 'abort')->assertOk()->assertJson(['status' => 'completed', 'skipped' => 3]);
+
+        // Lock order creation → write row → items (the items' range updates run under the write lock).
+        $update = array_key_first(array_filter($sql, fn ($s) => str_starts_with($s, 'update "playlist_creation_items"')));
+        $this->assertNotNull($update, implode("\n", $sql));
+        $before = array_slice($sql, 0, $update, true);
+        $creation = max(array_keys(array_filter($before, fn ($s) => str_starts_with($s, 'select') && str_contains($s, 'from "playlist_creations"'))));
+        $write = max(array_keys(array_filter($before, fn ($s) => str_starts_with($s, 'select') && str_contains($s, 'from "quota_usage"'))) ?: [-1]);
+        $this->assertGreaterThan($creation, $write, implode("\n", $sql));
+        $this->assertSame(QuotaReservation::RELEASED, QuotaReservation::sole()->status);
+    }
+
+    public function test_quota_exceeded_pause_without_a_day_is_resumable(): void
+    {
+        [$key, $c] = $this->owned(2, ['status' => PlaylistCreation::PAUSED, 'pause_reason' => PlaylistCreation::PAUSE_QUOTA_EXCEEDED, 'youtube_playlist_id' => 'PLx', 'paused_day_pt' => null]);
+        $this->act($key, 'resume')->assertOk()->assertJson(['status' => 'adding']);
+        $this->assertSame([null, null], [$c->refresh()->pause_reason, $c->paused_day_pt]);
+    }
 }

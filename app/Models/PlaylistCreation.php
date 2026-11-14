@@ -39,6 +39,7 @@ class PlaylistCreation extends Model
             'playlist_attempted_at' => 'immutable_datetime',
             'playlist_leased_at' => 'immutable_datetime',
             'playlist_attempts' => 'integer',
+            'reconcile_failures' => 'integer',
             'estimated_units' => 'integer',
             'started_at' => 'immutable_datetime',
             'completed_at' => 'immutable_datetime',

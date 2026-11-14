@@ -52,6 +52,12 @@ final class CreationRunner
      */
     public const RECONCILE_AFTER_SECONDS = 10;
 
+    /**
+     * Reconcile reads failing in a row with a non-transient error (not 5xx/429, not auth/quota) before the owner is
+     * asked to check (needs_check) instead of reading forever.
+     */
+    public const MAX_RECONCILE_FAILURES = 5;
+
     /** Item reconciliation reads the whole playlist up to this many pages (owner_read 1 each). */
     public const RECONCILE_MAX_PAGES = 20;
 
@@ -208,10 +214,18 @@ final class CreationRunner
         return new PlannedCall(PlannedCall::INSERT_ITEM, $c, $now, $next, $position);
     }
 
-    /** Count one write right before sending it; the remaining-today numbers when it cannot be covered. */
+    /**
+     * Count one write right before sending it; the remaining-today numbers when it cannot be covered.
+     * The PT day may have changed since decide() checked the reservation (midnight between the two write locks):
+     * then today's reservation is made here first, like after any day change, instead of a false quota_budget pause.
+     */
     private function consume(PlaylistCreation $c): ?RemainingToday
     {
-        return $this->ledger->withWriteLock(fn (WriteLock $lock) => $lock->consume($c->id) ? null : self::remaining($lock));
+        return $this->ledger->withWriteLock(function (WriteLock $lock) use ($c) {
+            $reserved = $lock->hasActiveToday($c->id) || $lock->ensure($c->id, $this->remainingUnitsNeeded($c));
+
+            return $reserved && $lock->consume($c->id) ? null : self::remaining($lock);
+        });
     }
 
     // ---- 2. send ----
@@ -357,10 +371,8 @@ final class CreationRunner
                 return new StepResult(0, self::REJECTED_INPUT, redirect: 'edit');
             default:
                 $c->playlist_attempted_at = null; // refused by YouTube: nothing was created (S6 does not ask to check)
-                $c->items()->whereIn('status', [PlaylistCreationItem::PENDING, PlaylistCreationItem::IN_FLIGHT])
-                    ->update(['status' => PlaylistCreationItem::SKIPPED, 'leased_at' => null]);
                 Log::warning('Creation playlist failed', ['creation_id' => $c->id, 'status' => $error->status, 'reason' => $error->reason, 'kind' => $error->kind->value]);
-                $this->complete($c);
+                $this->complete($c, skipOpenItems: true);
 
                 return new StepResult(0, self::PLAYLIST_FAILED);
         }
@@ -374,15 +386,9 @@ final class CreationRunner
         $c->playlist_leased_at = null;
 
         if ($o->error !== null) {
-            if ($o->error->kind === YouTubeErrorKind::Auth) {
-                $this->pause($c, PlaylistCreation::PAUSE_AUTH);
-
-                return new StepResult(0, authExpired: true);
-            }
-            $c->save(); // reconcile again next time
-
-            return new StepResult(self::backoff($c->playlist_attempts));
+            return $this->reconcileReadFailed($c, $o->error, $c->playlist_attempts); // reconciled again on the next step
         }
+        $c->reconcile_failures = 0;
 
         // Candidates: same title, published since the first attempt (minus 60 s), and not already another
         // creation's playlist (two owners' creations with the same title may run a minute apart).
@@ -505,14 +511,12 @@ final class CreationRunner
 
                 return new StepResult(0);
             }
-            $item->save();
-            if ($error->kind === YouTubeErrorKind::Auth) {
-                $this->pause($c, PlaylistCreation::PAUSE_AUTH);
+            $item->save(); // stays in_flight (unknown) with no lease: reconciled again on the next step
 
-                return new StepResult(0, authExpired: true);
-            }
-
-            return new StepResult(self::backoff($item->attempts));
+            return $this->reconcileReadFailed($c, $error, $item->attempts);
+        }
+        if ($c->reconcile_failures !== 0) {
+            $c->fill(['reconcile_failures' => 0])->save();
         }
 
         $itemId = $o->items[$item->video_id] ?? null;
@@ -531,6 +535,41 @@ final class CreationRunner
         }
 
         return $this->afterItem($c);
+    }
+
+    /**
+     * A reconcile read (playlists.list / playlistItems.list) failed; what was sent stays unknown, so nothing is
+     * resent. Google's 401 pauses (auth_expired) and its quotaExceeded pauses until the next PT day; transient
+     * errors are read again with backoff; any other error is read again at most MAX_RECONCILE_FAILURES times in a
+     * row, then the owner checks (needs_check).
+     */
+    private function reconcileReadFailed(PlaylistCreation $c, YouTubeError $error, int $attempts): StepResult
+    {
+        switch ($error->kind) {
+            case YouTubeErrorKind::Auth:
+                $this->pause($c, PlaylistCreation::PAUSE_AUTH);
+
+                return new StepResult(0, authExpired: true);
+            case YouTubeErrorKind::GoogleQuota:
+                $this->pause($c, PlaylistCreation::PAUSE_QUOTA_EXCEEDED);
+
+                return new StepResult(0);
+            case YouTubeErrorKind::Transient:
+                $c->save();
+
+                return new StepResult(self::backoff($attempts));
+            default:
+                $c->reconcile_failures += 1;
+                if ($c->reconcile_failures >= self::MAX_RECONCILE_FAILURES) {
+                    $c->reconcile_failures = 0;
+                    $this->needsCheck($c, 'reconcile_failed');
+
+                    return new StepResult(0);
+                }
+                $c->save();
+
+                return new StepResult(self::backoff($c->reconcile_failures));
+        }
     }
 
     /** After an item's result: completed when nothing is left to send (only while adding). */
@@ -579,11 +618,20 @@ final class CreationRunner
         Log::warning('Creation needs check', ['creation_id' => $c->id, 'reason' => $why]);
     }
 
-    /** completed + the unused reservation released (spec 5.4 step 3). */
-    private function complete(PlaylistCreation $c): void
+    /**
+     * completed + the unused reservation released (spec 5.4 step 3). With $skipOpenItems the pending/in-flight
+     * items become skipped first, inside the write lock (lock order creation → write row → items).
+     */
+    private function complete(PlaylistCreation $c, bool $skipOpenItems = false): void
     {
-        $c->fill(['status' => PlaylistCreation::COMPLETED, 'pause_reason' => null, 'completed_at' => now()])->save();
-        $this->ledger->withWriteLock(fn (WriteLock $lock) => $lock->release($c->id));
+        $this->ledger->withWriteLock(function (WriteLock $lock) use ($c, $skipOpenItems) {
+            if ($skipOpenItems) {
+                $c->items()->whereIn('status', [PlaylistCreationItem::PENDING, PlaylistCreationItem::IN_FLIGHT])
+                    ->update(['status' => PlaylistCreationItem::SKIPPED, 'leased_at' => null]);
+            }
+            $c->fill(['status' => PlaylistCreation::COMPLETED, 'pause_reason' => null, 'completed_at' => now()])->save();
+            $lock->release($c->id);
+        });
 
         $counts = $c->items()->reorder()->selectRaw('status, count(*) as n')->groupBy('status')->pluck('n', 'status');
         Log::info('Creation completed', [

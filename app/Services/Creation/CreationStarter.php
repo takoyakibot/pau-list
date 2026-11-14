@@ -15,6 +15,7 @@ use App\Support\OwnerLogin;
 use App\Support\QuotaClock;
 use App\Support\QuotaPolicy;
 use App\Support\RemainingToday;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Log;
 
@@ -37,6 +38,7 @@ class CreationStarter
      *
      * @throws UnavailableVideos
      * @throws InsufficientWriteQuota
+     * @throws ProposalGone
      * @throws YouTubeApiException
      */
     public function start(Proposal $proposal, OwnerLogin $owner, array $validated): StartedCreation
@@ -54,6 +56,11 @@ class CreationStarter
         $this->ledger->ensureWriteRow();
         try {
             $started = $this->ledger->withWriteLock(function (WriteLock $lock) use ($proposal, $validated, $ids, $videos, $n, $estimated) {
+                // The owner may have deleted the proposal (another tab) during the final check. The delete takes the
+                // write lock too, so this locking read sees it; nothing is created for a deleted proposal.
+                if (! Proposal::whereKey($proposal->id)->sharedLock()->exists()) {
+                    throw new ProposalGone;
+                }
                 $existing = $proposal->creation()->first();
                 if ($existing !== null) {
                     return new StartedCreation($existing, false);
@@ -99,6 +106,12 @@ class CreationStarter
             });
         } catch (UniqueConstraintViolationException) {
             $started = null;
+        } catch (QueryException $e) {
+            // Defensive: a foreign-key failure because the proposal was deleted after all (rolled back).
+            if (! Proposal::whereKey($proposal->id)->exists()) {
+                throw new ProposalGone;
+            }
+            throw $e;
         }
         if ($started === null) {
             $other = $proposal->creation()->first();

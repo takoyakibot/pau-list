@@ -13,6 +13,7 @@ use App\Services\Creation\CreationRunner;
 use App\Services\Creation\CreationStarter;
 use App\Services\Creation\GoogleQuotaNotReset;
 use App\Services\Creation\InsufficientWriteQuota;
+use App\Services\Creation\ProposalGone;
 use App\Services\UnavailableVideos;
 use App\Services\YouTube\QuotaLedger;
 use App\Services\YouTube\YouTubeApiException;
@@ -101,6 +102,8 @@ class CreationController extends Controller
             return response()->json(['message' => self::UNAVAILABLE, 'unavailable_ids' => $e->ids], 422);
         } catch (InsufficientWriteQuota $e) {
             return response()->json(['message' => $e->remaining->shortageSentence($e->items)], 409);
+        } catch (ProposalGone) {
+            return response()->json(['message' => ProposalGone::MESSAGE], 404);
         } catch (YouTubeApiException $e) {
             return RequireOwnerSession::ownerApiFailureJson($e, $owners, self::YOUTUBE_FAILED);
         }

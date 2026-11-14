@@ -17,6 +17,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
@@ -837,5 +838,153 @@ class CreationRunnerTest extends TestCase
         $this->assertSame('warning', $late[0][0]);
         $this->assertSame(['creation_id' => $c->id, 'kept' => 'PLadopte', 'late' => 'PLlate00'], $late[0][2]);
         $this->assertStringNotContainsString('PLlate000123', json_encode($logged));
+    }
+
+    // ---- final review fixes (race 1, 3, 4) ----
+
+    /** @return list<string> SQL statements run while $fn runs */
+    private function queriesDuring(callable $fn): array
+    {
+        $sql = [];
+        DB::listen(function ($q) use (&$sql) {
+            $sql[] = $q->sql;
+        });
+        $fn();
+
+        return $sql;
+    }
+
+    /** The last creation-row read before the first item update is followed by a write-row read (lock). */
+    private function assertWriteLockedBeforeItems(array $sql): void
+    {
+        $update = self::firstIndex($sql, 'update "playlist_creation_items"');
+        $this->assertNotSame(PHP_INT_MAX, $update, implode("\n", $sql));
+        $before = array_slice($sql, 0, $update, true);
+        $creation = max(array_keys(array_filter($before, fn ($s) => str_starts_with($s, 'select') && str_contains($s, 'from "playlist_creations"'))));
+        $write = max(array_keys(array_filter($before, fn ($s) => str_starts_with($s, 'select') && str_contains($s, 'from "quota_usage"'))) ?: [-1]);
+        $this->assertGreaterThan($creation, $write, implode("\n", $sql));
+    }
+
+    private static function firstIndex(array $sql, string $needle): int
+    {
+        foreach ($sql as $i => $s) {
+            if (str_contains($s, $needle)) {
+                return $i;
+            }
+        }
+
+        return PHP_INT_MAX;
+    }
+
+    public function test_permanent_playlist_failure_locks_the_write_row_before_skipping_items(): void
+    {
+        $c = $this->makeCreation(2, reserve: 150);
+        $this->fakePlaylistInsert(status: 403, reason: 'forbidden');
+
+        $sql = $this->queriesDuring(fn () => $this->step($c));
+
+        // Lock order creation → write row → items: the range update of the items runs under the write lock.
+        $this->assertWriteLockedBeforeItems($sql);
+        $this->assertSame(['skipped', 'skipped'], $c->items()->pluck('status')->all());
+    }
+
+    public function test_pt_midnight_between_the_reservation_check_and_consume_does_not_pause(): void
+    {
+        $c = $this->adding(2, reserve: 100);
+        $yesterday = QuotaClock::todayPt();
+        $this->fakePlaylistItemInsert(['I0']);
+        $this->travelTo(CarbonImmutable::parse('2026-11-15 07:59:59')); // 2026-11-14 23:59:59 PST
+        // The PT day changes between decide()'s reservation check and the consume of the same step.
+        $this->app->instance(QuotaLedger::class, new class extends QuotaLedger
+        {
+            private int $calls = 0;
+
+            public function withWriteLock(callable $fn): mixed
+            {
+                if (++$this->calls === 2) {
+                    Carbon::setTestNow(CarbonImmutable::parse('2026-11-15 08:00:01'));
+                }
+
+                return parent::withWriteLock($fn);
+            }
+        });
+
+        $r = $this->step($c);
+        $c->refresh();
+
+        $this->assertNotSame($yesterday, QuotaClock::todayPt());
+        $this->assertSame([PlaylistCreation::ADDING, null, 1000], [$c->status, $c->pause_reason, $r->nextDelayMs]);
+        $this->assertSame(['done', 'I0'], [$this->item($c, 0)->status, $this->item($c, 0)->youtube_item_id]);
+        $today = QuotaReservation::where('creation_id', $c->id)->where('day_pt', QuotaClock::todayPt())->sole();
+        $this->assertSame([100, 50, QuotaReservation::ACTIVE], [$today->reserved_units, $today->consumed_units, $today->status]);
+        $this->assertSame(QuotaReservation::EXPIRED, QuotaReservation::where('creation_id', $c->id)->where('day_pt', $yesterday)->sole()->status);
+        $this->assertSame(50, $this->ledger()->used(QuotaLedger::WRITE));
+    }
+
+    public function test_google_quota_on_a_reconcile_read_pauses_quota_exceeded(): void
+    {
+        // Playlist reconcile.
+        $c = $this->makeCreation(1, ['status' => PlaylistCreation::CREATING_PLAYLIST, 'playlist_attempted_at' => now(), 'playlist_attempts' => 1], reserve: 100);
+        Http::fake(fn (Request $r) => $r->method() === 'GET' ? $this->googleError(403, 'quotaExceeded') : null);
+        $r = $this->step($c);
+        $c->refresh();
+        $this->assertSame([PlaylistCreation::PAUSED, PlaylistCreation::PAUSE_QUOTA_EXCEEDED, QuotaClock::todayPt(), 0], [$c->status, $c->pause_reason, $c->paused_day_pt, $r->nextDelayMs]);
+        $this->assertNotNull($c->playlist_attempted_at); // resume reconciles again (a playlist may exist)
+        $this->assertCount(0, $this->playlistInserts());
+
+        // Item reconcile.
+        $this->resetHttp();
+        $c = $this->adding(2);
+        $this->item($c, 0)->update(['status' => 'in_flight', 'leased_at' => null, 'attempts' => 1]);
+        Http::fake(fn (Request $r) => $r->method() === 'GET' ? $this->googleError(403, 'quotaExceeded') : null);
+        $r = $this->step($c);
+        $c->refresh();
+        $this->assertSame([PlaylistCreation::PAUSED, PlaylistCreation::PAUSE_QUOTA_EXCEEDED, QuotaClock::todayPt(), 0], [$c->status, $c->pause_reason, $c->paused_day_pt, $r->nextDelayMs]);
+        $this->assertSame(['in_flight', null], [$this->item($c, 0)->status, $this->item($c, 0)->leased_at]); // reconciled after resume
+        $this->assertCount(0, $this->itemInserts());
+    }
+
+    public function test_non_transient_reconcile_read_errors_need_check_after_5_attempts(): void
+    {
+        // Playlist reconcile: a 400 on playlists.list is not transient.
+        $c = $this->makeCreation(1, ['status' => PlaylistCreation::CREATING_PLAYLIST, 'playlist_attempted_at' => now(), 'playlist_attempts' => 1], reserve: 100);
+        Http::fake(fn (Request $r) => $r->method() === 'GET' ? $this->googleError(400, 'badRequest') : null);
+        for ($i = 1; $i <= CreationRunner::MAX_RECONCILE_FAILURES - 1; $i++) {
+            $r = $this->step($c);
+            $c->refresh();
+            $this->assertSame([PlaylistCreation::CREATING_PLAYLIST, $i], [$c->status, $c->reconcile_failures], "attempt $i");
+            $this->assertGreaterThan(0, $r->nextDelayMs);
+        }
+        $r = $this->step($c);
+        $c->refresh();
+        $this->assertSame([PlaylistCreation::NEEDS_CHECK, 0], [$c->status, $r->nextDelayMs]);
+        $this->assertCount(CreationRunner::MAX_RECONCILE_FAILURES, Http::recorded());
+        $this->assertCount(0, $this->playlistInserts());
+
+        // Item reconcile.
+        $this->resetHttp();
+        $c = $this->adding(2);
+        $this->item($c, 0)->update(['status' => 'in_flight', 'leased_at' => null, 'attempts' => 1]);
+        Http::fake(fn (Request $r) => $r->method() === 'GET' ? $this->googleError(400, 'badRequest') : null);
+        for ($i = 1; $i < CreationRunner::MAX_RECONCILE_FAILURES; $i++) {
+            $this->step($c);
+            $this->item($c, 0)->update(['leased_at' => null]); // skip the backoff wait
+            $this->assertSame(PlaylistCreation::ADDING, $c->refresh()->status, "attempt $i");
+        }
+        $this->step($c);
+        $this->assertSame(PlaylistCreation::NEEDS_CHECK, $c->refresh()->status);
+        $this->assertSame('in_flight', $this->item($c, 0)->status); // still unknown: never resent
+        $this->assertCount(0, $this->itemInserts());
+    }
+
+    public function test_a_successful_reconcile_read_resets_the_failure_count(): void
+    {
+        $c = $this->adding(2, attrs: ['reconcile_failures' => CreationRunner::MAX_RECONCILE_FAILURES - 1]);
+        $this->item($c, 0)->update(['status' => 'in_flight', 'leased_at' => null, 'attempts' => 1]);
+        $this->fakePlaylistItemsList(['v0000000000' => 'I0']);
+        $this->step($c);
+        $c->refresh();
+        $this->assertSame([PlaylistCreation::ADDING, 0], [$c->status, $c->reconcile_failures]);
+        $this->assertSame('done', $this->item($c, 0)->status);
     }
 }
