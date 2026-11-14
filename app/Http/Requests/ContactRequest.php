@@ -80,7 +80,7 @@ class ContactRequest extends FormRequest
     protected function failedValidation(Validator $validator): void
     {
         if ($this->isHoneypotHit()) {
-            app(ContactLimits::class)->hit($this);
+            app(ContactLimits::class)->hitHoneypot($this);
 
             throw new HttpResponseException(redirect()->route('contact.show')->with('contact_sent', true));
         }

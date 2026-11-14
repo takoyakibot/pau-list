@@ -33,6 +33,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->validateQuotaConfig($this->app->runningInConsole());
         self::trustProxiesFrom(config('listmaker.trusted_proxies'));
+        $this->warnAboutTrustedProxies(config('listmaker.trusted_proxies'));
         $this->configureRateLimiting();
         $this->configureSessions();
         $this->warnAboutDebugInProduction();
@@ -41,7 +42,8 @@ class AppServiceProvider extends ServiceProvider
 
     /**
      * TRUSTED_PROXIES: comma-separated IPs/CIDRs, or "*". Empty means no proxy is trusted, so the client IP
-     * is REMOTE_ADDR and X-Forwarded-* headers are ignored. The forwarded headers keep the framework default.
+     * is REMOTE_ADDR and X-Forwarded-* headers are ignored. From a trusted proxy only X-Forwarded-For and
+     * X-Forwarded-Proto are used (Host/Port/Prefix are not: links and redirects keep APP_URL's host).
      */
     public static function trustProxiesFrom(mixed $value): void
     {
@@ -49,7 +51,51 @@ class AppServiceProvider extends ServiceProvider
             return;
         }
         $value = (string) $value;
-        TrustProxies::at($value === '*' ? '*' : array_values(array_filter(array_map('trim', explode(',', $value)), 'strlen')));
+        TrustProxies::at($value === '*' ? '*' : self::proxyEntries($value));
+        TrustProxies::withHeaders(Request::HEADER_X_FORWARDED_FOR | Request::HEADER_X_FORWARDED_PROTO);
+    }
+
+    /** "*" trusts any sender's X-Forwarded-For (anyone could pick their rate-limit key); a typo trusts nothing. */
+    public function warnAboutTrustedProxies(mixed $value): void
+    {
+        if (! filled($value)) {
+            return;
+        }
+        $value = (string) $value;
+        if ($value === '*') {
+            if ($this->app->isProduction()) {
+                Log::warning('TRUSTED_PROXIES trusts every sender (*)');
+            }
+
+            return;
+        }
+        foreach (self::proxyEntries($value) as $entry) {
+            if (! self::isIpOrCidr($entry)) {
+                Log::warning('TRUSTED_PROXIES has an entry that is not an IP address or CIDR range');
+
+                return;
+            }
+        }
+    }
+
+    /** @return list<string> */
+    private static function proxyEntries(string $value): array
+    {
+        return array_values(array_filter(array_map('trim', explode(',', $value)), 'strlen'));
+    }
+
+    private static function isIpOrCidr(string $entry): bool
+    {
+        $parts = explode('/', $entry);
+        if (count($parts) > 2 || filter_var($parts[0], FILTER_VALIDATE_IP) === false) {
+            return false;
+        }
+        if (count($parts) === 1) {
+            return true;
+        }
+        $max = str_contains($parts[0], ':') ? 128 : 32;
+
+        return preg_match('/^\d{1,3}$/D', $parts[1]) === 1 && (int) $parts[1] <= $max;
     }
 
     /** Debug pages expose configuration and stack traces (spec 6.7 I2). */

@@ -3,14 +3,19 @@
 namespace Tests\Feature;
 
 use App\Mail\ContactMessage;
+use App\Support\ClientKey;
 use Carbon\CarbonImmutable;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\TestResponse;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Symfony\Component\Mailer\SentMessage;
 use Symfony\Component\Mailer\Transport\AbstractTransport;
@@ -350,6 +355,63 @@ class ContactFormTest extends TestCase
         $this->send(['_token' => 'wrong'])->assertStatus(419);
         Mail::assertNothingSent();
         $this->send(['_token' => session()->token()])->assertRedirect(route('contact.show'));
+        Mail::assertSentCount(1);
+    }
+
+    public function test_honeypot_flood_does_not_close_the_form_for_others(): void
+    {
+        Mail::fake();
+        for ($i = 0; $i < 60; $i++) {
+            $this->send(['website' => 'x'], ip: '203.0.113.20')->assertRedirect(route('contact.show'));
+        }
+        $client = ClientKey::for(Request::create('/', server: ['REMOTE_ADDR' => '203.0.113.20']));
+        $this->assertSame(0, RateLimiter::attempts('contact:all'));
+        $this->assertSame(3, RateLimiter::attempts('contact:m:'.$client));
+        $this->assertSame(3, RateLimiter::attempts('contact:d:'.$client));
+
+        $this->send(ip: '203.0.113.21')->assertRedirect(route('contact.show'));
+        Mail::assertSentCount(1);
+        $this->assertSame(1, RateLimiter::attempts('contact:all'));
+    }
+
+    public function test_honeypot_with_invalid_input_does_not_count_globally(): void
+    {
+        Mail::fake();
+        for ($i = 0; $i < 5; $i++) {
+            $this->send(['website' => 'x', 'body' => ''])->assertRedirect(route('contact.show'));
+        }
+        $this->assertSame(0, RateLimiter::attempts('contact:all'));
+        $this->assertSame(3, RateLimiter::attempts('contact:m:'.ClientKey::for(Request::create('/', server: ['REMOTE_ADDR' => '203.0.113.10']))));
+    }
+
+    /** @return list<array{string}> */
+    public static function nonDeliveringMailers(): array
+    {
+        return [['log'], ['array']];
+    }
+
+    #[DataProvider('nonDeliveringMailers')]
+    public function test_non_delivering_mailer_in_production_is_not_configured(string $mailer): void
+    {
+        Mail::fake();
+        $this->app['env'] = 'production';
+        // CSRF is only skipped in the testing environment.
+        $this->withoutMiddleware(PreventRequestForgery::class);
+        config(['mail.default' => $mailer]);
+        $res = $this->send(['body' => '届かない本文', 'reply_address' => 'me@example.com'])->assertStatus(503);
+        $res->assertSee(self::FAILED);
+        Mail::assertNothingSent();
+        $this->assertCount(1, $this->logsWithMessage('Contact mail not configured'));
+        $this->assertSame('error', $this->logsWithMessage('Contact mail not configured')[0]->level);
+        $this->assertLogsDoNotContain('届かない本文');
+        $this->assertLogsDoNotContain('me@example.com');
+    }
+
+    public function test_non_delivering_mailer_outside_production_still_sends(): void
+    {
+        Mail::fake();
+        config(['mail.default' => 'log']);
+        $this->send()->assertRedirect(route('contact.show'));
         Mail::assertSentCount(1);
     }
 }

@@ -32,7 +32,7 @@ class ContactController extends Controller
     public function store(ContactRequest $request, ContactLimits $limits): RedirectResponse|Response
     {
         if ($request->isHoneypotHit()) {
-            $limits->hit($request);
+            $limits->hitHoneypot($request);
 
             return $this->sent();
         }
@@ -46,7 +46,7 @@ class ContactController extends Controller
         }
 
         $to = config('listmaker.contact_to_address');
-        if (! filled($to)) {
+        if (! filled($to) || $this->mailerDoesNotDeliver()) {
             Log::error('Contact mail not configured');
 
             return $this->form($input, self::FAILED, 503);
@@ -74,6 +74,12 @@ class ContactController extends Controller
         Log::info('Contact sent', ['kind' => $kind]);
 
         return $this->sent();
+    }
+
+    /** In production the log and array mailers would drop the message while showing success. */
+    private function mailerDoesNotDeliver(): bool
+    {
+        return app()->isProduction() && in_array(config('mail.default'), ['log', 'array'], true);
     }
 
     private function sent(): RedirectResponse
