@@ -18,7 +18,9 @@ use App\Services\YouTube\YouTubeApiException;
 use App\Support\OwnerLogin;
 use App\Support\OwnerSession;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 
 /**
  * S6 and the creation JSON endpoints (spec 7). Every route runs behind RequireSameOriginFetch and
@@ -32,6 +34,58 @@ class CreationController extends Controller
     public const YOUTUBE_FAILED = 'YouTube との通信に失敗しました。時間をおいて再度お試しください';
 
     public const NOT_STARTED = '作成は始まっていません。編集画面から作成してください';
+
+    /**
+     * S6. Only the logged-in owner of the creation's channel sees it (it lists the owner's unlisted video titles).
+     * The page script runs the steps; the server renders the current state so the page reads without JS.
+     */
+    public function show(Request $request, QuotaLedger $ledger): Response|RedirectResponse
+    {
+        /** @var Proposal $proposal */
+        $proposal = $request->attributes->get('proposal');
+        /** @var OwnerLogin $owner */
+        $owner = $request->attributes->get('owner');
+        $key = (string) $request->route('key');
+
+        $creation = $proposal->creation;
+        if ($creation === null) {
+            return redirect()->route('proposals.edit', $key);
+        }
+        if ($creation->owner_channel_id !== $owner->channelId) {
+            return response()->view('owner.mismatch', [
+                'key' => $key,
+                'proposal' => $proposal,
+                'ownerChannelTitle' => $owner->channelTitle,
+            ], 403);
+        }
+
+        $progress = CreationProgress::toArray($creation, $ledger->remainingToday());
+        $titles = $creation->items()->pluck('title', 'position');
+
+        return response()->view('owner.creation', [
+            'proposal' => $proposal,
+            'creation' => $creation,
+            'ownerChannelTitle' => $owner->channelTitle,
+            'progress' => $progress,
+            'titles' => $titles,
+            'runner' => [
+                'progress' => $progress,
+                // Steps start by themselves only right after 「作成」 (flashed by start()), not on a reload.
+                'autostart' => session('creation_autostart') === true,
+                // Relative to /p/{key}/creation: the raw key is never written into the page.
+                'urls' => [
+                    'step' => 'creation/step',
+                    'pause' => 'creation/pause',
+                    'resume' => 'creation/resume',
+                    'abort' => 'creation/abort',
+                    'retry' => 'creation/retry',
+                    'recreate' => 'creation/recreate',
+                ],
+                // titles[position]: the progress JSON carries no titles (it is sent every second).
+                'titles' => array_values($titles->all()),
+            ],
+        ]);
+    }
 
     public function start(StartCreationRequest $request, CreationStarter $starter, OwnerSession $owners): JsonResponse
     {

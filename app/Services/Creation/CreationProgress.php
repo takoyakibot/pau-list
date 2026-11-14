@@ -12,6 +12,24 @@ use App\Support\RemainingToday;
  */
 final class CreationProgress
 {
+    /** Item status labels (S6; resources/js/lib/creation-runner.js has the same map). */
+    public const ITEM_LABELS = [
+        'pending' => '待機中',
+        'in_flight' => '追加中',
+        'done' => '追加済み',
+        'failed' => '失敗',
+        'skipped' => '中止',
+    ];
+
+    /** The S6 progress line (same text as creation-runner.js progressText). */
+    public static function progressText(array $p): string
+    {
+        return sprintf(
+            '%d / %d 本を処理しました（追加 %d・失敗 %d・中止 %d）',
+            $p['done'] + $p['failed'] + $p['skipped'], $p['total'], $p['done'], $p['failed'], $p['skipped'],
+        );
+    }
+
     /**
      * @return array{status: string, pause_reason: ?string, done: int, failed: int, skipped: int, total: int,
      *               playlist_url: ?string, message: ?string, remaining_today: string,

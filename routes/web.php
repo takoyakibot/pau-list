@@ -63,6 +63,11 @@ Route::post('/p/{key}/deletion', [OwnerDeleteController::class, 'destroy'])
     ->where('key', ProposalKey::ROUTE_PATTERN)
     ->middleware(RequireOwnerSession::class)
     ->name('proposals.destroy');
+// S6: the owner's progress page (spec 2.5, 7.4, 7.5).
+Route::get('/p/{key}/creation', [CreationController::class, 'show'])
+    ->where('key', ProposalKey::ROUTE_PATTERN)
+    ->middleware([RequireDocumentNavigation::class, RequireOwnerSession::class])
+    ->name('proposals.creation');
 // Creation (spec 7): JSON from S5. The origin check runs before the limiter, the limiter before the owner check
 // (the limiter key is the logged-in channel, shared with the retry of failed items).
 Route::post('/p/{key}/creation', [CreationController::class, 'start'])
