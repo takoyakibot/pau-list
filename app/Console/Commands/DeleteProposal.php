@@ -60,6 +60,7 @@ class DeleteProposal extends Command
         }
         if (! $deleted) {
             // Only after repeated races with a creation start; nothing was changed.
+            Log::warning('Proposal delete raced');
             $this->error('failed');
 
             return self::FAILURE;

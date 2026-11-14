@@ -7,6 +7,7 @@ use App\Models\PlaylistCreationItem;
 use App\Models\Proposal;
 use App\Models\ProposalItem;
 use App\Models\QuotaReservation;
+use App\Services\ProposalDeleter;
 use App\Services\YouTube\QuotaLedger;
 use App\Support\ProposalKey;
 use Carbon\CarbonImmutable;
@@ -214,5 +215,28 @@ class DeleteProposalCommandTest extends TestCase
         $this->assertNotNull($entry);
         $this->assertSame(['sqlstate'], array_keys($entry['context']));
         $this->assertStringNotContainsString(ProposalKey::hash($key), json_encode($this->logs));
+    }
+
+    public function test_repeated_race_with_a_creation_start_fails_and_warns_without_key(): void
+    {
+        $key = $this->createProposal();
+        $this->instance(ProposalDeleter::class, new class(app(QuotaLedger::class)) extends ProposalDeleter
+        {
+            public function delete(Proposal $proposal, bool $evenIfRunning = false): bool
+            {
+                return false;
+            }
+        });
+
+        $this->artisan('app:delete-proposal', ['target' => $key, '--force' => true])
+            ->expectsOutput('failed')
+            ->assertFailed();
+
+        $entry = collect($this->logs)->firstWhere('message', 'Proposal delete raced');
+        $this->assertNotNull($entry);
+        $this->assertSame('warning', $entry['level']);
+        $this->assertSame([], $entry['context']);
+        $this->assertNull(collect($this->logs)->firstWhere('message', 'Proposal deleted by operator'));
+        $this->assertSame(1, Proposal::count());
     }
 }

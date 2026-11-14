@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\DB;
  * A creation that is not completed blocks the deletion (false, nothing changed) unless $evenIfRunning: the
  * operator deletes on request even during a creation; the owner's next step then finds no proposal (404).
  */
-final class ProposalDeleter
+class ProposalDeleter
 {
     /** Retries when a creation was started between the creation-row read and the write lock (operator only). */
     private const MAX_RACE_RETRIES = 3;

@@ -18,6 +18,8 @@ class LegalPagesTest extends TestCase
 
     private const PERMISSIONS = 'https://myaccount.google.com/permissions';
 
+    private const USER_DATA_POLICY = 'https://developers.google.com/terms/api-services-user-data-policy';
+
     public function test_privacy_contains_required_statements_and_links(): void
     {
         $res = $this->get('/privacy')->assertOk();
@@ -38,11 +40,30 @@ class LegalPagesTest extends TestCase
             'Google アカウントの サードパーティのアクセス（https://myaccount.google.com/permissions）からいつでも承認を取り消せます',
             '提案などの削除は、お問い合わせフォームから種別『削除依頼』でご依頼ください。7 日以内に削除します',
             '最終更新: 2026年11月15日',
+            // Limited Use (Google API Services User Data Policy)
+            '限定的な使用（Limited Use）の要件を含む Google API サービスのユーザーデータに関するポリシー（Google API Services User Data Policy）に従います',
+            '広告の表示や配信には使いません',
+            '第三者に販売したり、転送したりしません',
+            'AI・機械学習のモデルの開発や学習には使いません',
+            '利用者の同意がある場合、セキュリティ上の目的（不正利用の調査など）で必要な場合、または法令に従う必要がある場合を除き、人が読むことはありません',
+            // Owner reads beyond the unlisted list, and what the creation records hold
+            'チャンネル主の再生リストの一覧と、作成した再生リストに入っている動画を読み取ることがあります',
+            '編集画面で読み込んだ限定公開の動画の一覧は、ログイン中のセッションに 10 分間だけ保存します',
+            '作成したチャンネル主のチャンネル ID',
+            '追加する動画の ID・タイトル・サムネイル画像の URL',
+            'チャンネル主が選んだ自分の限定公開の動画も、ここに含まれます',
+            '作成状況の画面でチャンネル主にだけ表示します',
+            '作成の記録は提案と一緒に（最長 30 日で）、または削除の依頼に応じて削除します',
+            // Cleanup timing
+            'そのブラウザで次に本サービスを開いたときに削除されます',
+            '期限切れのセッションのデータ、回数制限のカウンター、一時的なキャッシュは、1 日 1 回の整理の処理で消去します',
+            '承認を取り消しても、それだけでは本サービスに保存された作成の記録は削除されません',
+            'ご依頼から 7 日以内に削除します',
         ] as $text) {
             $res->assertSeeText($text);
         }
         $main = $this->main($res);
-        foreach ([self::GOOGLE_PRIVACY, self::YOUTUBE_TERMS, self::PERMISSIONS, route('contact.show')] as $href) {
+        foreach ([self::GOOGLE_PRIVACY, self::YOUTUBE_TERMS, self::PERMISSIONS, self::USER_DATA_POLICY, route('contact.show')] as $href) {
             $this->assertStringContainsString('href="'.$href.'"', $main);
         }
         foreach (['about', 'youtube', 'data', 'retention', 'browser-storage', 'sharing', 'contact-form', 'revoke', 'deletion', 'contact', 'changes'] as $id) {
