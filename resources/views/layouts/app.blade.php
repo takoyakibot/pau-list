@@ -6,6 +6,7 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', 'List Maker')</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+    @stack('vite')
 </head>
 <body class="min-h-screen flex flex-col bg-white text-gray-900 antialiased">
     <header class="border-b border-gray-200">

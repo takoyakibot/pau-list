@@ -1,10 +1,17 @@
 <?php
 
+use App\Http\Middleware\LimitRequestBody;
+use App\Http\Middleware\RequireSameOriginFetch;
 use App\Http\Middleware\SecurityHeaders;
+use App\Support\ProposalFormRedirect;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Middleware\ThrottleRequests;
+use Illuminate\Session\TokenMismatchException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -15,8 +22,30 @@ return Application::configure(basePath: dirname(__DIR__))
         // prepend: 最外周に置き、フレームワークのグローバルミドルウェアが返す応答
         // （413 PostTooLarge、503 メンテナンスなど）にもヘッダーを付ける
         $middleware->prepend(SecurityHeaders::class);
+        $middleware->append(LimitRequestBody::class);
+        $middleware->appendToGroup('web', 'throttle:global');
+        // Reject cross-site lookups before any rate limiter counts them.
+        $middleware->prependToPriorityList(before: ThrottleRequests::class, prepend: RequireSameOriginFetch::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->render(function (ThrottleRequestsException $e, Request $request) {
+            if ($request->expectsJson()) {
+                return response()->json(
+                    ['message' => 'アクセスが集中しています。しばらく待ってから再度お試しください'],
+                    429,
+                    $e->getHeaders(),
+                );
+            }
+
+            return ProposalFormRedirect::for($request, '保存の操作が集中しています。しばらく待ってから再度お試しください（入力内容は残っています）');
+        });
+        // The handler maps TokenMismatchException to a 419 HttpException before render callbacks run.
+        $exceptions->render(fn (HttpException $e, Request $request) => $e->getPrevious() instanceof TokenMismatchException
+            ? ProposalFormRedirect::for(
+                $request,
+                'ページの有効期限が切れたため保存できませんでした。入力内容は残っているので、もう一度保存してください',
+            )
+            : null);
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );

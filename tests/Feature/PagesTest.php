@@ -3,10 +3,13 @@
 namespace Tests\Feature;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\AssertsNoInlineCode;
 use Tests\TestCase;
 
 class PagesTest extends TestCase
 {
+    use AssertsNoInlineCode;
+
     public static function publicPages(): array
     {
         return [['/'], ['/privacy'], ['/terms'], ['/contact']];
@@ -44,20 +47,12 @@ class PagesTest extends TestCase
             ->assertDontSee('YouTube List Maker');
     }
 
-    private function assertNoInlineCode(string $html): void
-    {
-        $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\bsrc=)[^>]*>/i', $html);
-        $this->assertDoesNotMatchRegularExpression('/<style\b/i', $html);
-        $this->assertDoesNotMatchRegularExpression('/\sstyle\s*=/i', $html);
-        $this->assertDoesNotMatchRegularExpression('/\son[a-z]+\s*=/i', $html);
-    }
-
     public function test_only_spec_routes_are_registered(): void
     {
         // スケルトンの /up（外部 CDN を読む）と local ディスクの storage/{path} 配信は使わない
         $uris = collect(app('router')->getRoutes()->getRoutes())->map->uri()->sort()->values()->all();
 
-        $this->assertSame(['/', 'contact', 'privacy', 'terms'], $uris);
+        $this->assertSame(['/', 'channels', 'channels/{channelId}/proposals', 'channels/{channelId}/propose', 'channels/{channelId}/videos/lookup', 'contact', 'p/{key}', 'p/{key}/shared', 'privacy', 'terms'], $uris);
         $this->get('/up')->assertNotFound();
         $this->get('/storage/anything.txt')->assertNotFound();
     }

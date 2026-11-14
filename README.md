@@ -127,3 +127,9 @@ php artisan test
 
 - 日次バッチ `app:prune-expired` は毎日 04:00（Asia/Tokyo）に実行されます（cron の `schedule:run` 経由）。
 - ログは `storage/logs`（daily、14 日保持）。
+- **削除バッチは cron が毎日動いていることが前提です。** 一覧キャッシュ・提案は「次回実行までに期限が来る行（現在 + 24 時間）」を削除するため、毎日動いていれば表示した削除日を過ぎて残ることはありません。cron が止まる・失敗すると、その分だけ保存期間（30 日）を超えて残ります。`storage/logs/cron.log` と `storage/logs/laravel-*.log`（`app:prune-expired` の結果・エラー）を定期的に確認してください。バッチが失敗したステップがあると終了コードが 0 以外になります。
+- **ゲートウェイのタイムアウト（要確認: CORESERVER）**: チャンネルの取り込みは最悪で約 85 秒かかることがあります（同じチャンネルを取り込み中の別リクエストのロック待ち最大 40 秒 + 取り込み全体の上限 30 秒 + 最後の API 呼び出しのタイムアウト 15 秒）。CORESERVER の Web サーバー／PHP の実行時間制限（`max_execution_time`、リバースプロキシのタイムアウト）がこれより短いと、取り込みの途中で 504 などになります（途中まで読んだ分は保存されないため、データは壊れません）。実際の制限値を確認し、短い場合は `ChannelVideoCatalog` のロック待ち時間・取り込み上限を下げることを検討してください。
+
+## リクエストボディの上限（要確認: CORESERVER）
+
+`LimitRequestBody` ミドルウェアは `Content-Length` と読み込んだボディが 64KB を超えると 413 を返しますが、PHP のミドルウェアでは multipart ボディを PHP が解析する前に制限できません。サーバー側でも約 64KB に抑えるため、`post_max_size` / `upload_max_filesize`（`.user.ini` やコントロールパネルで設定）や、Web サーバーの `LimitRequestBody` を設定してください。CORESERVER で設定できるか・反映されるかは未確認です。

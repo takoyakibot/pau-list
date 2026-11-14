@@ -6,3 +6,8 @@
 @theme {
     --font-sans: ui-sans-serif, system-ui, sans-serif;
 }
+
+/* Alpine removes x-cloak once it has initialised: hides Alpine-driven messages until then. */
+[x-cloak] {
+    display: none !important;
+}
