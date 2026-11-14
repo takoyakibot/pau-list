@@ -8,4 +8,7 @@ return [
 
     'contact_to_address' => env('CONTACT_TO_ADDRESS'),
 
+    // Comma-separated IPs/CIDRs or "*"; empty trusts no proxy (AppServiceProvider::trustProxiesFrom).
+    'trusted_proxies' => env('TRUSTED_PROXIES'),
+
 ];

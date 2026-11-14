@@ -3,8 +3,12 @@
 namespace Tests\Feature;
 
 use App\Support\ChannelFetchThrottle;
+use App\Support\ClientKey;
+use App\Support\ProposalStoreLimits;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Tests\Support\AssertsNoInlineCode;
 use Tests\TestCase;
@@ -73,7 +77,7 @@ class RateLimitTest extends TestCase
     public function test_channel_fetch_throttle_lock_timeout_returns_false(): void
     {
         $req = Request::create('/', 'GET', server: ['REMOTE_ADDR' => '203.0.113.9']);
-        $lock = Cache::lock('channel-fetch-guard:'.hash('sha256', '203.0.113.9'), 30);
+        $lock = Cache::lock('channel-fetch-guard:'.ClientKey::for($req), 30);
         $this->assertTrue($lock->get());
         $this->assertFalse(app(ChannelFetchThrottle::class)->attempt($req));
         $lock->release();
@@ -115,5 +119,45 @@ class RateLimitTest extends TestCase
             $res->assertSee('トップへ戻る');
             $res->assertSee('href="'.route('home').'"', false);
         }
+    }
+
+    public function test_ipv6_addresses_in_one_64_share_the_global_limit(): void
+    {
+        for ($i = 0; $i < 120; $i++) {
+            $this->withServerVariables(['REMOTE_ADDR' => '2001:db8:1:2::'.dechex($i + 1)])->get('/')->assertOk();
+        }
+        $this->withServerVariables(['REMOTE_ADDR' => '2001:db8:1:2:ffff::1'])->get('/')->assertStatus(429);
+        $this->withServerVariables(['REMOTE_ADDR' => '2001:db8:1:3::1'])->get('/')->assertOk();
+    }
+
+    public function test_missing_remote_addr_is_not_a_server_error(): void
+    {
+        $this->withServerVariables(['REMOTE_ADDR' => ''])->get('/')->assertOk();
+    }
+
+    public function test_only_client_key_reads_the_ip(): void
+    {
+        $readers = collect(File::allFiles(app_path()))
+            ->filter(fn ($file) => str_contains($file->getContents(), '->ip()'))
+            ->map(fn ($file) => str_replace('\\', '/', $file->getRelativePathname()))
+            ->values()->all();
+        $this->assertSame(['Support/ClientKey.php'], $readers);
+    }
+
+    public function test_proposal_store_limits_use_client_key(): void
+    {
+        $req = Request::create('/', 'POST', server: ['REMOTE_ADDR' => '203.0.113.5']);
+        app(ProposalStoreLimits::class)->hit($req);
+        $this->assertSame(1, RateLimiter::attempts('proposal-store:m:'.ClientKey::for($req)));
+        $this->assertSame(1, RateLimiter::attempts('proposal-store:d:'.ClientKey::for($req)));
+        $this->assertSame(0, RateLimiter::attempts('proposal-store:m:203.0.113.5'));
+    }
+
+    public function test_channel_fetch_throttle_uses_client_key(): void
+    {
+        $req = Request::create('/', 'GET', server: ['REMOTE_ADDR' => '203.0.113.6']);
+        $this->assertTrue(app(ChannelFetchThrottle::class)->attempt($req));
+        $this->assertSame(1, RateLimiter::attempts('channel-fetch:m:'.ClientKey::for($req)));
+        $this->assertSame(0, RateLimiter::attempts('channel-fetch:m:'.hash('sha256', '203.0.113.6')));
     }
 }
