@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Services\YouTube\QuotaLedger;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class QuotaLedgerTest extends TestCase
@@ -75,5 +76,34 @@ class QuotaLedgerTest extends TestCase
             }
         }
         $this->assertSame(0, $ledger->used(QuotaLedger::WRITE));
+    }
+
+    public function test_day_row_is_created_outside_the_locking_transaction(): void
+    {
+        // Insert-if-missing inside the locking transaction takes InnoDB gap/insert-intention locks
+        // that can deadlock concurrent first requests of the day: it must run before the transaction.
+        $base = DB::transactionLevel();
+        $levels = [];
+        DB::listen(function ($q) use (&$levels) {
+            if (str_contains($q->sql, 'quota_usage')) {
+                $levels[] = [strtok(ltrim($q->sql), ' '), DB::transactionLevel()];
+            }
+        });
+
+        app(QuotaLedger::class)->record(QuotaLedger::WRITE, 5);
+        app(QuotaLedger::class)->record(QuotaLedger::WRITE, 5);
+
+        $levels = array_values($levels);
+        $inserts = array_values(array_filter($levels, fn ($l) => $l[0] === 'insert'));
+        $this->assertNotEmpty($inserts);
+        foreach ($inserts as $l) {
+            $this->assertSame($base, $l[1], 'insert must run outside the transaction');
+        }
+        $selects = array_values(array_filter($levels, fn ($l) => $l[0] === 'select'));
+        $this->assertCount(2, $selects);
+        foreach ($selects as $l) {
+            $this->assertSame($base + 1, $l[1]);
+        }
+        $this->assertSame(10, app(QuotaLedger::class)->used(QuotaLedger::WRITE));
     }
 }

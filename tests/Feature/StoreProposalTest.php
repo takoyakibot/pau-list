@@ -430,6 +430,9 @@ class StoreProposalTest extends TestCase
 
     public function test_case_insensitive_collation_still_uses_the_stored_channel_id(): void
     {
+        if (DB::getDriverName() !== 'sqlite') {
+            $this->markTestSkipped('Rebuilds the table with SQLite NOCASE to simulate a MySQL *_ci collation.');
+        }
         // Simulate a MySQL case-insensitive collation: a route id differing only in case finds the row.
         $row = (array) DB::table('channel_caches')->first();
         Schema::disableForeignKeyConstraints();

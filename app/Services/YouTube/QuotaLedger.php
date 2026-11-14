@@ -73,18 +73,14 @@ class QuotaLedger
     {
         $day = QuotaClock::todayPt();
 
+        // Make sure the row exists before (outside) the transaction: an insert inside it would take
+        // gap/insert-intention locks on InnoDB that can deadlock concurrent first requests of the day.
+        DB::table('quota_usage')->insertOrIgnore(['day_pt' => $day, 'bucket' => $bucket, 'units' => 0]);
+
         return DB::transaction(function () use ($day, $bucket, $fn) {
-            // Lock first; insert only when the row is missing (avoids the
-            // duplicate-key S-lock deadlock of insert-then-lock on InnoDB).
-            $select = fn () => DB::table('quota_usage')
+            $row = DB::table('quota_usage')
                 ->where('day_pt', $day)->where('bucket', $bucket)
                 ->lockForUpdate()->first();
-
-            $row = $select();
-            if ($row === null) {
-                DB::table('quota_usage')->insertOrIgnore(['day_pt' => $day, 'bucket' => $bucket, 'units' => 0]);
-                $row = $select();
-            }
 
             $add = fn (int $n) => DB::table('quota_usage')
                 ->where('day_pt', $day)->where('bucket', $bucket)
