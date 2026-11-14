@@ -51,4 +51,14 @@ class PagesTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('/\sstyle\s*=/i', $html);
         $this->assertDoesNotMatchRegularExpression('/\son[a-z]+\s*=/i', $html);
     }
+
+    public function test_only_spec_routes_are_registered(): void
+    {
+        // スケルトンの /up（外部 CDN を読む）と local ディスクの storage/{path} 配信は使わない
+        $uris = collect(app('router')->getRoutes()->getRoutes())->map->uri()->sort()->values()->all();
+
+        $this->assertSame(['/', 'contact', 'privacy', 'terms'], $uris);
+        $this->get('/up')->assertNotFound();
+        $this->get('/storage/anything.txt')->assertNotFound();
+    }
 }
