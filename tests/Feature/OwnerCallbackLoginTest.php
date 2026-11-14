@@ -131,6 +131,19 @@ class OwnerCallbackLoginTest extends TestCase
         $this->assertNotSame($before, session()->getId());
     }
 
+    public function test_csrf_token_changes_on_login(): void
+    {
+        $key = $this->createProposal();
+        $this->fakeToken();
+        $this->fakeMyChannel($this->channelId);
+        $state = $this->begin($key);
+        $before = session()->token();
+        $this->assertNotEmpty($before);
+        $this->withSessionCookie(session()->getId())
+            ->get('/auth/google/callback?'.http_build_query(['state' => $state, 'code' => 'c']))->assertRedirect(route('proposals.edit', $key));
+        $this->assertNotSame($before, session()->token());
+    }
+
     public function test_session_id_is_kept_when_login_fails(): void
     {
         $key = $this->createProposal();

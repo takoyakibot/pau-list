@@ -139,6 +139,8 @@ class OwnerAuthController extends Controller
             // behind with its stale contents. An existing owner login is overwritten without revoking its
             // token: revoking the same grant could also invalidate the new token.
             $request->session()->regenerate(true);
+            // regenerate() already rotates the CSRF token in Laravel; kept explicit so the login never depends on it.
+            $request->session()->regenerateToken();
             $this->owners->login(new OwnerLogin($token->accessToken, $token->expiresAt, $channel->id, $channel->title));
             $loggedIn = true;
         } finally {
