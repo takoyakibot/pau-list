@@ -1,0 +1,99 @@
+<?php
+
+namespace Tests\Feature;
+
+use Tests\TestCase;
+
+class ConfigurationTest extends TestCase
+{
+    private const SPEC_ENV_KEYS = [
+        'APP_NAME', 'APP_ENV', 'APP_KEY', 'APP_DEBUG', 'APP_URL',
+        'LOG_CHANNEL', 'LOG_LEVEL', 'LOG_DAILY_DAYS',
+        'DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_SOCKET', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD',
+        'SESSION_DRIVER', 'SESSION_ENCRYPT', 'SESSION_LIFETIME', 'SESSION_SECURE_COOKIE', 'SESSION_SAME_SITE',
+        'CACHE_STORE', 'QUEUE_CONNECTION',
+        'YOUTUBE_API_KEY', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REDIRECT_URI',
+        'QUOTA_WRITE_LIMIT', 'QUOTA_READ_BUDGET', 'QUOTA_GOOGLE_DAILY',
+        'CHANNEL_FETCH_MAX_VIDEOS', 'CHANNEL_CACHE_REUSE_MINUTES', 'CHANNEL_SYNC_KNOWN_RUN',
+        'DATA_RETENTION_DAYS', 'CAPTCHA_ENABLED',
+        'MAIL_MAILER', 'MAIL_HOST', 'MAIL_PORT', 'MAIL_USERNAME', 'MAIL_PASSWORD', 'MAIL_SCHEME', 'MAIL_FROM_ADDRESS', 'MAIL_FROM_NAME',
+        'CONTACT_TO_ADDRESS',
+    ];
+
+    private const DEFAULT_KEYS = [
+        'QUOTA_WRITE_LIMIT', 'QUOTA_READ_BUDGET', 'QUOTA_GOOGLE_DAILY',
+        'CHANNEL_FETCH_MAX_VIDEOS', 'CHANNEL_CACHE_REUSE_MINUTES', 'CHANNEL_SYNC_KNOWN_RUN',
+        'DATA_RETENTION_DAYS', 'CAPTCHA_ENABLED',
+    ];
+
+    /** @var array<string, array{env: mixed, server: mixed, getenv: string|false}> */
+    private array $saved = [];
+
+    protected function tearDown(): void
+    {
+        foreach ($this->saved as $key => $s) {
+            if ($s['env'] !== null) {
+                $_ENV[$key] = $s['env'];
+            }
+            if ($s['server'] !== null) {
+                $_SERVER[$key] = $s['server'];
+            }
+            if ($s['getenv'] !== false) {
+                putenv("$key={$s['getenv']}");
+            }
+        }
+        $this->saved = [];
+
+        parent::tearDown();
+    }
+
+    public function test_env_example_lists_every_spec_key(): void
+    {
+        $env = file_get_contents(base_path('.env.example'));
+        foreach (self::SPEC_ENV_KEYS as $key) {
+            $this->assertMatchesRegularExpression('/^#?\s*'.$key.'=/m', $env, $key);
+        }
+        $this->assertDoesNotMatchRegularExpression('/PROPOSAL_MAX_ITEMS/', $env);
+        $this->assertStringContainsString('APP_NAME="List Maker"', $env);
+        $this->assertStringContainsString('GOOGLE_REDIRECT_URI="${APP_URL}/auth/google/callback"', $env);
+    }
+
+    public function test_config_keys_exist_with_expected_types(): void
+    {
+        foreach (['quota.write_limit', 'quota.read_budget', 'quota.google_daily',
+            'channel.fetch_max_videos', 'channel.cache_reuse_minutes', 'channel.sync_known_run'] as $k) {
+            $this->assertIsInt(config("youtube.$k"), "youtube.$k");
+        }
+        $this->assertTrue(array_key_exists('api_key', config('youtube')));
+        $this->assertNull(config('youtube.max_items'));
+        $this->assertSame(['client_id', 'client_secret', 'redirect'], array_keys(config('services.google')));
+        $this->assertIsInt(config('listmaker.retention_days'));
+        $this->assertIsBool(config('listmaker.captcha_enabled'));
+        $this->assertTrue(array_key_exists('contact_to_address', config('listmaker')));
+    }
+
+    public function test_defaults_match_spec_when_env_is_absent(): void
+    {
+        foreach (self::DEFAULT_KEYS as $key) {
+            $this->saved[$key] = [
+                'env' => $_ENV[$key] ?? null,
+                'server' => $_SERVER[$key] ?? null,
+                'getenv' => getenv($key),
+            ];
+            unset($_ENV[$key], $_SERVER[$key]);
+            putenv($key);
+        }
+
+        $youtube = require config_path('youtube.php');
+        $listmaker = require config_path('listmaker.php');
+
+        $this->assertSame(5000, $youtube['quota']['write_limit']);
+        $this->assertSame(2000, $youtube['quota']['read_budget']);
+        $this->assertSame(10000, $youtube['quota']['google_daily']);
+        $this->assertSame(1000, $youtube['channel']['fetch_max_videos']);
+        $this->assertSame(360, $youtube['channel']['cache_reuse_minutes']);
+        $this->assertSame(3, $youtube['channel']['sync_known_run']);
+        $this->assertSame(30, $listmaker['retention_days']);
+        $this->assertFalse($listmaker['captcha_enabled']);
+    }
+}
