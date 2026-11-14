@@ -80,9 +80,9 @@ trait FakesGoogle
     }
 
     /**
-     * GET playlists?mine=true (one page). Each item: ['id' => …, 'title' => …, 'publishedAt' => ISO-8601|null].
+     * GET playlists?mine=true (one page). Each item: ['id' => …, 'title' => …, 'publishedAt' => ISO-8601|null, 'description' => …].
      *
-     * @param  list<array{id: string, title?: string, publishedAt?: string|null}>  $items
+     * @param  list<array{id: string, title?: string, publishedAt?: string|null, description?: string}>  $items
      */
     protected function fakeMyPlaylists(array $items, bool $hasMore = false): void
     {
@@ -97,6 +97,7 @@ trait FakesGoogle
                 'snippet' => array_filter([
                     'title' => $i['title'] ?? 'Playlist '.$i['id'],
                     'publishedAt' => array_key_exists('publishedAt', $i) ? $i['publishedAt'] : '2026-11-15T00:00:00Z',
+                    'description' => $i['description'] ?? null,
                 ], fn ($v) => $v !== null),
             ], $items)];
             if ($hasMore) {

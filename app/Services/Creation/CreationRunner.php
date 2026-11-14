@@ -46,6 +46,15 @@ final class CreationRunner
 
     public const MAX_PLAYLIST_ATTEMPTS = 6;
 
+    /**
+     * After an unknown outcome, reconcile no sooner than this: a write that did happen may take a moment to show
+     * in playlists.list / playlistItems.list (read-after-write lag), and reading too early would resend it.
+     */
+    public const RECONCILE_AFTER_SECONDS = 10;
+
+    /** Item reconciliation reads the whole playlist up to this many pages (owner_read 1 each). */
+    public const RECONCILE_MAX_PAGES = 20;
+
     /** Backoff 2, 4, 8, 16, 32 seconds (1000 × 2^attempts), never longer. */
     private const MAX_BACKOFF_MS = 32000;
 
@@ -180,7 +189,7 @@ final class CreationRunner
         if ($unknown !== null) {
             $unknown->update(['leased_at' => $now]);
 
-            return new PlannedCall(PlannedCall::RECONCILE_ITEM, $c, $now, $unknown, total: $c->items()->count());
+            return new PlannedCall(PlannedCall::RECONCILE_ITEM, $c, $now, $unknown);
         }
 
         $next = $c->items()->where('status', PlaylistCreationItem::PENDING)->first();
@@ -217,15 +226,19 @@ final class CreationRunner
                 PlannedCall::INSERT_PLAYLIST => $this->sendInsertPlaylist($c, $owner),
                 PlannedCall::RECONCILE_PLAYLIST => CallOutcome::playlists($this->youtube->myPlaylists($owner->accessToken)),
                 PlannedCall::INSERT_ITEM => $this->sendInsertItem($c, $item, (int) $p->position, $owner),
-                PlannedCall::RECONCILE_ITEM => CallOutcome::items($this->youtube->playlistVideoItems(
-                    $owner->accessToken,
-                    (string) $c->youtube_playlist_id,
-                    max(1, intdiv($p->total + 49, 50)),
-                )),
+                PlannedCall::RECONCILE_ITEM => $this->sendReconcileItem($c, $owner),
             };
         } catch (YouTubeApiException $e) {
             return CallOutcome::failed($e->error);
         }
+    }
+
+    /** Reads the whole playlist (the owner may have added videos by hand), up to RECONCILE_MAX_PAGES pages. */
+    private function sendReconcileItem(PlaylistCreation $c, OwnerLogin $owner): CallOutcome
+    {
+        $items = $this->youtube->playlistVideoItems($owner->accessToken, (string) $c->youtube_playlist_id, self::RECONCILE_MAX_PAGES, $truncated);
+
+        return CallOutcome::items($items, (bool) $truncated);
     }
 
     private function sendInsertPlaylist(PlaylistCreation $c, OwnerLogin $owner): CallOutcome
@@ -245,7 +258,7 @@ final class CreationRunner
             return CallOutcome::created($this->youtube->insertPlaylistItem($owner->accessToken, $playlistId, $item->video_id, $position));
         } catch (YouTubeApiException $e) {
             $error = $e->error;
-            if (in_array($error->reason, self::PLAYLIST_LEVEL_REASONS, true)) {
+            if (self::isPlaylistLevel($error)) {
                 return CallOutcome::failed($error, playlistLevel: true);
             }
             if ($error->status === 403 && $error->kind === YouTubeErrorKind::ItemPermanent) {
@@ -290,6 +303,14 @@ final class CreationRunner
             if ($c->youtube_playlist_id === null) {
                 $c->youtube_playlist_id = $o->id;
                 $this->progressTo($c, PlaylistCreation::ADDING, [PlaylistCreation::CREATING_PLAYLIST, PlaylistCreation::PENDING]);
+            } elseif ($c->youtube_playlist_id !== $o->id) {
+                // A slow insert succeeded after another playlist was adopted: YouTube now has an extra playlist.
+                // Keep the adopted one, but never drop this silently (ids as short prefixes only).
+                Log::warning('Creation late playlist insert', [
+                    'creation_id' => $c->id,
+                    'kept' => substr($c->youtube_playlist_id, 0, 8),
+                    'late' => substr($o->id, 0, 8),
+                ]);
             }
             if ($ours) {
                 $c->playlist_leased_at = null;
@@ -305,10 +326,12 @@ final class CreationRunner
         $c->playlist_leased_at = null;
         $error = $o->error;
         if (self::isUncertain($error)) {
-            // Created or not is unknown: stay in creating_playlist with no lease, so the next step reconciles.
+            // Created or not is unknown: stay in creating_playlist with a backdated lease, so a step reconciles
+            // (never resends) RECONCILE_AFTER_SECONDS from now.
+            $c->playlist_leased_at = self::reconcileLease();
             $c->save();
 
-            return new StepResult(self::backoff($c->playlist_attempts));
+            return new StepResult(self::uncertainDelay($c->playlist_attempts));
         }
 
         switch ($error->kind) {
@@ -360,26 +383,35 @@ final class CreationRunner
             return new StepResult(self::backoff($c->playlist_attempts));
         }
 
+        // Candidates: same title, published since the first attempt (minus 60 s), and not already another
+        // creation's playlist (two owners' creations with the same title may run a minute apart).
         $since = ($c->playlist_attempted_at ?? $c->started_at)->subSeconds(self::LEASE_SECONDS);
-        $matches = array_values(array_filter(
+        $candidates = array_values(array_filter(
             $o->playlists->items,
             fn ($pl) => $pl->title === $c->title && $pl->publishedAt !== null && $pl->publishedAt->greaterThanOrEqualTo($since),
         ));
+        if ($candidates !== []) {
+            $taken = PlaylistCreation::whereIn('youtube_playlist_id', array_map(fn ($pl) => $pl->id, $candidates))
+                ->where('id', '!=', $c->id)->pluck('youtube_playlist_id')->all();
+            $candidates = array_values(array_filter($candidates, fn ($pl) => ! in_array($pl->id, $taken, true)));
+        }
+        // Adopted only when exactly one also has the same description; any other candidate means the owner checks.
+        $matches = array_values(array_filter($candidates, fn ($pl) => $pl->description === $c->description));
 
-        if (count($matches) === 1) {
+        if (count($candidates) === 1 && count($matches) === 1) {
             $c->youtube_playlist_id = $matches[0]->id;
             $this->progressTo($c, PlaylistCreation::ADDING, [PlaylistCreation::CREATING_PLAYLIST]);
             $c->save();
 
             return new StepResult(self::NORMAL_DELAY_MS);
         }
-        if ($matches === [] && ! $o->playlists->hasMore) {
+        if ($candidates === [] && ! $o->playlists->hasMore) {
             $this->progressTo($c, PlaylistCreation::PENDING, [PlaylistCreation::CREATING_PLAYLIST]); // not created: insert next
             $c->save();
 
             return new StepResult(self::NORMAL_DELAY_MS);
         }
-        $this->needsCheck($c, $matches === [] ? 'more_playlists' : 'several_candidates');
+        $this->needsCheck($c, $candidates === [] ? 'more_playlists' : 'ambiguous_candidates');
 
         return new StepResult(0);
     }
@@ -415,11 +447,13 @@ final class CreationRunner
             return new StepResult(0);
         }
         if (self::isUncertain($error)) {
-            // Added or not is unknown: keep in_flight with no lease, so the next step reconciles before any resend.
+            // Added or not is unknown: keep in_flight with a backdated lease, so a step reconciles (before any
+            // resend) RECONCILE_AFTER_SECONDS from now.
             $item->last_error = $error->reason ?? YouTubeErrorKind::Transient->value;
+            $item->leased_at = self::reconcileLease();
             $item->save();
 
-            return new StepResult($item->attempts >= self::MAX_ATTEMPTS ? self::NORMAL_DELAY_MS : self::backoff($item->attempts));
+            return new StepResult(self::uncertainDelay($item->attempts >= self::MAX_ATTEMPTS ? 0 : $item->attempts));
         }
 
         switch ($error->kind) {
@@ -483,6 +517,12 @@ final class CreationRunner
         $itemId = $o->items[$item->video_id] ?? null;
         if ($itemId !== null) {
             $item->fill(['status' => PlaylistCreationItem::DONE, 'youtube_item_id' => $itemId, 'last_error' => null])->save();
+        } elseif ($o->truncated) {
+            // Not in the pages read, but the playlist is longer than that: resending could duplicate it.
+            $item->save();
+            $this->needsCheck($c, 'playlist_too_long');
+
+            return new StepResult(0);
         } elseif ($item->attempts >= self::MAX_ATTEMPTS) {
             $item->fill(['status' => PlaylistCreationItem::FAILED, 'last_error' => $item->last_error ?? YouTubeErrorKind::Transient->value])->save();
         } else {
@@ -585,6 +625,27 @@ final class CreationRunner
             : $e->status >= 500;
     }
 
+    /** A lease that stops being fresh RECONCILE_AFTER_SECONDS from now. */
+    private static function reconcileLease(): CarbonImmutable
+    {
+        return CarbonImmutable::now()->startOfSecond()->subSeconds(self::LEASE_SECONDS - self::RECONCILE_AFTER_SECONDS);
+    }
+
+    private static function uncertainDelay(int $attempts): int
+    {
+        return max(self::RECONCILE_AFTER_SECONDS * 1000, self::backoff($attempts));
+    }
+
+    /**
+     * Errors about the playlist rather than the video (review I1), including a 400 about the requested position
+     * (e.g. invalidPlaylistItemPosition): every later item would fail the same way.
+     */
+    private static function isPlaylistLevel(YouTubeError $e): bool
+    {
+        return in_array($e->reason, self::PLAYLIST_LEVEL_REASONS, true)
+            || ($e->status === 400 && $e->reason !== null && stripos($e->reason, 'position') !== false);
+    }
+
     private static function backoff(int $attempts): int
     {
         return min(self::MAX_BACKOFF_MS, self::NORMAL_DELAY_MS * 2 ** max(0, $attempts));
@@ -613,7 +674,6 @@ final readonly class PlannedCall
         public CarbonImmutable $leasedAt,
         public ?PlaylistCreationItem $item = null,
         public ?int $position = null,
-        public int $total = 0,
     ) {}
 }
 
@@ -631,6 +691,7 @@ final readonly class CallOutcome
         public bool $playlistLevel = false,
         public ?OwnerPlaylistsPage $playlists = null,
         public ?array $items = null,
+        public bool $truncated = false,
     ) {}
 
     public static function created(string $id): self
@@ -649,8 +710,8 @@ final readonly class CallOutcome
     }
 
     /** @param array<string, string> $items */
-    public static function items(array $items): self
+    public static function items(array $items, bool $truncated = false): self
     {
-        return new self(items: $items);
+        return new self(items: $items, truncated: $truncated);
     }
 }

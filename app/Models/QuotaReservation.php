@@ -32,8 +32,8 @@ class QuotaReservation extends Model
     {
         return (int) static::where('day_pt', $dayPt)
             ->where('status', self::ACTIVE)
-            // Signed: MySQL refuses an unsigned subtraction that would go below zero (works on SQLite too).
-            ->sum(DB::raw('CAST(reserved_units AS SIGNED) - consumed_units'));
+            // Both signed: MySQL computes SIGNED − UNSIGNED as unsigned and fails below zero (error 1690). Works on SQLite too.
+            ->sum(DB::raw('CAST(reserved_units AS SIGNED) - CAST(consumed_units AS SIGNED)'));
     }
 
     /** @return BelongsTo<PlaylistCreation, $this> */

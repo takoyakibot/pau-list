@@ -168,6 +168,7 @@ class YouTubeOwnerClient
                 $id,
                 YouTubeReader::title($item['snippet']['title'] ?? null),
                 YouTubeReader::date($item['snippet']['publishedAt'] ?? null),
+                is_string($d = $item['snippet']['description'] ?? null) ? $d : '',
             );
         }
         $next = $json['nextPageToken'] ?? null;
@@ -177,14 +178,16 @@ class YouTubeOwnerClient
 
     /**
      * videoId => playlistItemId of a playlist, reading at most $maxPages pages (owner_read 1 each).
-     * A video that appears more than once keeps its first item.
+     * A video that appears more than once keeps its first item. $truncated is set to true when more pages
+     * remained after $maxPages (the result is then not the whole playlist).
      *
      * @return array<string, string>
      *
      * @throws YouTubeApiException
      */
-    public function playlistVideoItems(#[\SensitiveParameter] string $accessToken, string $playlistId, int $maxPages): array
+    public function playlistVideoItems(#[\SensitiveParameter] string $accessToken, string $playlistId, int $maxPages, ?bool &$truncated = null): array
     {
+        $truncated = false;
         $found = [];
         $token = null;
         for ($pages = 0; $pages < $maxPages; $pages++) {
@@ -208,6 +211,7 @@ class YouTubeOwnerClient
                 break;
             }
         }
+        $truncated = $token !== null;
 
         return $found;
     }

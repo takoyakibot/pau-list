@@ -365,7 +365,7 @@ class YouTubeOwnerClientTest extends TestCase
     {
         config(['youtube.api_key' => 'secret-api-key']);
         $this->fakeMyPlaylists([
-            ['id' => 'PLone', 'title' => '<b>一つ目</b>', 'publishedAt' => '2026-11-15T01:02:03Z'],
+            ['id' => 'PLone', 'title' => '<b>一つ目</b>', 'publishedAt' => '2026-11-15T01:02:03Z', 'description' => "説明\n2 行目"],
             ['id' => 'PL two', 'title' => 'bad id'],
             ['id' => 'PLthree', 'title' => str_repeat('あ', 250), 'publishedAt' => null],
         ], true);
@@ -376,6 +376,7 @@ class YouTubeOwnerClientTest extends TestCase
         $this->assertSame('2026-11-15T01:02:03Z', $page->items[0]->publishedAt->utc()->format('Y-m-d\TH:i:s\Z'));
         $this->assertSame(str_repeat('あ', 200), $page->items[1]->title);
         $this->assertNull($page->items[1]->publishedAt);
+        $this->assertSame(["説明\n2 行目", ''], array_map(fn ($p) => $p->description, $page->items));
 
         $req = Http::recorded()->sole()[0];
         $this->assertSame('GET', $req->method());
@@ -400,7 +401,8 @@ class YouTubeOwnerClientTest extends TestCase
         $this->fakePlaylistItemsList($map);
         $client = app(YouTubeOwnerClient::class);
 
-        $found = $client->playlistVideoItems('ya29.tok', 'PLabc', 2);
+        $found = $client->playlistVideoItems('ya29.tok', 'PLabc', 2, $truncated);
+        $this->assertTrue($truncated);
         $this->assertCount(100, $found);
         $this->assertSame('item0', $found['v0000000000']);
         $this->assertSame('item99', $found['v0000000099']);
@@ -412,7 +414,8 @@ class YouTubeOwnerClientTest extends TestCase
         parse_str(parse_url($requests[0]->url(), PHP_URL_QUERY), $q);
         $this->assertSame(['part' => 'snippet', 'maxResults' => '50', 'playlistId' => 'PLabc'], $q);
         $this->assertSame('Bearer ya29.tok', $requests[1]->header('Authorization')[0]);
-        $this->assertCount(120, $client->playlistVideoItems('ya29.tok', 'PLabc', 5));
+        $this->assertCount(120, $client->playlistVideoItems('ya29.tok', 'PLabc', 5, $truncated));
+        $this->assertFalse($truncated);
         $this->assertSame(5, app(QuotaLedger::class)->used(QuotaLedger::OWNER_READ));
     }
 

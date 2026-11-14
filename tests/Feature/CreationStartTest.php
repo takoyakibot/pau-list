@@ -14,6 +14,8 @@ use App\Support\ProposalKey;
 use App\Support\QuotaClock;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Connection;
+use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -276,6 +278,38 @@ class CreationStartTest extends TestCase
         $this->assertTrue($injected);
         $this->assertSame('先に作られた', PlaylistCreation::sole()->title);
         $this->assertSame(0, PlaylistCreationItem::count());
+        $this->assertSame(0, QuotaReservation::count());
+    }
+
+    public function test_other_integrity_errors_are_not_treated_as_existing(): void
+    {
+        // An SQLSTATE 23000 that is not a unique violation (e.g. a foreign key failure) must not look like "already started".
+        $key = $this->createProposal();
+        $this->fakeBothPublic();
+        DB::connection()->beforeExecuting(function (string $sql, array $bindings, Connection $connection) {
+            if (preg_match('/^insert into ["`]?playlist_creations["`]?/i', $sql) !== 1) {
+                return;
+            }
+            $pdo = new class('SQLSTATE[23000]: Integrity constraint violation: 1452 foreign key constraint fails') extends \PDOException
+            {
+                public function __construct(string $message)
+                {
+                    parent::__construct($message);
+                    $this->code = '23000';
+                }
+            };
+            throw new QueryException($connection->getName(), $sql, $bindings, $pdo);
+        });
+
+        $this->withoutExceptionHandling();
+        try {
+            $this->actAsOwner($this->channelId)->start($key, $this->body());
+            $this->fail('The integrity error was swallowed');
+        } catch (QueryException $e) {
+            $this->assertNotInstanceOf(UniqueConstraintViolationException::class, $e);
+            $this->assertSame('23000', (string) $e->getCode()); // the original error is rethrown as is
+        }
+        $this->assertSame(0, PlaylistCreation::count());
         $this->assertSame(0, QuotaReservation::count());
     }
 

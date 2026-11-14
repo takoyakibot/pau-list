@@ -125,13 +125,18 @@ class CreationRunnerTest extends TestCase
 
             $r = $this->step($c);
             $c->refresh();
-            $this->assertSame([PlaylistCreation::CREATING_PLAYLIST, null, null, 2000], [$c->status, $c->playlist_leased_at, $c->youtube_playlist_id, $r->nextDelayMs], $case);
+            $this->assertSame([PlaylistCreation::CREATING_PLAYLIST, null, 10000], [$c->status, $c->youtube_playlist_id, $r->nextDelayMs], $case);
+            // The lease is kept but backdated: reconciling waits 10 s (read-after-write lag).
+            $this->assertEquals(now()->toImmutable()->startOfSecond()->subSeconds(50), $c->playlist_leased_at, $case);
+            $this->assertSame(1000, $this->step($c)->nextDelayMs, $case);
+            $this->assertCount(0, Http::recorded(fn (Request $r) => $r->method() === 'GET'), $case);
 
-            // Next step: reconcile (playlists.list), adopt what was created, no second insert.
-            $this->fakeMyPlaylists([['id' => 'PLmade', 'title' => $c->title, 'publishedAt' => now()->utc()->format('Y-m-d\TH:i:s\Z')]]);
+            // 10 s later: reconcile (playlists.list), adopt what was created, no second insert.
+            $this->travel(10)->seconds();
+            $this->fakeMyPlaylists([['id' => 'PLmade-'.$case, 'title' => $c->title, 'description' => $c->description, 'publishedAt' => now()->utc()->format('Y-m-d\TH:i:s\Z')]]);
             $this->step($c);
             $c->refresh();
-            $this->assertSame([PlaylistCreation::ADDING, 'PLmade'], [$c->status, $c->youtube_playlist_id], $case);
+            $this->assertSame([PlaylistCreation::ADDING, 'PLmade-'.$case], [$c->status, $c->youtube_playlist_id], $case);
             $this->assertSame(1, $sent, $case);
             $this->assertSame(50, QuotaReservation::where('creation_id', $c->id)->sole()->consumed_units, $case);
         }
@@ -146,7 +151,7 @@ class CreationRunnerTest extends TestCase
         // One playlist with the same title published since the attempt (minus 60 s) → adopted, nothing inserted.
         $c = $make();
         $this->fakeMyPlaylists([
-            ['id' => 'PLnew', 'title' => $c->title, 'publishedAt' => $iso($t->subSeconds(30))],
+            ['id' => 'PLnew', 'title' => $c->title, 'description' => $c->description, 'publishedAt' => $iso($t->subSeconds(30))],
             ['id' => 'PLold', 'title' => $c->title, 'publishedAt' => $iso($t->subHours(2))],
             ['id' => 'PLother', 'title' => '別の名前', 'publishedAt' => $iso($t->addSecond())],
         ]);
@@ -403,12 +408,14 @@ class CreationRunnerTest extends TestCase
             $r = $this->step($c);
             if ($this->itemInserts()->count() > $before) {
                 $sendDelays[] = $r->nextDelayMs;
-                $this->assertSame(['in_flight', null], [$this->item($c, 0)->status, $this->item($c, 0)->leased_at]);
+                $this->assertSame('in_flight', $this->item($c, 0)->status);
+                $this->assertEquals(now()->toImmutable()->startOfSecond()->subSeconds(50), $this->item($c, 0)->leased_at);
             }
+            $this->travel(10)->seconds();
         }
         $item = $this->item($c, 0);
 
-        $this->assertSame([2000, 4000, 8000, 16000, 32000, 1000], $sendDelays); // no backoff after the last send: reconcile, then fail
+        $this->assertSame([10000, 10000, 10000, 16000, 32000, 10000], $sendDelays); // at least 10 s before reconciling
         $this->assertCount(6, $this->itemInserts());
         $lists = Http::recorded(fn (Request $r) => $r->method() === 'GET')->count();
         $this->assertSame(6, $lists); // one reconciliation after every uncertain send
@@ -477,7 +484,7 @@ class CreationRunnerTest extends TestCase
 
     public function test_playlist_level_item_errors_stop_the_creation_instead_of_failing_items(): void
     {
-        foreach ([[404, 'playlistNotFound'], [403, 'playlistItemsNotAccessible'], [403, 'insufficientPermissions'], [403, 'playlistContainsMaximumNumberOfVideos'], [400, 'manualSortRequired']] as [$status, $reason]) {
+        foreach ([[404, 'playlistNotFound'], [403, 'playlistItemsNotAccessible'], [403, 'insufficientPermissions'], [403, 'playlistContainsMaximumNumberOfVideos'], [400, 'manualSortRequired'], [400, 'invalidPlaylistItemPosition']] as [$status, $reason]) {
             $this->resetHttp();
             $c = $this->adding(3);
             $this->fakePlaylistItemInsert([[$status, $reason]]);
@@ -590,10 +597,18 @@ class CreationRunnerTest extends TestCase
             throw new ConnectionException('timed out');
         });
         $r = $this->step($c);
-        $this->assertSame(2000, $r->nextDelayMs);
-        $this->assertSame(['in_flight', null, 1], [$this->item($c, 0)->status, $this->item($c, 0)->leased_at, $this->item($c, 0)->attempts]);
-
+        $this->assertSame(10000, $r->nextDelayMs);
+        $this->assertSame(['in_flight', 1], [$this->item($c, 0)->status, $this->item($c, 0)->attempts]);
         $this->fakePlaylistItemsList(['v0000000000' => 'Ilate']);
+
+        // Within 10 s: busy (no read, no send).
+        $this->travel(9)->seconds();
+        $this->assertSame(1000, $this->step($c)->nextDelayMs);
+        $this->assertCount(0, Http::recorded(fn (Request $r) => $r->method() === 'GET'));
+        $this->assertSame('in_flight', $this->item($c, 0)->status);
+
+        // 10 s after the send: reconciled.
+        $this->travel(1)->seconds();
         $this->step($c);
         $this->assertSame(['done', 'Ilate'], [$this->item($c, 0)->status, $this->item($c, 0)->youtube_item_id]);
         $this->assertSame(1, $sent); // reconciled, not sent again
@@ -711,6 +726,7 @@ class CreationRunnerTest extends TestCase
         $c = $this->makeCreation(1, ['title' => '秘密の名前'], reserve: 100);
         $this->fakePlaylistInsert(status: 500, reason: 'backendError');
         $this->step($c);
+        $this->travel(10)->seconds();
         $this->fakeMyPlaylists([]);
         $this->step($c);
         $this->assertNotEmpty($logged);
@@ -721,5 +737,100 @@ class CreationRunnerTest extends TestCase
         foreach (['playlist_creations', 'playlist_creation_items', 'quota_reservations'] as $table) {
             $this->assertStringNotContainsString('ya29', json_encode(DB::table($table)->get()));
         }
+    }
+
+    // ---- fix round 1 ----
+
+    public function test_reconcile_never_adopts_another_creations_playlist(): void
+    {
+        $t = now()->toImmutable()->subSeconds(20);
+        $iso = fn (CarbonImmutable $at) => $at->utc()->format('Y-m-d\TH:i:s\Z');
+        // P1 (same title and description, started a few seconds earlier) has its playlist; P2's insert timed out.
+        $p1 = $this->adding(2, attrs: ['youtube_playlist_id' => 'PLfirst0001']);
+        $p2 = $this->makeCreation(2, ['status' => PlaylistCreation::CREATING_PLAYLIST, 'playlist_attempted_at' => $t, 'playlist_attempts' => 1], reserve: 150);
+        $this->assertSame([$p1->title, $p1->description], [$p2->title, $p2->description]);
+
+        // Only P1's playlist is listed → P2 was not created: insert next, never adopt P1's.
+        $this->fakeMyPlaylists([['id' => 'PLfirst0001', 'title' => $p2->title, 'description' => $p2->description, 'publishedAt' => $iso($t->subSeconds(5))]]);
+        $this->step($p2);
+        $p2->refresh();
+        $this->assertSame([PlaylistCreation::PENDING, null], [$p2->status, $p2->youtube_playlist_id]);
+
+        // Both listed → P2 adopts its own one.
+        $this->resetHttp();
+        $p2->update(['status' => PlaylistCreation::CREATING_PLAYLIST, 'playlist_leased_at' => null]);
+        $this->fakeMyPlaylists([
+            ['id' => 'PLsecond002', 'title' => $p2->title, 'description' => $p2->description, 'publishedAt' => $iso($t->addSecond())],
+            ['id' => 'PLfirst0001', 'title' => $p2->title, 'description' => $p2->description, 'publishedAt' => $iso($t->subSeconds(5))],
+        ]);
+        $this->step($p2);
+        $this->assertSame([PlaylistCreation::ADDING, 'PLsecond002'], [$p2->refresh()->status, $p2->youtube_playlist_id]);
+        $this->assertSame('PLfirst0001', $p1->refresh()->youtube_playlist_id);
+        $this->assertCount(0, $this->playlistInserts());
+    }
+
+    public function test_reconcile_with_title_match_but_other_description_needs_check(): void
+    {
+        $c = $this->makeCreation(1, ['status' => PlaylistCreation::CREATING_PLAYLIST, 'playlist_attempted_at' => now(), 'playlist_attempts' => 1], reserve: 100);
+        $this->fakeMyPlaylists([['id' => 'PLsimilar01', 'title' => $c->title, 'description' => '別の説明', 'publishedAt' => now()->utc()->format('Y-m-d\TH:i:s\Z')]]);
+        $this->step($c);
+        // Neither adopted nor inserted again: the owner checks.
+        $this->assertSame([PlaylistCreation::NEEDS_CHECK, null], [$c->refresh()->status, $c->youtube_playlist_id]);
+        $this->assertCount(0, $this->playlistInserts());
+    }
+
+    public function test_item_reconcile_reads_past_owner_added_videos_and_needs_check_beyond_the_cap(): void
+    {
+        // The owner added many videos by hand: ours is on page 3 although the creation has 2 items.
+        $c = $this->adding(2);
+        $this->item($c, 0)->update(['status' => 'in_flight', 'leased_at' => null, 'attempts' => 1]);
+        $map = [];
+        for ($i = 0; $i < 120; $i++) {
+            $map[sprintf('o%010d', $i)] = 'O'.$i;
+        }
+        $map['v0000000000'] = 'Iours';
+        $this->fakePlaylistItemsList($map);
+        $this->step($c);
+        $this->assertSame(['done', 'Iours'], [$this->item($c, 0)->status, $this->item($c, 0)->youtube_item_id]);
+        $this->assertSame(3, $this->ledger()->used(QuotaLedger::OWNER_READ));
+
+        // More than 20 pages and ours not seen → cannot tell: needs_check, nothing resent.
+        $this->resetHttp();
+        $c = $this->adding(2);
+        $this->item($c, 0)->update(['status' => 'in_flight', 'leased_at' => null, 'attempts' => 1]);
+        $map = [];
+        for ($i = 0; $i < 20 * 50 + 1; $i++) {
+            $map[sprintf('o%010d', $i)] = 'O'.$i;
+        }
+        $this->fakePlaylistItemsList($map);
+        $this->fakePlaylistItemInsert([]);
+        $this->step($c);
+        $this->assertSame(PlaylistCreation::NEEDS_CHECK, $c->refresh()->status);
+        $this->assertSame('in_flight', $this->item($c, 0)->status);
+        $this->assertSame(3 + CreationRunner::RECONCILE_MAX_PAGES, $this->ledger()->used(QuotaLedger::OWNER_READ));
+        $this->assertCount(0, $this->itemInserts());
+    }
+
+    public function test_late_playlist_success_after_another_id_was_adopted_is_logged(): void
+    {
+        $logged = [];
+        Event::listen(MessageLogged::class, function (MessageLogged $e) use (&$logged) {
+            $logged[] = [$e->level, $e->message, $e->context];
+        });
+        $c = $this->makeCreation(1, reserve: 100);
+        Http::fake(function (Request $r) use ($c) {
+            // While this insert was slow, another step reconciled and adopted a playlist.
+            PlaylistCreation::whereKey($c->id)->update(['youtube_playlist_id' => 'PLadopted9999', 'status' => PlaylistCreation::ADDING, 'playlist_leased_at' => null]);
+
+            return Http::response(['kind' => 'youtube#playlist', 'id' => 'PLlate000123']);
+        });
+        $this->step($c);
+
+        $this->assertSame('PLadopted9999', $c->refresh()->youtube_playlist_id);
+        $late = array_values(array_filter($logged, fn ($l) => $l[1] === 'Creation late playlist insert'));
+        $this->assertCount(1, $late);
+        $this->assertSame('warning', $late[0][0]);
+        $this->assertSame(['creation_id' => $c->id, 'kept' => 'PLadopte', 'late' => 'PLlate00'], $late[0][2]);
+        $this->assertStringNotContainsString('PLlate000123', json_encode($logged));
     }
 }

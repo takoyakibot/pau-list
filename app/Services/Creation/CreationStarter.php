@@ -15,7 +15,7 @@ use App\Support\OwnerLogin;
 use App\Support\QuotaClock;
 use App\Support\QuotaPolicy;
 use App\Support\RemainingToday;
-use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -73,14 +73,11 @@ class CreationStarter
                         'estimated_units' => $estimated,
                         'started_at' => now(),
                     ]);
-                } catch (QueryException $e) {
+                } catch (UniqueConstraintViolationException) {
                     // Last line of defense against a double start (spec 7.2): another request created it after our
                     // checks. Only this statement failed and nothing else was written: commit and read the other
                     // request's row after the transaction (a fresh read; no creation-row lock under the write lock).
-                    if (self::isUniqueViolation($e)) {
-                        return null;
-                    }
-                    throw $e;
+                    return null;
                 }
 
                 foreach ($ids as $position => $id) {
@@ -100,10 +97,7 @@ class CreationStarter
 
                 return new StartedCreation($creation, true);
             });
-        } catch (QueryException $e) {
-            if (! self::isUniqueViolation($e)) {
-                throw $e;
-            }
+        } catch (UniqueConstraintViolationException) {
             $started = null;
         }
         if ($started === null) {
@@ -168,10 +162,5 @@ class CreationStarter
             new RemainingToday(QuotaPolicy::itemsAffordable($lock->free()), QuotaClock::nextResetJst()),
             $n,
         );
-    }
-
-    private static function isUniqueViolation(QueryException $e): bool
-    {
-        return (string) $e->getCode() === '23000';
     }
 }
