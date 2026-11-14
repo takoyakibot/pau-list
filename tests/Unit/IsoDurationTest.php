@@ -17,5 +17,6 @@ class IsoDurationTest extends TestCase
         $this->assertNull(IsoDuration::toSeconds(null));
         $this->assertNull(IsoDuration::toSeconds('P'));
         $this->assertNull(IsoDuration::toSeconds('PT'));
+        $this->assertNull(IsoDuration::toSeconds('P99999999999999999999D'));
     }
 }

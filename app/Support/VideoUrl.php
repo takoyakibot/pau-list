@@ -6,7 +6,7 @@ final class VideoUrl
 {
     public const MAX_LENGTH = 200;
 
-    public const ID_PATTERN = '/^[A-Za-z0-9_-]{11}$/';
+    public const ID_PATTERN = '/^[A-Za-z0-9_-]{11}$/D';
 
     private const HOSTS = ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com'];
 
@@ -25,7 +25,7 @@ final class VideoUrl
         }
         $parts = parse_url($input);
         if ($parts === false
-            || ! in_array($parts['scheme'] ?? '', ['http', 'https'], true)
+            || ! in_array(strtolower($parts['scheme'] ?? ''), ['http', 'https'], true)
             || isset($parts['user']) || isset($parts['port'])) {
             return null;
         }
@@ -33,7 +33,7 @@ final class VideoUrl
         $path = $parts['path'] ?? '';
 
         if ($host === 'youtu.be') {
-            return self::fromPath('#^/([^/]+)/?$#', $path);
+            return self::fromPath('#^/([^/]+)/?\z#', $path);
         }
         if (! in_array($host, self::HOSTS, true)) {
             return null;
@@ -45,7 +45,7 @@ final class VideoUrl
             return is_string($v) && preg_match(self::ID_PATTERN, $v) === 1 ? $v : null;
         }
 
-        return self::fromPath('#^/(?:shorts|embed|live)/([^/]+)/?$#', $path);
+        return self::fromPath('#^/(?:shorts|embed|live)/([^/]+)/?\z#', $path);
     }
 
     private static function fromPath(string $pattern, string $path): ?string

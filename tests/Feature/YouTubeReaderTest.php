@@ -167,4 +167,36 @@ class YouTubeReaderTest extends TestCase
             $this->assertSame(YouTubeErrorKind::Unknown, $e->error->kind);
         }
     }
+
+    public function test_response_ids_are_validated_and_titles_clipped(): void
+    {
+        $this->fakeChannel($this->cid(), ['uploads' => 'PLbad']);
+        $this->assertNull(app(YouTubeReader::class)->channel(ChannelRef::id($this->cid())));
+
+        $pl = 'UU'.str_repeat('a', 22);
+        $this->fakeUploads($pl, [[
+            $this->uploadItem('bad id', '2025-03-01T00:00:00Z'),
+            $this->uploadItem('aaaaaaaaaaa', 'next monday', 'public', str_repeat('あ', 300)),
+        ]]);
+        $page = app(YouTubeReader::class)->uploadsPage($pl, null);
+        $this->assertCount(1, $page->items);
+        $this->assertNull($page->items[0]->publishedAt);
+        $this->assertSame(200, mb_strlen($page->items[0]->title));
+    }
+
+    public function test_videos_filters_invalid_ids_before_sending(): void
+    {
+        $this->fakeVideos([$this->videoResource('dQw4w9WgXcQ', $this->cid())]);
+        $result = app(YouTubeReader::class)->videos(['dQw4w9WgXcQ,injected000', 'dQw4w9WgXcQ']);
+        $this->assertSame(['dQw4w9WgXcQ'], array_keys($result));
+        Http::assertSent(fn (Request $r) => ! str_contains($r->url(), 'injected') && $r->hasHeader('X-Goog-Api-Key'));
+    }
+
+    public function test_playlist_not_found_is_not_logged(): void
+    {
+        Log::spy();
+        $this->fakeUploads('UU'.str_repeat('a', 22), []);
+        app(YouTubeReader::class)->uploadsPage('UU'.str_repeat('a', 22), null);
+        Log::shouldNotHaveReceived('warning');
+    }
 }

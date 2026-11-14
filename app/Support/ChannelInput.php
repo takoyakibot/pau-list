@@ -6,9 +6,9 @@ final class ChannelInput
 {
     public const MAX_LENGTH = 200;
 
-    public const ID_PATTERN = '/^UC[A-Za-z0-9_-]{22}$/';
+    public const ID_PATTERN = '/^UC[A-Za-z0-9_-]{22}$/D';
 
-    private const HANDLE_PATTERN = '/^[\p{L}\p{N}._-]{3,30}$/u';
+    private const HANDLE_PATTERN = '/^[\p{L}\p{N}._-]{3,30}$/Du';
 
     private const HOSTS = ['youtube.com', 'www.youtube.com', 'm.youtube.com'];
 
@@ -41,17 +41,17 @@ final class ChannelInput
         }
         $parts = parse_url($input);
         if ($parts === false
-            || ! in_array($parts['scheme'] ?? '', ['http', 'https'], true)
+            || ! in_array(strtolower($parts['scheme'] ?? ''), ['http', 'https'], true)
             || ! in_array(strtolower($parts['host'] ?? ''), self::HOSTS, true)
             || isset($parts['user']) || isset($parts['port'])) {
             return null;
         }
 
         $path = rawurldecode($parts['path'] ?? '');
-        if (preg_match('#^/channel/(UC[A-Za-z0-9_-]{22})(?:/|$)#', $path, $m) === 1) {
+        if (preg_match('#^/channel/(UC[A-Za-z0-9_-]{22})(?:/|\z)#', $path, $m) === 1) {
             return ChannelRef::id($m[1]);
         }
-        if (preg_match('#^/@([^/]+)(?:/|$)#u', $path, $m) === 1) {
+        if (preg_match('#^/@([^/]+)(?:/|\z)#u', $path, $m) === 1) {
             return self::handle($m[1]);
         }
 

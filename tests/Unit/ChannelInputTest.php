@@ -38,4 +38,12 @@ class ChannelInputTest extends TestCase
             $this->assertNull(ChannelInput::parse($bad), $bad);
         }
     }
+
+    public function test_trailing_newline_rejected_and_uppercase_scheme_host_accepted(): void
+    {
+        $this->assertNull(ChannelInput::parse('https://www.youtube.com/@foo%0A/videos'));
+        $this->assertNull(ChannelInput::parse('https://www.youtube.com/@foo%0A'));
+        $this->assertSame(['handle', 'x.y'], self::pair(ChannelInput::parse('HTTPS://www.youtube.com/@X.Y')));
+        $this->assertSame(['handle', 'xyz'], self::pair(ChannelInput::parse('HTTPS://WWW.YOUTUBE.COM/@xyz')));
+    }
 }

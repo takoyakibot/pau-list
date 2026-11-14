@@ -24,4 +24,11 @@ class VideoUrlTest extends TestCase
             $this->assertNull(VideoUrl::extractId($in), $in);
         }
     }
+
+    public function test_rejects_trailing_newline_and_accepts_uppercase_scheme_host(): void
+    {
+        $this->assertNull(VideoUrl::extractId('https://www.youtube.com/watch?v=dQw4w9WgXcQ%0A'));
+        $this->assertNull(VideoUrl::extractId("dQw4w9WgXcQ\n".'x'));
+        $this->assertSame('dQw4w9WgXcQ', VideoUrl::extractId('HTTPS://YOUTU.BE/dQw4w9WgXcQ'));
+    }
 }

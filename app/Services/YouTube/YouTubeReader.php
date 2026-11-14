@@ -2,8 +2,10 @@
 
 namespace App\Services\YouTube;
 
+use App\Support\ChannelInput;
 use App\Support\ChannelRef;
 use App\Support\IsoDuration;
+use App\Support\VideoUrl;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
@@ -14,6 +16,8 @@ class YouTubeReader
     public const BASE_URL = 'https://www.googleapis.com/youtube/v3/';
 
     private const CHANNEL_THUMB_PREFIXES = ['https://yt3.ggpht.com/', 'https://i.ytimg.com/'];
+
+    private const UPLOADS_PATTERN = '/^UU[A-Za-z0-9_-]{22}$/D';
 
     private const VIDEO_THUMB_PREFIXES = ['https://i.ytimg.com/'];
 
@@ -28,20 +32,21 @@ class YouTubeReader
             $query['forHandle'] = '@'.$ref->value;
         }
 
-        $item = $this->items($this->get('channels', $query, QuotaLedger::READ))[0] ?? null;
+        $item = $this->items($this->get('channels', $query, QuotaLedger::READ), 'channels')[0] ?? null;
         if ($item === null) {
             return null;
         }
         $id = $item['id'] ?? null;
         $uploads = $item['contentDetails']['relatedPlaylists']['uploads'] ?? null;
-        if (! is_string($id) || $id === '' || ! is_string($uploads) || $uploads === '') {
+        if (! is_string($id) || preg_match(ChannelInput::ID_PATTERN, $id) !== 1
+            || ! is_string($uploads) || preg_match(self::UPLOADS_PATTERN, $uploads) !== 1) {
             return null;
         }
         $custom = $item['snippet']['customUrl'] ?? null;
 
         return new ChannelInfo(
             $id,
-            self::str($item['snippet']['title'] ?? null),
+            self::title($item['snippet']['title'] ?? null),
             self::thumbnail($item['snippet']['thumbnails'] ?? null, self::CHANNEL_THUMB_PREFIXES),
             $uploads,
             is_string($custom) && $custom !== '' ? mb_strtolower(ltrim($custom, '@')) : null,
@@ -56,7 +61,7 @@ class YouTubeReader
         }
 
         try {
-            $json = $this->get('playlistItems', $query, QuotaLedger::READ);
+            $json = $this->get('playlistItems', $query, QuotaLedger::READ, true);
         } catch (YouTubeApiException $e) {
             if ($e->error->status === 404 && $e->error->reason === 'playlistNotFound') {
                 return new PlaylistItemsPage([], null);
@@ -65,14 +70,14 @@ class YouTubeReader
         }
 
         $items = [];
-        foreach ($this->items($json) as $item) {
+        foreach ($this->items($json, 'playlistItems') as $item) {
             $videoId = $item['contentDetails']['videoId'] ?? $item['snippet']['resourceId']['videoId'] ?? null;
-            if (! is_string($videoId) || $videoId === '') {
+            if (! is_string($videoId) || preg_match(VideoUrl::ID_PATTERN, $videoId) !== 1) {
                 continue;
             }
             $items[] = new PlaylistItem(
                 $videoId,
-                self::str($item['snippet']['title'] ?? null),
+                self::title($item['snippet']['title'] ?? null),
                 self::thumbnail($item['snippet']['thumbnails'] ?? null, self::VIDEO_THUMB_PREFIXES),
                 self::date($item['contentDetails']['videoPublishedAt'] ?? null),
                 self::str($item['status']['privacyStatus'] ?? null, 'unknown'),
@@ -90,21 +95,22 @@ class YouTubeReader
     public function videos(array $ids, string $bucket = QuotaLedger::READ): array
     {
         $result = [];
-        foreach (array_chunk(array_values(array_unique($ids)), 50) as $chunk) {
+        $ids = array_values(array_unique(array_filter($ids, fn ($id) => is_string($id) && preg_match(VideoUrl::ID_PATTERN, $id) === 1)));
+        foreach (array_chunk($ids, 50) as $chunk) {
             $json = $this->get('videos', [
                 'part' => 'snippet,contentDetails,status',
                 'id' => implode(',', $chunk),
                 'maxResults' => 50,
             ], $bucket);
 
-            foreach ($this->items($json) as $item) {
+            foreach ($this->items($json, 'videos') as $item) {
                 $id = $item['id'] ?? null;
                 if (! is_string($id) || ! in_array($id, $chunk, true)) {
                     continue;
                 }
                 $result[$id] = new VideoInfo(
                     $id,
-                    self::str($item['snippet']['title'] ?? null),
+                    self::title($item['snippet']['title'] ?? null),
                     self::thumbnail($item['snippet']['thumbnails'] ?? null, self::VIDEO_THUMB_PREFIXES),
                     self::str($item['snippet']['channelId'] ?? null),
                     self::str($item['snippet']['channelTitle'] ?? null),
@@ -119,7 +125,7 @@ class YouTubeReader
     }
 
     /** @return array<string, mixed> */
-    private function get(string $endpoint, array $query, string $bucket): array
+    private function get(string $endpoint, array $query, string $bucket, bool $tolerateMissingPlaylist = false): array
     {
         if ($bucket === QuotaLedger::READ) {
             if (! $this->ledger->tryConsumeRead(1)) {
@@ -134,13 +140,18 @@ class YouTubeReader
                 ->acceptJson()
                 ->connectTimeout(5)
                 ->timeout(15)
+                ->withoutRedirecting()
                 ->get(self::BASE_URL.$endpoint, $query);
         } catch (ConnectionException) {
             throw $this->fail($endpoint, YouTubeError::connection());
         }
 
         if (! $response->successful()) {
-            throw $this->fail($endpoint, YouTubeError::fromResponse($response));
+            $error = YouTubeError::fromResponse($response);
+            if ($tolerateMissingPlaylist && $error->status === 404 && $error->reason === 'playlistNotFound') {
+                throw new YouTubeApiException($error);
+            }
+            throw $this->fail($endpoint, $error);
         }
         $json = $response->json();
         if (! is_array($json)) {
@@ -163,11 +174,11 @@ class YouTubeReader
     }
 
     /** @return list<array<string, mixed>> */
-    private function items(array $json): array
+    private function items(array $json, string $endpoint): array
     {
         $items = $json['items'] ?? [];
         if (! is_array($items)) {
-            throw $this->fail('response', YouTubeError::malformed());
+            throw $this->fail($endpoint, YouTubeError::malformed());
         }
 
         return array_values(array_filter($items, 'is_array'));
@@ -178,9 +189,14 @@ class YouTubeReader
         return is_string($value) ? $value : $default;
     }
 
+    private static function title(mixed $value): string
+    {
+        return mb_substr(self::str($value), 0, 200);
+    }
+
     private static function date(mixed $value): ?CarbonImmutable
     {
-        if (! is_string($value) || $value === '') {
+        if (! is_string($value) || preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/D', $value) !== 1) {
             return null;
         }
         try {
