@@ -339,7 +339,9 @@ class ChannelCatalogImportTest extends TestCase
         $this->travelTo(CarbonImmutable::parse('2026-11-14 03:00:00'));
         $this->importInitial();
         $this->travelTo(CarbonImmutable::parse('2026-12-14 03:00:00'));
-        $lock = Cache::lock('channel-fetch:'.$this->id, 60);
+        Sleep::fake(syncWithCarbon: true);
+        // held longer than expireStale waits (the lock TTL): skipped after waiting
+        $lock = Cache::lock('channel-fetch:'.$this->id, 600);
         $this->assertTrue($lock->get());
 
         $this->assertSame(0, $this->catalog()->expireStale());

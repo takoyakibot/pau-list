@@ -10,6 +10,7 @@ use App\Services\YouTube\YouTubeApiException;
 use App\Services\YouTube\YouTubeReader;
 use App\Support\ChannelRef;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
@@ -101,30 +102,58 @@ class ChannelVideoCatalog
         });
     }
 
-    public function expireStale(): int
+    /**
+     * Expires every channel whose expires_at <= $cutoff (default: now). The prune batch passes now + 24h so that,
+     * running daily, no channel outlives its displayed delete date.
+     */
+    public function expireStale(?CarbonInterface $cutoff = null): int
     {
+        $cutoff ??= now();
         // Collect ids first: deleting while chunking by offset would skip rows.
-        $ids = ChannelCache::query()->where('expires_at', '<=', now())->pluck('channel_id');
+        $ids = ChannelCache::query()->where('expires_at', '<=', $cutoff)->pluck('channel_id');
         $count = 0;
+        $skipped = [];
         foreach ($ids as $id) {
-            // Skip channels being imported right now; the import itself refuses to keep an expired row,
-            // and the next batch (or the next load) expires it.
+            // Do not wait on a channel being imported right now; retry it after the others.
             $lock = $this->lock($id);
             if (! $lock->get()) {
+                $skipped[] = $id;
+
                 continue;
             }
+            $count += $this->expireLocked($id, $lock, $cutoff);
+        }
+
+        // Imports are bounded (deadline ~30s + writes), so waiting up to the lock TTL lets the batch
+        // still delete a channel that was being imported when it started.
+        foreach ($skipped as $id) {
+            $lock = $this->lock($id);
             try {
-                $cache = $this->find($id);
-                if ($cache !== null && $cache->expires_at->lessThanOrEqualTo(now())) {
-                    $this->expire($cache);
-                    $count++;
-                }
-            } finally {
-                $lock->release();
+                $lock->block(self::LOCK_SECONDS);
+            } catch (LockTimeoutException) {
+                continue; // the next run (or the next load, once expired) handles it
             }
+            $count += $this->expireLocked($id, $lock, $cutoff);
         }
 
         return $count;
+    }
+
+    /** Runs with $lock held and releases it. Re-checks expiry under the lock. */
+    private function expireLocked(string $id, Lock $lock, CarbonInterface $cutoff): int
+    {
+        try {
+            $cache = $this->find($id);
+            if ($cache !== null && $cache->expires_at->lessThanOrEqualTo($cutoff)) {
+                $this->expire($cache);
+
+                return 1;
+            }
+
+            return 0;
+        } finally {
+            $lock->release();
+        }
     }
 
     private function import(string $channelId, ?ChannelCache $existing): CatalogResult

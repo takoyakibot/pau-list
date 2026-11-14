@@ -12,7 +12,7 @@
         @if ($proposal->description !== '')
             <p class="mt-2 whitespace-pre-line break-words text-sm">{{ $proposal->description }}</p>
         @endif
-        <p class="mt-2 text-sm">{{ $proposal->item_count }} 本・合計 {{ \App\Support\DurationFormat::total($totalSeconds) }}</p>
+        <p class="mt-2 text-sm">{{ $proposal->item_count }} 本・合計 {{ \App\Support\DurationFormat::total($totalSeconds) }}@if ($hasUnknownDuration)（長さ不明の動画を除く）@endif</p>
     </header>
 
     <section class="mt-6 space-y-1 text-sm">

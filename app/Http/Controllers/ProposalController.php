@@ -166,6 +166,7 @@ class ProposalController extends Controller
             'proposal' => $proposal,
             'items' => $items,
             'totalSeconds' => (int) $items->sum('duration_seconds'),
+            'hasUnknownDuration' => $items->contains(fn ($item) => $item->duration_seconds === null),
             'remaining' => $ledger->remainingToday(),
         ]);
     }

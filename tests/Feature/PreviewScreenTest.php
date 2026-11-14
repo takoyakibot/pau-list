@@ -109,6 +109,21 @@ class PreviewScreenTest extends TestCase
         $res->assertSeeInOrder(['動画 A', '動画 B']);
     }
 
+    public function test_total_notes_videos_with_unknown_duration(): void
+    {
+        $key = $this->makeProposal([], [
+            ['video_id' => 'aaaaaaaaaaa', 'title' => '動画 A', 'duration_seconds' => 65, 'is_outside_channel' => false],
+            ['video_id' => 'bbbbbbbbbbb', 'title' => '動画 B', 'duration_seconds' => null, 'is_outside_channel' => false],
+        ]);
+        $this->get(route('proposals.show', $key))->assertOk()
+            ->assertSee('合計 1 分（長さ不明の動画を除く）');
+
+        $known = $this->makeProposal();
+        $this->get(route('proposals.show', $known))->assertOk()
+            ->assertSee('合計 1 時間 2 分')
+            ->assertDontSee('長さ不明');
+    }
+
     public function test_shows_reset_time_when_items_exceed_remaining(): void
     {
         // 5000 - 4851 = 149 units → floor((149 - 50) / 50) = 1 item left

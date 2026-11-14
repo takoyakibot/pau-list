@@ -5,13 +5,23 @@ namespace App\Console\Commands;
 use App\Services\ChannelVideoCatalog;
 use App\Support\QuotaClock;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class PruneExpiredData extends Command
 {
     /** quota_usage holds no YouTube data; kept for 90 days (spec 4.3). */
     public const QUOTA_USAGE_RETENTION_DAYS = 90;
+
+    /**
+     * The batch runs once a day, so it deletes everything that expires before the next run:
+     * nothing outlives its displayed delete date (display still hides rows at expires_at <= now()).
+     */
+    public const LOOKAHEAD_HOURS = 24;
 
     private const CHUNK = 500;
 
@@ -19,47 +29,54 @@ class PruneExpiredData extends Command
 
     protected $description = '保持期限切れのデータを削除する（4.3）';
 
+    private bool $failed = false;
+
     public function handle(ChannelVideoCatalog $catalog): int
     {
-        $now = now();
+        $this->failed = false;
+        $now = now()->toImmutable();
+        $cutoff = $now->addHours(self::LOOKAHEAD_HOURS);
         $timestamp = $now->getTimestamp();
 
-        $this->report('proposals', $this->pruneProposals());
+        $this->step('proposals', fn () => $this->pruneProposals($cutoff));
 
         // Per-channel lock path: deletes the channel row and all its video rows and records the expiration.
-        $this->report('channel_caches', $catalog->expireStale());
+        $this->step('channel_caches', fn () => $catalog->expireStale($cutoff));
 
-        $this->report('channel_cache_expirations', DB::table('channel_cache_expirations')
-            ->where('expired_at', '<=', $now->copy()->subDays((int) config('listmaker.retention_days')))
+        $this->step('channel_cache_expirations', fn () => DB::table('channel_cache_expirations')
+            ->where('expired_at', '<=', $cutoff->subDays((int) config('listmaker.retention_days')))
             ->delete());
 
-        $cutoffDay = CarbonImmutable::parse(QuotaClock::todayPt())
-            ->subDays(self::QUOTA_USAGE_RETENTION_DAYS)
-            ->format('Y-m-d');
-        $this->report('quota_usage', DB::table('quota_usage')->where('day_pt', '<', $cutoffDay)->delete());
+        $this->step('quota_usage', function () {
+            $cutoffDay = CarbonImmutable::parse(QuotaClock::todayPt())
+                ->subDays(self::QUOTA_USAGE_RETENTION_DAYS)
+                ->format('Y-m-d');
+
+            return DB::table('quota_usage')->where('day_pt', '<', $cutoffDay)->delete();
+        });
 
         // The database cache store never deletes expired rows by itself.
-        $this->report('cache', DB::table(config('cache.stores.database.table') ?: 'cache')
+        $this->step('cache', fn () => DB::table(config('cache.stores.database.table') ?: 'cache')
             ->where('expiration', '<=', $timestamp)
             ->delete());
-        $this->report('cache_locks', DB::table(config('cache.stores.database.lock_table') ?: 'cache_locks')
+        $this->step('cache_locks', fn () => DB::table(config('cache.stores.database.lock_table') ?: 'cache_locks')
             ->where('expiration', '<=', $timestamp)
             ->delete());
 
-        $this->report('sessions', DB::table(config('session.table') ?: 'sessions')
+        $this->step('sessions', fn () => DB::table(config('session.table') ?: 'sessions')
             ->where('last_activity', '<', $timestamp - (int) config('session.lifetime') * 60)
             ->delete());
 
-        return self::SUCCESS;
+        return $this->failed ? self::FAILURE : self::SUCCESS;
     }
 
     /** Deletes expired proposals and their items in chunks (items explicitly, not only via FK cascade). */
-    private function pruneProposals(): int
+    private function pruneProposals(CarbonInterface $cutoff): int
     {
         $deleted = 0;
         do {
             $ids = DB::table('proposals')
-                ->where('expires_at', '<=', now())
+                ->where('expires_at', '<=', $cutoff)
                 ->orderBy('id')
                 ->limit(self::CHUNK)
                 ->pluck('id')
@@ -77,8 +94,19 @@ class PruneExpiredData extends Command
         return $deleted;
     }
 
-    private function report(string $table, int $count): void
+    /** Runs one step; a failure is logged (step name and SQLSTATE only, never SQL or bindings) and the rest still run. */
+    private function step(string $name, callable $fn): void
     {
-        $this->line("{$table}: {$count}");
+        try {
+            $this->line("{$name}: ".(int) $fn());
+        } catch (Throwable $e) {
+            $this->failed = true;
+            Log::error('Prune step failed', [
+                'step' => $name,
+                'sqlstate' => $e instanceof QueryException ? (string) $e->getCode() : null,
+                'exception' => $e::class,
+            ]);
+            $this->error("{$name}: failed");
+        }
     }
 }
