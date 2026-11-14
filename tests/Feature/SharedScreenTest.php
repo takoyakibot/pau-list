@@ -55,7 +55,7 @@ class SharedScreenTest extends TestCase
         $res->assertSee('data-channel-title="チャンネル &lt;A&gt;"', false);
         $res->assertSee('data-channel-id="'.$this->id.'"', false);
         $res->assertSee('data-expires-at="2026-12-14T03:00:00Z"', false);
-        $res->assertSee('有効期限: 12月14日（この日を過ぎると削除されます）');
+        $res->assertSee('有効期限: 12月14日までに削除されます');
         $res->assertSee('この URL を知っている人は誰でも閲覧できます');
         $res->assertSee('この URL は再表示できません。必ず控えてください');
         $res->assertSee('href="'.$url.'"', false);

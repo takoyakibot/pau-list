@@ -17,7 +17,7 @@
 
     <section class="mt-6 space-y-1 text-sm">
         <p>状態: 未作成</p>
-        <p>作成日 {{ $proposal->created_at->timezone('Asia/Tokyo')->format('n月j日') }}／削除予定日 {{ $proposal->expires_at->timezone('Asia/Tokyo')->format('n月j日') }}</p>
+        <p>作成日 {{ $proposal->created_at->timezone('Asia/Tokyo')->format('n月j日') }}／{{ $proposal->expires_at->timezone('Asia/Tokyo')->format('n月j日') }}までに削除されます</p>
     </section>
 
     <section class="mt-6 rounded border border-gray-200 p-4 text-sm" aria-labelledby="proposer-heading">

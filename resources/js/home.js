@@ -40,7 +40,7 @@ function setup() {
     const meta = document.createElement('span');
     meta.className = 'ml-2 text-xs text-gray-600';
     const channel = typeof e.channelTitle === 'string' ? e.channelTitle : '';
-    meta.textContent = `${channel}（${formatDate(e.expiresAt)}に削除）`;
+    meta.textContent = `${channel}（${formatDate(e.expiresAt)}までに削除されます）`;
     li.appendChild(meta);
     list.appendChild(li);
   }

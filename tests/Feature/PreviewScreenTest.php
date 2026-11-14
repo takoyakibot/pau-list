@@ -87,7 +87,7 @@ class PreviewScreenTest extends TestCase
         $res->assertSee('src="https://i.ytimg.com/vi/aaaaaaaaaaa/mqdefault.jpg"', false);
         $res->assertSee('別チャンネル');
         $res->assertSee('匿名');
-        $res->assertSee('作成日 11月14日／削除予定日 12月14日');
+        $res->assertSee('作成日 11月14日／12月14日までに削除されます');
         $res->assertSee('未作成');
         $res->assertSee('1 つの再生リストに入れられるのは最大 99 本');
         $res->assertSee('本日の残り: 再生リスト 1 つ＋動画あと 99 本まで作成できます');
@@ -145,6 +145,8 @@ class PreviewScreenTest extends TestCase
         $c = $this->get('/p/'.str_repeat('a', 42).'!')->assertNotFound();
 
         $a->assertSee('ページが見つかりません');
+        $a->assertSee('提案は作成から 30 日以内に削除されます');
+        $a->assertDontSee('過ぎると');
         $a->assertHeader('X-Robots-Tag', 'noindex, nofollow');
         $this->assertStringContainsString('no-store', (string) $a->headers->get('Cache-Control'));
         $this->assertSame($a->getContent(), $b->getContent());

@@ -51,7 +51,7 @@ class ProposeScreenTest extends TestCase
         $res->assertSee('1 つの再生リストに入れられるのは最大 99 本');
         $res->assertSee('本日の残り: 再生リスト 1 つ＋動画あと 99 本まで作成できます');
         $res->assertSee('作成はチャンネル主が操作した時点の残りで決まります');
-        $res->assertSee('この一覧は 11月14日に取り込み、12月14日に削除されます（削除後に開くと全件を取り込み直します）');
+        $res->assertSee('この一覧は 11月14日に取り込み、12月14日までに削除されます（削除後に開くと全件を取り込み直します）');
         $res->assertSee('一覧の最終取り込み: 11月14日 12時00分');
         $res->assertSee('データ提供: YouTube');
         $res->assertSee('最近公開に切り替えた古い動画などは一覧に出ないことがあります。動画 URL で追加してください');

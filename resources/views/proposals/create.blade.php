@@ -29,7 +29,7 @@
         @if ($reimported)
             <p>前回の一覧は 30 日の保存期限で削除されたため、全件を取り込み直しています</p>
         @endif
-        <p>この一覧は {{ $channel->cached_since->timezone('Asia/Tokyo')->format('n月j日') }}に取り込み、{{ $channel->expires_at->timezone('Asia/Tokyo')->format('n月j日') }}に削除されます（削除後に開くと全件を取り込み直します）</p>
+        <p>この一覧は {{ $channel->cached_since->timezone('Asia/Tokyo')->format('n月j日') }}に取り込み、{{ $channel->expires_at->timezone('Asia/Tokyo')->format('n月j日') }}までに削除されます（削除後に開くと全件を取り込み直します）</p>
         <p>一覧の最終取り込み: {{ $channel->last_synced_at->timezone('Asia/Tokyo')->format('n月j日 G時i分') }}@if ($staleness) <strong>{{ $staleness }}</strong>@endif</p>
         <p>最近公開に切り替えた古い動画などは一覧に出ないことがあります。動画 URL で追加してください</p>
         @if ($channel->truncated)

@@ -28,7 +28,7 @@
         <section class="mt-6 space-y-1 text-sm">
             <p class="font-semibold text-red-700">この URL は再表示できません。必ず控えてください</p>
             <p>この URL を知っている人は誰でも閲覧できます</p>
-            <p>有効期限: {{ $proposal->expires_at->timezone('Asia/Tokyo')->format('n月j日') }}（この日を過ぎると削除されます）</p>
+            <p>有効期限: {{ $proposal->expires_at->timezone('Asia/Tokyo')->format('n月j日') }}までに削除されます</p>
             <p>チャンネル主に共有 URL を送って、内容を確認してもらってください</p>
         </section>
 
