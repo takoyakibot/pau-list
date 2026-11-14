@@ -53,6 +53,7 @@
                 <button type="button" class="ml-3 underline" @click="clearAll">全解除</button>
             </p>
             <p class="text-sm text-red-700" role="alert" x-show="hasLimitMessage" x-text="limitMessage"></p>
+            <p class="text-sm text-red-700" role="alert" x-show="maxItemsMissing" x-cloak>最大本数を読み込めなかったため、動画を選べません。ページを再読み込みしてください</p>
 
             <ul class="max-h-[32rem] divide-y divide-gray-200 overflow-y-auto rounded border border-gray-200">
                 <template x-for="video in filtered" :key="video.id">

@@ -1,8 +1,11 @@
-import { toggleVideo, addVideo, removeVideo, moveVideo, restoreSelection, markUnavailable, selectionFromOldIds } from './lib/selection.js';
+import { toggleVideo, addVideo, removeVideo, moveVideo, restoreSelection, markUnavailable, selectionFromOldIds, maxItemsFrom } from './lib/selection.js';
+import { formatPublishedDate } from './lib/format.js';
 import { filterVideos } from './lib/filter.js';
 import { loadSelection, saveSelection, clearSelection } from './lib/storage.js';
 import { countChars, isOverLimit } from './lib/text.js';
 import { safeStorage } from './lib/safe-storage.js';
+
+const MAX_MISSING = '最大本数を読み込めなかったため、動画を選べません。ページを再読み込みしてください';
 
 const LIMITS = { title: 150, description: 1000, comment: 500, proposerName: 30 };
 
@@ -18,15 +21,11 @@ function counterClass(over) {
   return over ? 'font-semibold text-red-700' : 'text-gray-600';
 }
 
-function formatDate(iso) {
-  return typeof iso === 'string' && iso.length >= 10 ? iso.slice(0, 10).replaceAll('-', '/') : '';
-}
-
 document.addEventListener('alpine:init', () => {
   window.Alpine.data('proposer', () => ({
     channelId: '',
     lookupUrl: '',
-    maxItems: 99,
+    maxItems: 0,
     videos: [],
     catalogById: new Map(),
     query: '',
@@ -47,7 +46,7 @@ document.addEventListener('alpine:init', () => {
       const old = readJson(this.$el, 'old') ?? {};
       this.channelId = String(catalog.channelId ?? '');
       this.lookupUrl = String(catalog.lookupUrl ?? '');
-      this.maxItems = Number(catalog.maxItems) || 99;
+      this.maxItems = maxItemsFrom(catalog);
       this.videos = Array.isArray(catalog.videos) ? catalog.videos : [];
       this.catalogById = new Map(this.videos.map((v) => [v.id, { id: v.id, title: v.title, thumbnail_url: v.thumbnail_url, outside: false }]));
       this.title = old.title ?? '';
@@ -91,7 +90,8 @@ document.addEventListener('alpine:init', () => {
     get descriptionCounterClass() { return counterClass(this.descriptionOver); },
     get commentCounterClass() { return counterClass(this.commentOver); },
     get proposerNameCounterClass() { return counterClass(this.proposerNameOver); },
-    get isSubmitDisabled() { return this.submitting || this.anyOver; },
+    get isSubmitDisabled() { return this.submitting || this.anyOver || this.maxItemsMissing; },
+    get maxItemsMissing() { return this.maxItems === 0; },
     get hasLimitMessage() { return this.limitMessage !== ''; },
     get hasUrlMessage() { return this.urlMessage !== ''; },
     get hasSelection() { return this.selected.length > 0; },
@@ -100,7 +100,7 @@ document.addEventListener('alpine:init', () => {
     // --- per-row helpers (use this.video / this.item from x-for scope) ---
     isSelected() { return this.selected.some((x) => x.id === this.video.id); },
     isCheckDisabled() { return this.isFull && !this.isSelected(); },
-    publishedLabel() { return formatDate(this.video.published_at); },
+    publishedLabel() { return formatPublishedDate(this.video.published_at); },
 
     // --- actions ---
     persist() {
@@ -110,7 +110,9 @@ document.addEventListener('alpine:init', () => {
       this.selected = list;
       this.persist();
     },
-    limitText() { return `選べるのは最大 ${this.maxItems} 本までです`; },
+    limitText() {
+      return this.maxItemsMissing ? MAX_MISSING : `選べるのは最大 ${this.maxItems} 本までです`;
+    },
     toggle() {
       const r = toggleVideo(this.selected, this.catalogById.get(this.video.id) ?? this.video, this.maxItems);
       this.limitMessage = r.error === 'limit' ? this.limitText() : '';
@@ -166,7 +168,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     onSubmit(event) {
-      if (this.anyOver) {
+      if (this.anyOver || this.maxItemsMissing) {
         event.preventDefault();
         return;
       }

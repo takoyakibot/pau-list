@@ -196,7 +196,7 @@ class ProposeScreenTest extends TestCase
         foreach (['x-data="proposer"', 'name="title"', 'name="description"', 'name="comment"', 'name="proposer_name"',
             'name="website"', 'name="video_ids[]"', 'action="'.route('proposals.store', $id).'"',
             ':disabled="isSubmitDisabled"', 'x-show="titleOver"', 'x-show="descriptionOver"', 'x-show="commentOver"',
-            'x-show="proposerNameOver"', 'x-show="anyOver"', ':class="titleCounterClass"'] as $s) {
+            'x-show="proposerNameOver"', 'x-show="anyOver"', ':class="titleCounterClass"', 'x-show="maxItemsMissing"'] as $s) {
             $res->assertSee($s, false);
         }
         // maxlength counts UTF-16 units (an emoji is 2): the code-point counters and the server rule decide instead

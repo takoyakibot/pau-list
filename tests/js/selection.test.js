@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { toggleVideo, addVideo, removeVideo, moveVideo, restoreSelection, markUnavailable, selectionFromOldIds } from '../../resources/js/lib/selection.js';
+import { toggleVideo, addVideo, removeVideo, moveVideo, restoreSelection, markUnavailable, selectionFromOldIds, maxItemsFrom } from '../../resources/js/lib/selection.js';
 
 const v = (id, extra = {}) => ({ id, title: `t${id}`, thumbnail_url: null, outside: false, ...extra });
 
@@ -56,4 +56,18 @@ test('selectionFromOldIds keeps server order and fills unknown ids with placehol
   assert.equal(restoreSelection(list, catalog, 99)[0].placeholder, true);
   // broken storage value
   assert.deepEqual(selectionFromOldIds(['aaaaaaaaaaa'], catalog, null).map(x => x.id), ['aaaaaaaaaaa']);
+});
+test('maxItemsFrom uses only the server value; missing or broken means 0', () => {
+  assert.equal(maxItemsFrom({ maxItems: 99 }), 99);
+  assert.equal(maxItemsFrom({ maxItems: 19 }), 19);
+  assert.equal(maxItemsFrom({ maxItems: '99' }), 0);
+  assert.equal(maxItemsFrom({}), 0);
+  assert.equal(maxItemsFrom(null), 0);
+  assert.equal(maxItemsFrom({ maxItems: -1 }), 0);
+  assert.equal(maxItemsFrom({ maxItems: 1.5 }), 0);
+  assert.equal(maxItemsFrom({ maxItems: NaN }), 0);
+});
+test('with max 0 nothing can be added or restored', () => {
+  assert.equal(addVideo([], v('a'), 0).error, 'limit');
+  assert.deepEqual(restoreSelection([{ id: 'aaaaaaaaaaa' }], new Map(), 0), []);
 });

@@ -42,11 +42,11 @@ export function restoreSelection(stored, catalogById, max) {
   const seen = new Set();
   const out = [];
   for (const x of stored) {
+    if (out.length >= max) break;
     if (!validStored(x) || seen.has(x.id)) continue;
     seen.add(x.id);
     const hit = catalogById.get(x.id);
     out.push(hit ? { ...hit, outside: false } : placeholder(x.id, x.outside === true));
-    if (out.length >= max) break;
   }
   return out;
 }
@@ -71,4 +71,11 @@ export function selectionFromOldIds(oldIds, catalogById, stored) {
     out.push(catalogById.get(id) ?? placeholder(id, byId.get(id)?.outside === true));
   }
   return out;
+}
+
+// The per-playlist maximum comes only from the server (derived from the write quota there).
+// Missing or malformed means 0: nothing can be selected.
+export function maxItemsFrom(catalog) {
+  const n = catalog !== null && typeof catalog === 'object' ? catalog.maxItems : undefined;
+  return Number.isInteger(n) && n > 0 ? n : 0;
 }
