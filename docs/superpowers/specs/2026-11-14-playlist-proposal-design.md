@@ -66,7 +66,7 @@
 4. 編集画面: 動画の削除・並べ替え・追加（対象チャンネル一覧から／URL 指定／「限定公開の動画も表示する」ボタンで読み込む自分の限定公開動画（Y11）、最大 99 本）、名前・説明修正、公開範囲選択。「この内容に必要な枠: 再生リスト 1 つ＋動画 n 本」と「本日の残り: 再生リスト 1 つ＋動画あと N 本まで作成できます」を並べて表示（5.5）。n > N なら作成ボタンを押せず、減らす本数とリセット時刻を表示。
 5. 「作成」→ サーバーが枠を予約（5.4）。予約できなければ開始しない。予約できたら進捗画面へ。ブラウザが 1 ステップずつサーバーを呼び、進捗を表示（7 章）。
 6. 完了 → 再生リスト URL、失敗分の再試行ボタン、ログアウト（トークン取り消し）と Google 側の承認取り消し案内。
-7. 提案の削除（任意、Y14）: 編集画面の「この提案を削除」→ 確認ページ（`GET /p/{key}/delete`。「削除すると元に戻せません。共有された URL でも表示できなくなります」）→「削除する」（`POST /p/{key}/deletion`、CSRF 検証つき）→ 提案と動画明細を 1 トランザクションで削除 →「削除しました」ページ（`/deleted`）。このページはそのタブの編集下書き（sessionStorage）を消す。ログインは保たれる。
+7. 提案の削除（任意、Y14）: 編集画面の「この提案を削除」→ 確認ページ（`GET /p/{key}/delete`。「削除すると元に戻せません。共有された URL でも表示できなくなります」）→「削除する」（`POST /p/{key}/deletion`、CSRF 検証つき）→ 提案と動画明細を 1 トランザクションで削除 →「削除しました」ページ（`/deleted`）。このページはそのタブの編集下書き（sessionStorage）を消す。ログインは保たれる。作成を始めた提案は、作成中（`completed` 以外）は削除できず、確認ページから S6 へ案内して「残りを中止」してから削除させる。作成完了後は S6 の「この提案を削除」から、提案と作成の記録を一緒に削除する（YouTube の再生リストは残る。Y19）。
 
 ### 2.4 チャンネル不一致時 ［設計判断］
 - **作成させない**（明示確認での続行も不可）。理由: 誤チャンネルへの作成は取り消しが面倒で、提案は「そのチャンネルのため」に作られている。ブランドアカウントで別チャンネルを選んだだけのケースが多いと想定し、「別のチャンネルでログインし直す」（`prompt=select_account` 付き再認可）を案内する。
@@ -78,10 +78,10 @@
 | S1 | `/` | ホーム（審査用ホームページ兼用） | アプリ名（List Maker）、ツール説明（提案→作成の流れ図）、チャンネル入力欄、YouTube データ利用の説明、フッタ（プライバシー・規約・YouTube 利用規約・Google プライバシーポリシー・お問い合わせ） |
 | S2 | `/channels/{channelId}/propose` | 提案作成 | チャンネル見出し（アイコン・名前、出典表示）、**上限表示「1 つの再生リストに入れられるのは最大 99 本」**、**本日の残り表示**（5.5）、絞り込み入力、表示件数／選択数（n / 99）、動画カード（サムネ・タイトル・公開日・チェック）、全解除、URL 追加欄、選択済みパネル（並べ替え・削除・対象チャンネル外バッジ）、名前・説明・コメント・ニックネーム、文字数カウンタ、保存ボタン（近くに規約・プライバシーポリシーへの同意文）、取得上限の注記、一覧の最終取り込み日時（読取予算切れでキャッシュのみ表示する場合は強調表示）、一覧の保存期限（「この一覧は○月○日に取り込み、○月○日に削除されます」）、期限切れ後の取り込み直しの案内（5.3） |
 | S3 | `/p/{key}/shared`（直後 1 回のみ） | 提案完了 | 共有 URL とコピー、有効期限、「この URL を知っている人は誰でも閲覧できる」注意、プレビューへのリンク |
-| S4 | `/p/{key}` | プレビュー | 再生リスト風表示（名前・説明・本数・合計時間・動画リスト・対象チャンネル外バッジ）、提案者コメント・ニックネーム、作成日・削除予定日、状態（未作成／作成中／作成済み）、作成済み再生リストのリンク（public のみ。unlisted/private はログイン中の該当チャンネル主にのみ。7.6）、**上限表示（最大 99 本）**、**本日の残り表示**（未作成時）、ログインボタン（未確認アプリ警告の案内・同意文付き）、任意の watch_videos プレビューリンク |
+| S4 | `/p/{key}` | プレビュー | 再生リスト風表示（名前・説明・本数・合計時間・動画リスト・対象チャンネル外バッジ）、提案者コメント・ニックネーム、作成日・削除予定日、状態（未作成／作成中／作成済み）、作成済み再生リストのリンク（public のみ。unlisted/private はログイン中の該当チャンネル主にのみ。7.6）、作成を始めたが再生リストが作られなかった場合（中止・恒久エラー）は「再生リストは作成されませんでした」、ログイン中の該当チャンネル主には作成後は編集画面ではなく「作成状況を見る」（S6）、**上限表示（最大 99 本）**、**本日の残り表示**（未作成時）、ログインボタン（未確認アプリ警告の案内・同意文付き）、任意の watch_videos プレビューリンク |
 | S5 | `/p/{key}/edit` | 編集・作成（要ログイン＋一致） | ログイン中チャンネル表示、編集可能リスト（n / 99）、追加 UI（対象チャンネル一覧／URL）、名前・説明・公開範囲、**必要な枠と本日の残り**、不足時のメッセージとリセット時刻、作成ボタン（書込操作であることを明記）、「限定公開の動画も表示する」ボタン（Y11）、「この提案を削除」リンク（Y14）、ログアウト |
-| S6 | `/p/{key}/creation` | 進捗・結果（要ログイン＋一致。`RequireOwnerSession`。7.2） | 全体進捗バー、項目ごとの状態、一時停止／再開、残りを中止、失敗分再試行（必要な枠と本日の残りを表示）、再ログイン促し、枠不足時のリセット時刻、完了時の再生リスト URL、取り消し案内 |
-| S5a | `/p/{key}/delete` → `/deleted` | 提案の削除確認・削除完了（要ログイン＋一致、Y14） | 確認: 提案名・本数、元に戻せない旨、「削除する」ボタン（POST）、編集画面へ戻るリンク。完了: 「削除しました」、トップへのリンク。どちらも noindex・no-store |
+| S6 | `/p/{key}/creation` | 進捗・結果（要ログイン＋一致。`RequireOwnerSession`。7.2） | 全体進捗バー、項目ごとの状態、一時停止／再開、残りを中止、失敗分再試行（必要な枠と本日の残りを表示）、再ログイン促し、枠不足時のリセット時刻、完了時の再生リスト URL、完了後の「この提案を削除」（Y19）、取り消し案内 |
+| S5a | `/p/{key}/delete` → `/deleted` | 提案の削除確認・削除完了（要ログイン＋一致、Y14・Y19） | 確認: 提案名・本数、元に戻せない旨、「削除する」ボタン（POST）、編集画面へ戻るリンク（作成があれば S6 へ戻るリンク。作成完了後は「作成済みの再生リストは YouTube に残ります」、作成中は削除フォームを出さず S6 へ案内）。完了: 「削除しました」、トップへのリンク。どちらも noindex・no-store |
 | S7 | `/privacy`, `/terms` | 静的ページ | 9 章の必須事項 |
 | S8 | `/contact` | 問い合わせフォーム | 種別（一般／削除依頼／不具合）、本文、返信用メールアドレス（任意）、ハニーポット、送信完了表示（8.7） |
 | — | エラー表示 | 共通 | 提案なし／期限切れ（区別しない 404）、チャンネル不一致、枠不足（リセット時刻つき）、Google 側クオータ超過、レート制限 |
@@ -213,8 +213,11 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 | pause_reason | varchar null | `auth_expired` / `quota_exceeded`（Google 側の枠切れ） / `quota_budget`（アプリの書込上限・予約不足） / `user` |
 | youtube_playlist_id | varchar null | |
 | playlist_attempted_at | datetime null | playlists.insert の送信時刻（曖昧時の照合用） |
+| playlist_leased_at | datetime null | playlists.insert の送信中リース（7.3。60 秒） |
+| playlist_attempts | tinyint | playlists.insert の送信回数（バックオフ・再試行上限用） |
 | estimated_units | int | 50 + 50×本数（QuotaPolicy） |
 | started_at, completed_at, updated_at | datetime | |
+| paused_day_pt | date null | `paused(quota_exceeded)` にした PT 日付。この日のうちは再開させない（7.4）。再開・中止で消す |
 
 **playlist_creation_items**
 | カラム | 型 | 備考 |
@@ -268,6 +271,7 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 - 削除済み・存在しないキーはどちらも同じ 404 を返す（キーの存在を推測させない）。
 - 削除依頼（問い合わせフォーム経由）は 7 日以内に `php artisan app:delete-proposal {URL またはキー}` で即時削除する（Developer Policies III.E.4.g ［事実: A.6］）。
 - チャンネル主は自分のチャンネル宛ての提案を 30 日を待たずに S5 から削除できる（Y14、流れは 2.3 の 7）。提案と動画明細を 1 トランザクションで削除し、削除後のキーは存在しないキーと同じ 404 になる。他のチャンネルでログイン中は 403（不一致画面）、未ログイン・トークン期限切れはプレビューへ戻す。
+- 作成中（`completed` 以外）の提案は削除しない（何も消さずに S6 へ戻し「残りを中止してから削除」と案内）。作成完了後の削除は、作成行・当日の書込行の順にロックし（5.4 のロック順）、予約の未使用分を解放したうえで `quota_reservations` → `playlist_creation_items` → `playlist_creations` → `proposal_items` → `proposals` を 1 トランザクションで明示的に削除する（FK cascade だけに頼らない）。YouTube の再生リストは残る（Y19）。
 
 ---
 
@@ -372,7 +376,7 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 3. **解放**: 次のときに予約の未使用分（`reserved − consumed`）を空きに戻す（`status=released`。空きの計算は active のみ数えるので、状態変更だけで戻る）。
    - 全項目が終わった（`completed`）。失敗項目があっても、その分は送信済みで消費済み。
    - 利用者が「残りを中止」した（未送信の `pending` を `skipped` にして `completed`）。
-   - playlists.insert が恒久エラーで失敗し、動画を追加できない（作成を `completed`＋全項目 `skipped`。編集画面へ戻す案内）。
+   - playlists.insert が恒久エラーで失敗し、動画を追加できない（作成を `completed`＋全項目 `skipped`）。ただし 400（名前・説明の不正）は作成の記録（予約を含む）を削除して編集画面へ戻し、直して作り直せるようにする（5.7）。
 - **一時停止中（`paused` の全理由、`needs_check`）は予約を保持する**。トークン切れで再ログインする間に他人に枠を取られないため。
 - **PT の日付をまたいだら予約は失効**（前日の予約は当日の空き計算に入らないので自動的に無効。再開時に `status=expired` に更新）。再開時は残り分 `(playlist 未作成なら 50) + 50×(pending＋in_flight の件数)` を当日分として再予約し、確保できなければ再開させずリセット時刻を表示。
 - **失敗分の再試行**: `failed` 件数 ×50 を当日の予約に追加（当日 active 予約があれば加算、無ければ新規）。確保できなければ再試行を開始しない。
@@ -414,12 +418,13 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 ### 5.7 エラー分類と再試行（YouTubeError）
 | 応答 | 分類 | 対応 |
 |---|---|---|
-| 5xx, 409（`SERVICE_UNAVAILABLE` 等）, 429, 接続・タイムアウト | 一時的 | 指数バックオフ（2, 4, 8, 16, 32 秒）で同一項目を最大 5 回。待機はブラウザ側（7.3）。再送分は予約の追加が必要（5.4 の確定） |
+| 5xx, 409（`SERVICE_UNAVAILABLE` 等）, 429, 接続・タイムアウト | 一時的 | 指数バックオフ（2, 4, 8, 16, 32 秒）で同一項目を最大 5 回。待機はブラウザ側（7.3）。再送分は予約の追加が必要（5.4 の確定）。**書込（insert）の 5xx と応答なし（接続エラー・タイムアウト）は結果不明**として扱い、再送せず次のステップで照合（7.3）してから、無ければ再送する |
 | 403 `quotaExceeded` / `dailyLimitExceeded` | Google 側クオータ | 再試行しない。作成は `paused(quota_exceeded)`。読取は利用者にメッセージ |
 | 403 `rateLimitExceeded` / `userRateLimitExceeded` | 一時的 | 一時的扱い（間隔を広げる） |
 | 401 | 認証切れ | `paused(auth_expired)`、セッションからトークン破棄、再ログイン案内 |
 | 404 `videoNotFound`, 403 `forbidden`(動画追加不可) 等 | 項目固有の恒久エラー | 項目を `failed`、次へ進む。再試行ボタンで手動再試行可 |
-| 400 `invalidValue` 等（名前・説明不正） | 入力エラー | playlists.insert なら予約を解放して編集画面に戻す |
+| 再生リスト単位のエラー（`playlistNotFound`、`playlistItemsNotAccessible`、`insufficientPermissions`、`playlistContainsMaximumNumberOfVideos`、`manualSortRequired`、position に関する 400） | 再生リスト側の問題 | 項目を `failed` にせず作成を `needs_check`（以降の項目も同じ理由で失敗するため） |
+| 400 `invalidValue` 等（名前・説明不正） | 入力エラー | playlists.insert なら作成の記録（予約を含む）を削除して編集画面に戻す（直して作り直せる）。その他の playlists.insert の恒久エラーは `completed`＋全項目 `skipped` |
 | その他 | 不明 | 項目 `failed`、ログ記録（トークン・キー除く） |
 
 - タイムアウト: 接続 5 秒、全体 15 秒。読取の一覧ページングは 1 リクエスト内で直列（最大 20 回、合計 30 秒で打ち切り。打ち切り時の扱いは 5.3「途中で止まった場合」）。
@@ -629,14 +634,14 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
    - `playlist_creations`（UNIQUE proposal_id）の存在確認。既に存在すれば何もせず進捗画面へリダイレクト（**二重作成防止その 1: DB 一意制約**）。
    - **書込枠の予約**（5.4）。足りなければロールバックし、編集画面に「本日の残り: 動画あと N 本」とリセット時刻を表示（作成は始まらない）。
    - `playlist_creations` と items（position は確定順 0..n−1）、`quota_reservations` を作成。
-4. 進捗画面へ。
+4. 進捗画面へ。ステップは「作成」を押した直後だけ自動で始まる（S6 を開き直しただけでは始めず「続きから」を押させる）。作成を始めた後は編集画面（S5）は開かず S6 へ移す（7.5）。
 
 ### 7.3 ステップ（`POST /p/{key}/creation/step`）
-- 行ロック（`SELECT … FOR UPDATE` on creation）で同時実行を 1 つに制限（**二重作成防止その 2**。タブ 2 つ開いても安全）。
+- 行ロック（`SELECT … FOR UPDATE` on creation）で同時実行を 1 つに制限（**二重作成防止その 2**。タブ 2 つ開いても安全）。行ロックは状態の決定と記録に使い、YouTube 呼び出し中は持たない。同時実行は 60 秒のリース（items.leased_at／creations.playlist_leased_at）で 1 つに絞る。接続エラー（応答なし）は結果不明として次のステップで照合する。
 - 書込の送信直前に予約から 50 を確定（5.4）。確定できなければ送信せず `paused(quota_budget)`。
 - 状態ごとの処理:
   - `pending` → `creating_playlist` にして `playlist_attempted_at` 記録 → playlists.insert。成功で `youtube_playlist_id` 保存、`adding` へ。
-  - `creating_playlist` のまま残っている（前回の結果不明: タイムアウト等）→ **再送しない**。playlists.list mine=true で「同名・`playlist_attempted_at` 以降作成」を探し、見つかれば採用、無ければ insert を再実行。判断できなければ `needs_check` にして画面で「YouTube Studio を確認してください」と表示し、「見つからなかったので作り直す」ボタンを出す（**二重作成防止その 3**）。
+  - `creating_playlist` のまま残っている（前回の結果不明: タイムアウト等）→ **再送しない**。playlists.list mine=true で「同名・`playlist_attempted_at` 以降作成」を探し、見つかれば採用、無ければ insert を再実行。判断できなければ（同名候補が複数ある等の曖昧な場合も含む）`needs_check` にして画面で「YouTube Studio を確認してください」と表示し、「見つからなかったので作り直す」ボタンを出す（**二重作成防止その 3**）。作り直しは古い再生リスト ID を捨て、全項目を `pending` に戻して新しい再生リストに全項目を入れ直す（再生リスト＋全項目分を再予約）。
   - `adding` → 次の `pending` 項目（position 昇順）を `in_flight`（leased_at）にして playlistItems.insert（`snippet.playlistId`, `snippet.resourceId{kind: youtube#video, videoId}`, **`snippet.position`**）。成功で `done`＋item id。
   - `in_flight` が 60 秒以上前のまま残っている項目 → 結果不明。作成した再生リストを playlistItems.list で確認し（50 件 1 ユニット、owner_read）、既にあれば `done`、無ければ再送。
   - 全項目が `done/failed/skipped` → `completed`、予約を解放。
@@ -647,9 +652,9 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 ### 7.4 一時停止・再開・中止
 | 状況 | 状態 | 予約 | 再開 |
 |---|---|---|---|
-| Google の `quotaExceeded` | `paused(quota_exceeded)` | 保持（日付が変われば失効） | 翌 PT 日以降。リセット時刻を表示 |
+| Google の `quotaExceeded` | `paused(quota_exceeded)`（その PT 日付を `paused_day_pt` に記録） | 保持（日付が変われば失効） | 翌 PT 日以降（`paused_day_pt` より後の PT 日）。リセット時刻を表示 |
 | アプリの書込上限で確定できない | `paused(quota_budget)` | 保持 | 空きができるかリセット後。再予約できたら再開 |
-| 401／セッション期限切れ | `paused(auth_expired)`。Google の 401 ではセッションのログインを消す（`forget()`、7.2） | 保持 | 「再ログインして続きから」。ログイン後 `/p/{key}/creation` へ戻る（戻り先をセッションに保存） |
+| 401／セッション期限切れ | Google の 401 だけ `paused(auth_expired)` にし、セッションのログインを消す（`forget()`、7.2）。セッション期限切れ（アプリ側）は未認証の要求で状態を変えないため paused にはしない（401 JSON を返すだけ） | 保持 | 「再ログインして続きから」。ログイン後、作成がある提案は `/p/{key}/creation` へ戻る（6.2） |
 | タブを閉じた・回線断 | 変化なし | 保持 | URL を開き直して「続きから」 |
 | 利用者の一時停止ボタン | `paused(user)`（表示用） | 保持 | 「続きから」 |
 | 利用者の「残りを中止」 | 未送信を `skipped` → `completed` | 解放 | 不可（失敗分の再試行のみ可） |
@@ -819,7 +824,7 @@ CONTACT_TO_ADDRESS=
 6. クオータ使用量の確認場所（API とサービス → 割り当て）とリセット時刻（PT 0 時＝日本時間 16 時〈夏時間〉／17 時〈標準時間〉）。アプリの台帳（quota_usage）と見比べ、見込みのずれを確認する。
 
 ### 10.5 テスト方針
-- PHPUnit の Feature テスト中心。DB は SQLite in-memory（MySQL 固有の `ON DUPLICATE KEY` は Laravel の `upsert` で書き、両方で動かす）。`SELECT … FOR UPDATE` は SQLite では効かないため、同時予約・同時ステップのロックは Phase 3 でローカル MySQL に対して手動確認（または MySQL 用テストグループを任意実行）。
+- PHPUnit の Feature テスト中心。DB は SQLite in-memory（MySQL 固有の `ON DUPLICATE KEY` は Laravel の `upsert` で書き、両方で動かす）。`SELECT … FOR UPDATE` は SQLite では効かないため、同時予約・同時ステップのロックは MySQL 用テストグループ（`mysql`）で確認し、CI の MySQL 8.4 で毎回実行する（D30）。
 - YouTube / OAuth / メールは `Http::fake()` / `Mail::fake()` で固定。実 API はテストで呼ばない（`Http::preventStrayRequests()`）。時刻は `travelTo` で PT の日付境界・夏時間切替をまたぐ。
 - 必須ケース:
   - QuotaPolicy: 書込上限 5,000 → 99 本、1,000 → 19 本、100 → 1 本、99 以下・読取＋書込が Google 枠超過 → 起動時エラー。残り本数の換算（空き 149 → 1 本、99 → 0 本）。
@@ -889,6 +894,7 @@ CONTACT_TO_ADDRESS=
 | Y16 | （U12）差分取り込みの取りこぼしは、チャンネル単位の 30 日期限（Y9）後の全件取り込みで解消されるため、追加の対策（`CHANNEL_SYNC_KNOWN_RUN` の増加や定期的な全件読み直し）はしない |
 | Y17 | （ユーザー決定 #19）提案保存の 5 回/10 分・30 回/日/IP・全体 500 件/日は**保存に成功した回だけ**数える（検証エラー・ハニーポット・削除済み/非公開動画による失敗では減らない）。別に提案保存の POST 全体を 20 回/10 分/IP に制限する。チャンネル入力フォームの制限は変えない |
 | Y18 | （ユーザー決定 #20）匿名の読取予算に IP ごと・チャンネルごとの日次上限は設けない。短時間の制限（8.1）は維持し、日次の使い切りが頻発するようなら見直す |
+| Y19 | （U14）作成中（`completed` 以外）の提案は削除できない。S6 で「残りを中止」してから削除する。作成完了後は提案と作成の記録（作成・項目・予約）を一緒に削除し、YouTube の再生リストは残る |
 
 ### 12.2 設計判断（要件に明記がなく監督者・設計者が決めたもの）
 | # | 判断 | 理由 |
@@ -916,6 +922,13 @@ CONTACT_TO_ADDRESS=
 | D21 | 動画行を `channel_cache_videos` に 1 動画 1 行で持ち（`fetched_at` は記録用）、削除判定はチャンネル単位の `expires_at`（Y9）。取り込みは全ページ読み終えてから 1 トランザクションで書き、途中終了時は何も書かない。期限切れ記録（`channel_cache_expirations`）は 30 日で削除し、期限切れ後の全件取り込み完了時にも削除。期限表示・期限切れ案内の文言は 5.3 | 差分モードは先頭で止まるため、途中で書いて止まると抜けが期限まで残る。破棄すれば抜けは生じない。記録は案内表示に必要な最小限（ID と日時）に留め、それ自体も長く持たない |
 | D22 | YouTube 側で削除・非公開化された動画が一覧に残りうる点は、提案保存時・作成前の videos.list 再取得で弾くことで整合させる。ページ内で非公開と分かった行は即削除。期限切れ後の全件取り込みで一覧からも消える | 差分モードでは削除を検出できない。保存・作成の時点で必ず検出できれば実害が無い |
 | D23 | 6.7 チェックリストに state の有効期限 10 分、トークン交換の自動再試行なし、トークン/revoke エンドポイントのリダイレクト非追従、`expires_in` の安全余裕 60 秒を含める | 参照ライブラリの観点に加え、本設計の条件（一回限りのコード・秘密情報の転送防止）から補強 |
+| D24 | （Phase 3）playlists.insert の 400（名前・説明の不正）は作成の記録（予約を含む）を削除して編集画面へ戻す。その他の恒久エラーは `completed`＋全項目 `skipped` | 直せる入力なら作り直せるようにする。一意制約で再作成が塞がれない |
+| D25 | （Phase 3）行ロックは状態の決定と記録だけに使い、YouTube 呼び出し中は持たない。同時実行は 60 秒のリース（`leased_at`／`playlist_leased_at`）で 1 つに絞る。`playlist_leased_at`・`playlist_attempts` を追加 | ロックを持ったまま最大 15 秒の外部呼び出しをしない |
+| D26 | （Phase 3）書込の 5xx・応答なし・ID の無い 2xx は結果不明として、再送の前に照合（playlists.list／playlistItems.list）する。照合は最大 20 ページ読み、曖昧（候補が複数等）なら `needs_check` | 二重追加の防止。費用は 5xx 1 回あたり読取 1 ユニット程度 |
+| D27 | （Phase 3）再生リスト単位のエラー（5.7 の表）は項目を `failed` にせず（`pending` に戻して）作成を `needs_check` にする（`playlistContainsMaximumNumberOfVideos`・`manualSortRequired` を含む） | 以降の全項目が同じ理由で失敗するため |
+| D28 | （Phase 3）アプリのセッション期限切れでは作成の状態を変えない（Google の 401 だけ `paused(auth_expired)`）。ステップの自動開始は「作成」直後だけ | 未認証の要求で状態を書き換えない。開き直しただけで書込を始めない |
+| D29 | （Phase 3）Google の `quotaExceeded` で止めた PT 日付は専用カラム `paused_day_pt` に記録し、`updated_at` から導かない | 後から別の書込で `updated_at` が動いても再開判定が狂わない |
+| D30 | （Phase 3）MySQL 固有のロック・同時予約のテストは `mysql` グループとして CI の MySQL 8.4（空の root パスワード）で毎回実行する | SQLite では `FOR UPDATE` が効かないため（10.5） |
 
 ### 12.3 未決事項
 | # | 事項 | 決める人／時期 |
@@ -933,7 +946,7 @@ CONTACT_TO_ADDRESS=
 | U9 | ［要確認］Laravel 13 の正確な PHP 要件、スケルトン既定の Tailwind/Vite バージョン | Phase 0 |
 | U10 | アプリ台帳と Google 側実使用量のずれが大きい場合、`QUOTA_WRITE_LIMIT` の安全余裕を見直すか | 運用開始後 |
 | U11 | （決定済み → Y15）放置された作成の予約の扱い | — |
-| U14 | 作成中（Phase 3 の playlist_creations が進行中）の提案をチャンネル主が削除した場合の扱い（削除を拒むか、作成記録ごと消すか） | Phase 3 |
+| U14 | （決定 → Y19）作成中（Phase 3 の playlist_creations が進行中）の提案をチャンネル主が削除した場合の扱い（削除を拒むか、作成記録ごと消すか） | — |
 
 ---
 

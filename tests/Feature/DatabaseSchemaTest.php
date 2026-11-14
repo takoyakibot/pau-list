@@ -43,7 +43,7 @@ class DatabaseSchemaTest extends TestCase
 
     public function test_creation_tables_have_spec_columns(): void
     {
-        $this->assertSame(['id', 'proposal_id', 'owner_channel_id', 'title', 'description', 'privacy_status', 'status', 'pause_reason', 'youtube_playlist_id', 'playlist_attempted_at', 'playlist_leased_at', 'playlist_attempts', 'estimated_units', 'started_at', 'completed_at', 'updated_at'], Schema::getColumnListing('playlist_creations'));
+        $this->assertSame(['id', 'proposal_id', 'owner_channel_id', 'title', 'description', 'privacy_status', 'status', 'pause_reason', 'youtube_playlist_id', 'playlist_attempted_at', 'playlist_leased_at', 'playlist_attempts', 'estimated_units', 'started_at', 'completed_at', 'updated_at', 'paused_day_pt'], Schema::getColumnListing('playlist_creations'));
         $this->assertSame(['id', 'creation_id', 'position', 'video_id', 'title', 'thumbnail_url', 'is_outside_channel', 'status', 'attempts', 'leased_at', 'last_error', 'youtube_item_id'], Schema::getColumnListing('playlist_creation_items'));
         $this->assertSame(['id', 'creation_id', 'day_pt', 'reserved_units', 'consumed_units', 'status', 'created_at', 'updated_at'], Schema::getColumnListing('quota_reservations'));
     }

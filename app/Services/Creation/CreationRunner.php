@@ -556,9 +556,14 @@ final class CreationRunner
         }
     }
 
+    /** For Google's quotaExceeded the PT day is kept: resume waits for the next PT day (CreationLifecycle::resume). */
     private function pause(PlaylistCreation $c, string $reason): void
     {
-        $c->fill(['status' => PlaylistCreation::PAUSED, 'pause_reason' => $reason])->save();
+        $c->fill([
+            'status' => PlaylistCreation::PAUSED,
+            'pause_reason' => $reason,
+            'paused_day_pt' => $reason === PlaylistCreation::PAUSE_QUOTA_EXCEEDED ? QuotaClock::todayPt() : null,
+        ])->save();
     }
 
     private function pauseForBudget(PlaylistCreation $c, RemainingToday $remaining): StepResult

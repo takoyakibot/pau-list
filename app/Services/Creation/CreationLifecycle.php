@@ -46,8 +46,8 @@ final class CreationLifecycle
      * Back to where it stopped, after making sure today's reservation covers what is left (re-reserved after a
      * PT date change, spec 7.4). An item left in_flight stays in_flight: the next step reconciles it.
      *
-     * After Google's quotaExceeded, not before the next PT reset: the pause's PT day is taken from updated_at
-     * (nothing else writes the creation row while it is paused).
+     * After Google's quotaExceeded, not before the next PT reset: the pause's PT day is paused_day_pt (set by
+     * CreationRunner when it paused; a missing day is treated as today).
      *
      * @throws InsufficientWriteQuota
      * @throws GoogleQuotaNotReset
@@ -59,7 +59,7 @@ final class CreationLifecycle
                 return;
             }
             if ($c->pause_reason === PlaylistCreation::PAUSE_QUOTA_EXCEEDED
-                && ($c->updated_at === null || $c->updated_at->setTimezone(QuotaClock::TIMEZONE)->format('Y-m-d') >= QuotaClock::todayPt())) {
+                && ($c->paused_day_pt === null || (string) $c->paused_day_pt >= QuotaClock::todayPt())) {
                 throw new GoogleQuotaNotReset(QuotaClock::nextResetJst());
             }
             $this->reserveOrFail($c, $this->runner->remainingUnitsNeeded($c), $this->openItems($c));
@@ -68,6 +68,7 @@ final class CreationLifecycle
                     ? PlaylistCreation::ADDING
                     : ($c->playlist_attempted_at !== null ? PlaylistCreation::CREATING_PLAYLIST : PlaylistCreation::PENDING),
                 'pause_reason' => null,
+                'paused_day_pt' => null,
             ])->save();
         });
     }
@@ -96,7 +97,7 @@ final class CreationLifecycle
             $c->items()->where('status', PlaylistCreationItem::IN_FLIGHT)
                 ->update(['status' => PlaylistCreationItem::SKIPPED, 'leased_at' => null, 'last_error' => self::UNKNOWN_RESULT]);
 
-            $c->fill(['status' => PlaylistCreation::COMPLETED, 'pause_reason' => null, 'completed_at' => now()])->save();
+            $c->fill(['status' => PlaylistCreation::COMPLETED, 'pause_reason' => null, 'paused_day_pt' => null, 'completed_at' => now()])->save();
             $this->ledger->withWriteLock(fn (WriteLock $lock) => $lock->release($c->id));
             Log::info('Creation aborted', ['creation_id' => $c->id]);
         });

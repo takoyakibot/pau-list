@@ -392,6 +392,25 @@ class CreationEndpointsTest extends TestCase
         $this->actAsOwner($this->channelId);
         $this->act($key, 'resume')->assertOk()->assertJson(['status' => 'adding']);
         $this->assertSame(100, QuotaReservation::where('creation_id', $c->id)->where('day_pt', QuotaClock::todayPt())->sole()->reserved_units);
+        $this->assertNull($c->refresh()->paused_day_pt);
+    }
+
+    public function test_quota_pause_day_comes_from_its_own_column_not_updated_at(): void
+    {
+        // Paused on the previous PT day, but the row was written today (updated_at): resumes.
+        [$key, $c] = $this->owned(2, ['status' => PlaylistCreation::PAUSED, 'pause_reason' => PlaylistCreation::PAUSE_QUOTA_EXCEEDED, 'youtube_playlist_id' => 'PLx', 'paused_day_pt' => '2026-11-13']);
+        $this->act($key, 'resume')->assertOk()->assertJson(['status' => 'adding']);
+        $this->assertNull($c->refresh()->paused_day_pt);
+
+        // Paused today, the row last written on an earlier day: still refused until the PT reset.
+        [$key, $c] = $this->owned(2, ['status' => PlaylistCreation::PAUSED, 'pause_reason' => PlaylistCreation::PAUSE_QUOTA_EXCEEDED, 'youtube_playlist_id' => 'PLx', 'paused_day_pt' => QuotaClock::todayPt()]);
+        DB::table('playlist_creations')->where('id', $c->id)->update(['updated_at' => now()->subDays(2)]);
+        $this->act($key, 'resume')->assertStatus(409);
+        $this->assertSame(PlaylistCreation::PAUSED, $c->refresh()->status);
+
+        // Abort clears it.
+        $this->act($key, 'abort')->assertOk()->assertJson(['status' => 'completed']);
+        $this->assertNull($c->refresh()->paused_day_pt);
     }
 
     public function test_shortage_wording_does_not_count_the_playlist_once_it_exists(): void

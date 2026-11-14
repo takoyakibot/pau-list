@@ -245,6 +245,7 @@ class CreationRunnerTest extends TestCase
         $r = $this->step($c);
         $c->refresh();
         $this->assertSame([PlaylistCreation::PAUSED, PlaylistCreation::PAUSE_QUOTA_EXCEEDED, null, null, 0], [$c->status, $c->pause_reason, $c->playlist_attempted_at, $c->playlist_leased_at, $r->nextDelayMs]);
+        $this->assertSame(QuotaClock::todayPt(), $c->paused_day_pt);
         $this->assertSame(QuotaReservation::ACTIVE, QuotaReservation::sole()->status);
 
         $this->resetHttp();
@@ -451,6 +452,8 @@ class CreationRunnerTest extends TestCase
         $r = $this->step($c);
         $c->refresh();
         $this->assertSame([PlaylistCreation::PAUSED, PlaylistCreation::PAUSE_QUOTA_EXCEEDED, 0, false], [$c->status, $c->pause_reason, $r->nextDelayMs, $r->authExpired]);
+        // The PT day of Google's refusal: resume waits for the next PT day (CreationLifecycle::resume).
+        $this->assertSame(QuotaClock::todayPt(), $c->paused_day_pt);
         $this->assertSame(['pending', null], [$this->item($c, 0)->status, $this->item($c, 0)->leased_at]);
         $this->assertSame([QuotaReservation::ACTIVE, 50], [QuotaReservation::sole()->status, QuotaReservation::sole()->consumed_units]);
 

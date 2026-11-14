@@ -15,6 +15,9 @@
     <p class="text-sm">ログイン中: {{ $ownerChannelTitle }}</p>
     @include('partials.owner-logout')
     <h1 class="mt-2 text-2xl font-bold">再生リストの作成</h1>
+    @if (session()->has('creation_notice'))
+        <p class="rounded bg-amber-50 p-2 text-sm text-amber-900" role="alert">{{ session('creation_notice') }}</p>
+    @endif
     <p class="mt-1 text-lg break-words">{{ $creation->title }}</p>
 
     <noscript>
