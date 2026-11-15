@@ -20,7 +20,7 @@ use Tests\Support\AssertsNoInlineCode;
 use Tests\Support\CreatesProposals;
 use Tests\TestCase;
 
-/** Link preview card (spec D48). */
+/** Link preview card (spec D49). */
 class OpenGraphTest extends TestCase
 {
     use AssertsNoInlineCode, CreatesProposals, RefreshDatabase;
@@ -94,6 +94,27 @@ class OpenGraphTest extends TestCase
         $key = $this->createProposal();
         $res = $this->get(route('proposals.show', $key).'?ref=discord')->assertOk();
         $this->assertSame([route('proposals.show', $key)], $this->metas($res)['og:url']);
+    }
+
+    public function test_absolute_urls_come_from_app_url_not_the_host_header(): void
+    {
+        config(['app.url' => 'https://list-maker.example']);
+        $key = $this->createProposal();
+
+        $res = $this->withHeaders(['Host' => 'evil.example'])->get('http://evil.example/terms?x=1')->assertOk();
+        $metas = $this->metas($res);
+        $this->assertSame(['https://list-maker.example/terms'], $metas['og:url']);
+        $this->assertSame(['https://list-maker.example/images/og-card.png'], $metas['og:image']);
+        $this->assertSame(['https://list-maker.example/images/og-card.png'], $metas['twitter:image']);
+
+        $res = $this->withHeaders(['Host' => 'evil.example'])->get("http://evil.example/p/$key?ref=x")->assertOk();
+        $metas = $this->metas($res);
+        $this->assertSame(["https://list-maker.example/p/$key"], $metas['og:url']);
+        $this->assertSame(['https://list-maker.example/images/og-card.png'], $metas['og:image']);
+
+        $res = $this->withHeaders(['Host' => 'evil.example'])->get('http://evil.example/')->assertOk();
+        $this->assertSame(['https://list-maker.example'], $this->metas($res)['og:url']);
+        $this->assertStringNotContainsString('evil.example', substr($res->getContent(), 0, (int) strpos($res->getContent(), '</head>')));
     }
 
     public function test_static_pages_have_default_card(): void

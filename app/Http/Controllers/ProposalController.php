@@ -226,8 +226,8 @@ class ProposalController extends Controller
             'ownerChannelTitle' => $owner?->channelTitle,
             'creationStatus' => $creationStatus,
             'playlistUrl' => $playlistUrl,
-            // Link preview card (spec D48): only S4 shows the proposal's title, video count and channel.
-            'og' => OpenGraph::forProposal($proposal, $items->count(), route('proposals.show', $key)),
+            // Link preview card (spec D49): only S4 shows the proposal's title, video count and channel.
+            'og' => OpenGraph::forProposal($proposal, $items->count(), $key),
         ]);
     }
 }

@@ -5,7 +5,7 @@ namespace App\Support;
 use App\Models\Proposal;
 
 /**
- * Link preview card (OGP + Twitter Card) in layouts.app (spec D48). Every page gets the generic card; only S4
+ * Link preview card (OGP + Twitter Card) in layouts.app (spec D49). Every page gets the generic card; only S4
  * (the public preview) passes its own title and description. Values are escaped by Blade in partials.og.
  */
 final class OpenGraph
@@ -28,14 +28,14 @@ final class OpenGraph
 
     /**
      * S4 only. The proposer name, the comment (meant for the owner) and the video titles are not included.
-     * $url is the preview's own URL (the shared URL; S4 is the one page meant to be passed around).
+     * $key is the raw key of the preview's own URL (the shared URL; S4 is the one page meant to be passed around).
      *
      * @return array{title: string, description: string, url: string}
      */
-    public static function forProposal(Proposal $proposal, int $itemCount, string $url): array
+    public static function forProposal(Proposal $proposal, int $itemCount, string $key): array
     {
         return [
-            'url' => $url,
+            'url' => self::absolute(route('proposals.show', $key, false)),
             'title' => '「'.$proposal->title.'」の再生リスト案',
             'description' => $itemCount.' 本の動画 ・ '.$proposal->channel_title.' への提案 ・ '.self::SITE_NAME,
         ];
@@ -51,12 +51,12 @@ final class OpenGraph
             'title' => $overrides['title'] ?? self::DEFAULT_TITLE,
             'description' => $overrides['description'] ?? self::DEFAULT_DESCRIPTION,
             'url' => $overrides['url'] ?? self::defaultUrl(),
-            'image' => asset(self::IMAGE_PATH),
+            'image' => self::absolute('/'.self::IMAGE_PATH),
         ];
     }
 
     /**
-     * The page itself without the query string (url()->current() drops it). Pages under /p/{key} other than S4
+     * The page itself without the query string. Pages under /p/{key} other than S4
      * (shared, S5, S5a, S6 and their errors) and pages without a route (unmatched 404s) point to the home page
      * instead: the raw key is never written into those pages, and unknown/expired keys keep one identical 404.
      */
@@ -64,8 +64,19 @@ final class OpenGraph
     {
         $route = request()->route();
 
-        return $route === null || in_array('key', $route->parameterNames(), true)
-            ? route('home')
-            : url()->current();
+        return self::absolute($route === null || in_array('key', $route->parameterNames(), true)
+            ? '/'
+            : request()->getPathInfo());
+    }
+
+    /**
+     * Absolute URLs come from APP_URL, never from the request's Host header: a spoofed Host must not end up in a
+     * crawler's cached card.
+     */
+    private static function absolute(string $path): string
+    {
+        $base = rtrim((string) config('app.url'), '/');
+
+        return $path === '/' || $path === '' ? $base : $base.'/'.ltrim($path, '/');
     }
 }

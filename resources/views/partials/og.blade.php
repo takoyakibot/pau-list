@@ -1,4 +1,4 @@
-{{-- Link preview card (spec D48). Only S4 passes $og (OpenGraph::forProposal); every other page gets the generic card. --}}
+{{-- Link preview card (spec D49). Only S4 passes $og (OpenGraph::forProposal); every other page gets the generic card. --}}
 @php($card = \App\Support\OpenGraph::resolve($og ?? null))
     <meta name="theme-color" content="{{ \App\Support\OpenGraph::THEME_COLOR }}">
     <meta property="og:site_name" content="{{ \App\Support\OpenGraph::SITE_NAME }}">

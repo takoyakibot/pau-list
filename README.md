@@ -32,7 +32,7 @@ Discord・X などのリンクプレビューの画像 `public/images/og-card.pn
   --screenshot="$PWD/public/images/og-card.png" "file://$PWD/resources/og/og-card.html"
 ```
 
-メタタグは `resources/views/partials/og.blade.php`（文言は `App\Support\OpenGraph`、設計書 D48）。
+メタタグは `resources/views/partials/og.blade.php`（文言は `App\Support\OpenGraph`、設計書 D49）。
 
 ## 本番デプロイ（CoreServer 系の共有ホスティング）
 
