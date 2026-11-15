@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<!--
+  Source of public/images/og-card.png (link preview card, spec D49). Not served by the app.
+  Regenerate: see README「リンクプレビューの画像（OGP）」.
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 1200px; height: 630px; overflow: hidden; }
+    body {
+        background: #f8f8f6;
+        color: #1a1a1a;
+        font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif;
+        padding: 44px;
+    }
+    .card {
+        height: 100%;
+        background: #ffffff;
+        border: 2px solid #e5e5e3;
+        border-radius: 32px;
+        padding: 64px 72px 56px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+    .brand { display: flex; align-items: center; gap: 28px; }
+    .mark {
+        width: 112px; height: 112px; flex: none;
+        border-radius: 26px;
+        background: #2563eb;
+        color: #ffffff;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .wordmark { font-size: 76px; font-weight: 700; letter-spacing: 0.02em; line-height: 1; }
+    .sub { margin-top: 14px; font-size: 26px; font-weight: 400; color: #666670; letter-spacing: 0.04em; }
+    .tagline { font-size: 52px; font-weight: 700; letter-spacing: 0.02em; line-height: 1.3; }
+    .tagline em { font-style: normal; color: #2563eb; }
+    .steps { display: flex; align-items: center; gap: 18px; }
+    .step {
+        flex: 1;
+        display: flex; align-items: center; gap: 16px;
+        background: #f0f0ee;
+        border-radius: 18px;
+        padding: 20px 22px;
+        font-size: 28px; font-weight: 600; color: #374151;
+        white-space: nowrap;
+    }
+    .num {
+        width: 44px; height: 44px; flex: none;
+        border-radius: 999px;
+        background: #2563eb; color: #ffffff;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 24px; font-weight: 700;
+    }
+    .step.last { background: #eff6ff; color: #1d4ed8; }
+    .arrow { flex: none; color: #d4d4d8; }
+</style>
+</head>
+<body>
+<div class="card">
+    <div class="brand">
+        <div class="mark">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h11M4 12h11M4 18h7"/><path d="M17 15v6l4-3z" fill="currentColor"/></svg>
+        </div>
+        <div>
+            <div class="wordmark">List Maker</div>
+            <div class="sub">再生リストの提案ツール</div>
+        </div>
+    </div>
+
+    <p class="tagline">ファンが選んで、<em>チャンネル主が作る。</em></p>
+
+    <div class="steps">
+        <div class="step"><span class="num">1</span>動画を選ぶ</div>
+        <svg class="arrow" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>
+        <div class="step"><span class="num">2</span>URL を送る</div>
+        <svg class="arrow" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>
+        <div class="step last"><span class="num">3</span>チャンネル主が作成</div>
+    </div>
+</div>
+</body>
+</html>

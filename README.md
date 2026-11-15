@@ -22,6 +22,18 @@ php artisan test
 - 新しい JS エントリを追加したら、必ず `vite.config.js` の `input` にも追加してください。
 - Alpine は CSP ビルド（`@alpinejs/csp`）のみ使います。Blade にインライン `<script>` / `<style>` / `style="..."` を書かないでください。
 
+### リンクプレビューの画像（OGP）
+
+Discord・X などのリンクプレビューの画像 `public/images/og-card.png`（1200×630）は `resources/og/og-card.html` から作ります（アプリからは配信しない元ファイル。フォントは macOS の Hiragino Sans）。元ファイルを直したら、macOS で次を実行して PNG もコミットしてください（300 KB 未満に保つ）。
+
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --hide-scrollbars \
+  --force-device-scale-factor=1 --window-size=1200,630 \
+  --screenshot="$PWD/public/images/og-card.png" "file://$PWD/resources/og/og-card.html"
+```
+
+メタタグは `resources/views/partials/og.blade.php`（文言は `App\Support\OpenGraph`、設計書 D49）。
+
 ## 本番デプロイ（CoreServer 系の共有ホスティング）
 
 サーバーに composer / node は無いため、ローカルでビルドして rsync で送ります（channel-calendar と同じ方式）。
