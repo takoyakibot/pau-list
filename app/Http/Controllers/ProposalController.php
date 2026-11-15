@@ -15,6 +15,7 @@ use App\Services\YouTube\QuotaLedger;
 use App\Services\YouTube\ReadBudgetExceeded;
 use App\Services\YouTube\YouTubeApiException;
 use App\Support\ChannelFetchThrottle;
+use App\Support\OpenGraph;
 use App\Support\OwnerSession;
 use App\Support\ProposalKey;
 use App\Support\ProposalStoreLimits;
@@ -225,6 +226,8 @@ class ProposalController extends Controller
             'ownerChannelTitle' => $owner?->channelTitle,
             'creationStatus' => $creationStatus,
             'playlistUrl' => $playlistUrl,
+            // Link preview card (spec D48): only S4 shows the proposal's title, video count and channel.
+            'og' => OpenGraph::forProposal($proposal, $items->count(), route('proposals.show', $key)),
         ]);
     }
 }
