@@ -9,6 +9,7 @@
 @php
     $processed = $progress['done'] + $progress['failed'] + $progress['skipped'];
     $completed = $progress['status'] === \App\Models\PlaylistCreation::COMPLETED;
+    $privacyLabel = ['private' => '非公開', 'unlisted' => '限定公開'][$creation->privacy_status] ?? null;
 @endphp
 
 @section('content')
@@ -35,6 +36,10 @@
             <p class="text-sm" x-show="hasPlaylist" @if ($progress['playlist_url'] === null) x-cloak @endif>
                 <a class="underline" :href="playlistUrl" @if ($progress['playlist_url'] !== null) href="{{ $progress['playlist_url'] }}" @endif rel="noopener noreferrer" target="_blank">作成した再生リストを YouTube で開く</a>
             </p>
+            {{-- Always shown (static): reads right before and after the playlist exists. Nothing for public. --}}
+            @if ($privacyLabel !== null)
+                <p class="text-xs text-gray-600">この再生リストは「{{ $privacyLabel }}」で作成されます。公開範囲は、作成後に YouTube の再生リストの編集画面（YouTube Studio の「再生リスト」）から変更できます。</p>
+            @endif
         </section>
 
         <section class="space-y-2" x-cloak>

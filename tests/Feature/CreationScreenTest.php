@@ -86,6 +86,23 @@ class CreationScreenTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_shows_how_to_change_visibility_unless_public(): void
+    {
+        $tail = '」で作成されます。公開範囲は、作成後に YouTube の再生リストの編集画面（YouTube Studio の「再生リスト」）から変更できます。';
+        foreach (['private' => '非公開', 'unlisted' => '限定公開'] as $privacy => $label) {
+            $key = $this->createProposal();
+            $this->makeCreation(1, ['privacy_status' => $privacy], null, $key);
+            $this->actAsOwner($this->channelId)->get("/p/$key/creation")->assertOk()
+                ->assertSee('この再生リストは「'.$label.$tail);
+        }
+
+        $key = $this->createProposal();
+        $this->makeCreation(1, ['privacy_status' => 'public'], null, $key);
+        $this->actAsOwner($this->channelId)->get("/p/$key/creation")->assertOk()
+            ->assertDontSee('公開範囲は、作成後に')
+            ->assertDontSee('で作成されます');
+    }
+
     public function test_without_creation_redirects_to_edit(): void
     {
         $key = $this->createProposal();
