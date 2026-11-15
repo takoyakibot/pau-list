@@ -1,82 +1,94 @@
 @extends('layouts.app')
 
 @section('title', $proposal->title.' — 再生リストの提案')
+@section('main_width', 'max-w-[1200px]')
 
 @section('content')
-    <p class="text-sm text-gray-600">
-        <a class="underline" href="https://www.youtube.com/channel/{{ $proposal->channel_id }}" rel="noopener noreferrer" target="_blank">{{ $proposal->channel_title }}</a> への再生リストの提案
-    </p>
+    <div class="flex flex-col gap-5">
+        @include('partials.steps', ['current' => 3])
 
-    <header class="mt-2">
-        <h1 class="text-2xl font-bold break-words">{{ $proposal->title }}</h1>
-        @if ($proposal->description !== '')
-            <p class="mt-2 whitespace-pre-line break-words text-sm">{{ $proposal->description }}</p>
-        @endif
-        <p class="mt-2 text-sm">{{ $proposal->item_count }} 本・合計 {{ \App\Support\DurationFormat::total($totalSeconds) }}@if ($hasUnknownDuration)（長さ不明の動画を除く）@endif</p>
-    </header>
+        <header class="flex flex-col gap-1">
+            <p class="hint">
+                <a class="underline" href="https://www.youtube.com/channel/{{ $proposal->channel_id }}" rel="noopener noreferrer" target="_blank">{{ $proposal->channel_title }}</a> への再生リストの提案
+            </p>
+            <h1 class="text-[22px] font-bold break-words">{{ $proposal->title }}</h1>
+            @if ($proposal->description !== '')
+                <p class="text-[13px] whitespace-pre-line break-words text-ink-2">{{ $proposal->description }}</p>
+            @endif
+        </header>
 
-    <section class="mt-6 space-y-1 text-sm">
-        <p>状態: {{ match ($creationStatus) {
-            'creating' => '作成中',
-            'created' => '作成済み',
-            'not_created' => '再生リストは作成されませんでした',
-            'unknown' => '再生リストが作成されたか確認できませんでした',
-            default => '未作成',
-        } }}</p>
-        @if ($ownerMatches && $creationStatus === 'unknown')
-            <p>{{ \App\Services\Creation\CreationProgress::MAYBE_CREATED }}</p>
-        @endif
-        {{-- The owner's way out when nothing (certain) was created: this proposal cannot be created again (UX m5). --}}
-        @if ($ownerMatches && in_array($creationStatus, ['not_created', 'unknown'], true))
-            <p>{{ \App\Services\Creation\CreationProgress::REMAKE_HINT }} <a class="text-red-700 underline" href="{{ route('proposals.delete', $key) }}">この提案を削除</a></p>
-        @endif
-        {{-- Only set when it may be shown to this viewer (spec 7.6: unlisted/private only to the channel's owner). --}}
-        @if ($playlistUrl !== null)
-            <p><a class="font-semibold underline" href="{{ $playlistUrl }}" rel="noopener noreferrer" target="_blank">作成された再生リストを YouTube で見る</a></p>
-        @endif
-        <p>作成日 {{ $proposal->created_at->timezone('Asia/Tokyo')->format('n月j日') }}／{{ $proposal->expires_at->timezone('Asia/Tokyo')->format('n月j日') }}までに削除されます</p>
-    </section>
-
-    <section class="mt-6 rounded border border-gray-200 p-4 text-sm" aria-labelledby="proposer-heading">
-        <h2 id="proposer-heading" class="font-semibold">提案者: {{ $proposal->proposer_name ?? '匿名' }}</h2>
-        @if (! is_null($proposal->comment) && $proposal->comment !== '')
-            <p class="mt-2 whitespace-pre-line break-words">{{ $proposal->comment }}</p>
-        @endif
-    </section>
-
-    <section class="mt-6" aria-labelledby="videos-heading">
-        <h2 id="videos-heading" class="text-lg font-semibold">動画</h2>
-        <ol class="mt-2 divide-y divide-gray-200 rounded border border-gray-200">
-            @foreach ($items as $item)
-                <li class="flex items-start gap-3 p-2 text-sm">
-                    <span class="w-8 shrink-0 text-right text-gray-600">{{ $loop->iteration }}</span>
-                    @if ($item->thumbnail_url)
-                        <img src="{{ $item->thumbnail_url }}" alt="" width="120" height="68" loading="lazy" class="h-[68px] w-[120px] shrink-0 rounded object-cover">
+        <div class="flex flex-wrap items-start gap-5">
+            <div class="flex min-w-0 flex-[999_1_560px] flex-col gap-5">
+                <section class="card px-4 py-3 text-sm sm:px-5" aria-labelledby="proposer-heading">
+                    <h2 id="proposer-heading" class="font-bold">提案者: {{ $proposal->proposer_name ?? '匿名' }}</h2>
+                    @if (! is_null($proposal->comment) && $proposal->comment !== '')
+                        <p class="mt-2 border-l-4 border-line-strong pl-3 whitespace-pre-line break-words text-ink-2">{{ $proposal->comment }}</p>
                     @endif
-                    <div class="min-w-0 flex-1">
-                        <a class="break-words underline" href="https://www.youtube.com/watch?v={{ $item->video_id }}" rel="noopener noreferrer" target="_blank">{{ $item->title }}</a>
-                        <p class="text-gray-600">
-                            <a class="underline" href="https://www.youtube.com/channel/{{ $item->video_channel_id }}" rel="noopener noreferrer" target="_blank">{{ $item->video_channel_title }}</a>
-                            @if ($item->duration_seconds !== null)
-                                ・ {{ \App\Support\DurationFormat::clock($item->duration_seconds) }}
-                            @endif
-                            @if ($item->is_outside_channel)
-                                <span class="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900">対象チャンネル外</span>
-                            @endif
-                        </p>
+                </section>
+
+                <section class="card overflow-hidden" aria-labelledby="videos-heading">
+                    <div class="flex flex-wrap items-center gap-2 border-b border-line-subtle px-4 py-3.5 sm:px-5">
+                        <h2 id="videos-heading" class="text-base font-bold">動画</h2>
+                        <p class="text-[13px] text-ink-muted">{{ $proposal->item_count }} 本・合計 {{ \App\Support\DurationFormat::total($totalSeconds) }}@if ($hasUnknownDuration)（長さ不明の動画を除く）@endif</p>
                     </div>
-                </li>
-            @endforeach
-        </ol>
-        <p class="mt-2 text-xs text-gray-600">データ提供: YouTube</p>
-    </section>
+                    <ol class="flex flex-col gap-1.5 p-2">
+                        @foreach ($items as $item)
+                            <li class="flex items-start gap-2.5 rounded-lg border border-line-subtle px-2 py-1.5 text-[13px]">
+                                <span class="w-6 shrink-0 pt-1 text-right text-xs text-ink-muted">{{ $loop->iteration }}</span>
+                                @if ($item->thumbnail_url)
+                                    <img src="{{ $item->thumbnail_url }}" alt="" width="96" height="54" loading="lazy" class="h-[54px] w-24 shrink-0 rounded-md object-cover">
+                                @endif
+                                <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+                                    <a class="font-medium break-words underline" href="https://www.youtube.com/watch?v={{ $item->video_id }}" rel="noopener noreferrer" target="_blank">{{ $item->title }}</a>
+                                    <p class="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-ink-muted">
+                                        <a class="underline" href="https://www.youtube.com/channel/{{ $item->video_channel_id }}" rel="noopener noreferrer" target="_blank">{{ $item->video_channel_title }}</a>
+                                        @if ($item->duration_seconds !== null)
+                                            <span>・ {{ \App\Support\DurationFormat::clock($item->duration_seconds) }}</span>
+                                        @endif
+                                        @if ($item->is_outside_channel)
+                                            <span class="pill bg-muted text-ink-muted">ほかのチャンネル</span>
+                                        @endif
+                                    </p>
+                                </div>
+                            </li>
+                        @endforeach
+                    </ol>
+                    <p class="hint border-t border-line-subtle px-4 py-2 sm:px-5">データ提供: YouTube</p>
+                </section>
+            </div>
 
-    @if ($creationStatus === null)
-        <section class="mt-6 text-sm">
-            @include('partials.max-items')
-            @include('partials.remaining-today', ['remaining' => $remaining, 'itemCount' => $proposal->item_count])
-        </section>
-    @endif
+            <aside class="flex min-w-0 flex-[1_1_320px] flex-col gap-4">
+                <section class="card space-y-1.5 px-4 py-4 text-[13px] sm:px-5" aria-label="提案の状態">
+                    <p class="font-bold">状態: {{ match ($creationStatus) {
+                        'creating' => '作成中',
+                        'created' => '作成済み',
+                        'not_created' => '再生リストは作成されませんでした',
+                        'unknown' => '再生リストが作成されたか確認できませんでした',
+                        default => '未作成',
+                    } }}</p>
+                    @if ($ownerMatches && $creationStatus === 'unknown')
+                        <p>{{ \App\Services\Creation\CreationProgress::MAYBE_CREATED }}</p>
+                    @endif
+                    {{-- The owner's way out when nothing (certain) was created: this proposal cannot be created again (UX m5). --}}
+                    @if ($ownerMatches && in_array($creationStatus, ['not_created', 'unknown'], true))
+                        <p>{{ \App\Services\Creation\CreationProgress::REMAKE_HINT }} <a class="text-danger underline" href="{{ route('proposals.delete', $key) }}">この提案を削除</a></p>
+                    @endif
+                    {{-- Only set when it may be shown to this viewer (spec 7.6: unlisted/private only to the channel's owner). --}}
+                    @if ($playlistUrl !== null)
+                        <p><a class="font-semibold underline" href="{{ $playlistUrl }}" rel="noopener noreferrer" target="_blank">作成された再生リストを YouTube で見る</a></p>
+                    @endif
+                    <p class="hint">作成日 {{ $proposal->created_at->timezone('Asia/Tokyo')->format('n月j日') }}／{{ $proposal->expires_at->timezone('Asia/Tokyo')->format('n月j日') }}までに削除されます</p>
+                </section>
 
-    @include('partials.owner-login')
+                @if ($creationStatus === null)
+                    <div class="space-y-1">
+                        @include('partials.max-items')
+                        @include('partials.remaining-today', ['remaining' => $remaining, 'itemCount' => $proposal->item_count])
+                    </div>
+                @endif
+
+                @include('partials.owner-login')
+            </aside>
+        </div>
+    </div>
 @endsection

@@ -195,7 +195,8 @@ class OwnerCallbackValidationTest extends TestCase
         $first = $this->begin($key);
         $this->begin($key);   // 2 つ目のタブが上書き
         $res = $this->hitCallback(['state' => $first, 'code' => 'c'])->assertStatus(400);
-        $res->assertSee('ログインの手続きを確認できませんでした（時間が経った、別のタブでログインを始めた、または同じ画面を再読み込みした可能性があります）。もう一度ログインしてください')
+        $res->assertSee('ログインの手続きを確認できませんでした。もう一度ログインしてください')
+            ->assertSee('時間が経った、別のタブでログインを始めた、または同じ画面を再読み込みした可能性があります')
             ->assertSee('href="'.route('proposals.show', $key).'"', false);
         $this->assertNoInlineCode($res->getContent());
     }

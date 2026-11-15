@@ -72,7 +72,7 @@ class SharedScreenTest extends TestCase
         $this->followingRedirects()
             ->post(route('proposals.store', $this->id), ['title' => 't', 'video_ids' => ['aaaaaaaaaaa']])
             ->assertOk()
-            ->assertSee('<p class="text-xs text-gray-600">データ提供: YouTube</p>', false);
+            ->assertSee('<p class="hint">データ提供: YouTube</p>', false);
     }
 
     public function test_direct_access_without_flash_redirects_to_preview(): void

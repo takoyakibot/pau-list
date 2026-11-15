@@ -88,7 +88,7 @@ class CreationScreenTest extends TestCase
 
     public function test_shows_how_to_change_visibility_unless_public(): void
     {
-        $tail = '」で作成されます。公開範囲は、作成後に YouTube の再生リストの編集画面（YouTube Studio の「再生リスト」）から変更できます。';
+        $tail = '」で作成されます。公開範囲は、作成後に YouTube Studio の「再生リスト」で変更できます。';
         foreach (['private' => '非公開', 'unlisted' => '限定公開'] as $privacy => $label) {
             $key = $this->createProposal();
             $this->makeCreation(1, ['privacy_status' => $privacy], null, $key);

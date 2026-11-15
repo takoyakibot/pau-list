@@ -3,8 +3,152 @@
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 
+/* Design tokens shared with the sister service (Channel Calendar). Light values here; dark ones below. */
 @theme {
-    --font-sans: ui-sans-serif, system-ui, sans-serif;
+    --font-sans: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Yu Gothic', system-ui, sans-serif;
+
+    --color-surface: #f8f8f6;
+    --color-raised: #ffffff;
+    --color-muted: #f0f0ee;
+    --color-line: #e5e5e3;
+    --color-line-subtle: #ececea;
+    --color-line-strong: #d4d4d8;
+    --color-ink: #1a1a1a;
+    --color-ink-2: #374151;
+    --color-ink-muted: #71717a;
+    --color-accent: #2563eb;
+    --color-accent-hover: #1d4ed8;
+    --color-accent-soft: #eff6ff;
+    --color-on-accent: #ffffff;
+    --color-members: #7c3aed;
+    --color-members-soft: #f3e8ff;
+    --color-danger: #b91c1c;
+    --color-danger-soft: #fee2e2;
+    --color-on-danger: #ffffff;
+    --color-success: #166534;
+    --color-success-soft: #dcfce7;
+    --color-warn: #92400e;
+    --color-warn-soft: #fef3c7;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --color-surface: #18181b;
+        --color-raised: #27272a;
+        --color-muted: #2a2a2d;
+        --color-line: #3f3f46;
+        --color-line-subtle: #34343a;
+        --color-line-strong: #52525b;
+        --color-ink: #fafafa;
+        --color-ink-2: #e4e4e7;
+        --color-ink-muted: #a1a1aa;
+        --color-accent: #60a5fa;
+        --color-accent-hover: #93c5fd;
+        --color-accent-soft: #1e2a44;
+        --color-on-accent: #18181b;
+        --color-members: #c4b5fd;
+        --color-members-soft: #2e1f47;
+        --color-danger: #fca5a5;
+        --color-danger-soft: #3f1d1d;
+        --color-on-danger: #18181b;
+        --color-success: #86efac;
+        --color-success-soft: #14301f;
+        --color-warn: #fcd34d;
+        --color-warn-soft: #3a2a0a;
+    }
+}
+
+@layer base {
+    :root {
+        color-scheme: light dark;
+    }
+
+    a {
+        color: var(--color-accent);
+    }
+
+    a:hover {
+        color: var(--color-accent-hover);
+    }
+
+    :focus-visible {
+        outline: 2px solid var(--color-accent);
+        outline-offset: 2px;
+    }
+
+    input[type='checkbox'],
+    input[type='radio'] {
+        accent-color: var(--color-accent);
+    }
+
+    button:not(:disabled),
+    summary {
+        cursor: pointer;
+    }
+}
+
+/* Small building blocks used across the views. */
+@utility card {
+    @apply rounded-lg border border-line bg-raised;
+}
+
+@utility btn {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-4 py-2 text-center text-sm font-bold no-underline disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+@utility btn-sm {
+    @apply inline-flex min-h-9 items-center justify-center gap-1 rounded-md px-3 text-[13px] disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+@utility btn-primary {
+    @apply bg-accent text-on-accent hover:bg-accent-hover hover:text-on-accent;
+}
+
+@utility btn-secondary {
+    @apply border border-line-strong bg-raised text-ink hover:bg-muted hover:text-ink;
+}
+
+@utility btn-danger {
+    @apply bg-danger text-on-danger hover:text-on-danger;
+}
+
+@utility field {
+    @apply w-full rounded-md border border-line-strong bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-muted;
+}
+
+@utility pill {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold whitespace-nowrap;
+}
+
+@utility hint {
+    @apply text-xs text-ink-muted;
+}
+
+@utility notice-warn {
+    @apply rounded-md bg-warn-soft px-3 py-2 text-warn;
+}
+
+@utility notice-danger {
+    @apply rounded-md bg-danger-soft px-3 py-2 text-danger;
+}
+
+/* Numbered rows: the number is a ::before flex item, so it lines up inside bordered rows. */
+@utility counter-list {
+    counter-reset: row;
+    list-style: none;
+}
+
+@utility counter-item {
+    counter-increment: row;
+
+    &::before {
+        content: counter(row);
+        flex: none;
+        width: 1.25rem;
+        text-align: right;
+        font-size: 12px;
+        color: var(--color-ink-muted);
+    }
 }
 
 /* Alpine removes x-cloak once it has initialised: hides Alpine-driven messages until then. */

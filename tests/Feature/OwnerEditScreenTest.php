@@ -147,7 +147,7 @@ class OwnerEditScreenTest extends TestCase
         }
         // The client-side message for a missing choice sits next to the radios (property refs only, CSP build).
         $this->assertStringContainsString('<fieldset class="privacy-choice text-sm" aria-describedby="privacy-error">', $html);
-        $this->assertStringContainsString('id="privacy-error" class="mt-1 text-sm text-red-700" role="alert" x-show="hasPrivacyMessage" x-cloak x-text="privacyMessage"', $html);
+        $this->assertStringContainsString('id="privacy-error" class="mt-1 text-sm text-danger" role="alert" x-show="hasPrivacyMessage" x-cloak x-text="privacyMessage"', $html);
     }
 
     public function test_select_filtered_button_starts_disabled_and_uses_property_refs(): void

@@ -38,7 +38,7 @@ function setup() {
     a.textContent = typeof e.title === 'string' && e.title !== '' ? e.title : '（無題）';
     li.appendChild(a);
     const meta = document.createElement('span');
-    meta.className = 'ml-2 text-xs text-gray-600';
+    meta.className = 'ml-2 text-xs text-ink-muted';
     const channel = typeof e.channelTitle === 'string' ? e.channelTitle : '';
     meta.textContent = `${channel}（${formatDate(e.expiresAt)}までに削除されます）`;
     li.appendChild(meta);

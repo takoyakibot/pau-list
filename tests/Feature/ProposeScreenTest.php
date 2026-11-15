@@ -238,7 +238,7 @@ class ProposeScreenTest extends TestCase
         );
         $this->assertStringContainsString('データ提供: YouTube', $html);
         // the consent sentence sits right next to the save button, in the same block
-        $this->assertMatchesRegularExpression('#<div class="space-y-2">\s*<p class="text-xs text-gray-600">保存すると、.*?</p>\s*(<p[^>]*>[^<]*</p>\s*)?<button type="submit"[^>]*>提案を保存する</button>\s*</div>#s', $html);
+        $this->assertMatchesRegularExpression('#<div class="space-y-2">\s*<p class="hint">保存すると、.*?</p>\s*(<p[^>]*>[^<]*</p>\s*)?<button type="submit"[^>]*>提案を保存する</button>\s*</div>#s', $html);
         $this->assertNoInlineCode($html);
     }
 
