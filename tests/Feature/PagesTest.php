@@ -125,6 +125,9 @@ class PagesTest extends TestCase
         $this->assertStringContainsString('<input id="q" name="q"', $main);
         // Matches the owner login button's label on the shared page (S4).
         $this->assertStringContainsString('「Google でログインして作成する」からログインします', $main);
+        // Home keeps the scope note visible, outside the collapsed login-flow <details> (not S4's scopeInDetails).
+        $this->assertMatchesRegularExpression('#</details>\s*<p class="mt-2 text-ink-muted">Google の画面には YouTube アカウントの管理という広い権限#', $main);
+        $this->assertStringContainsString('ログインの流れ（確認されていないアプリの警告について）', $main);
     }
 
     public function test_home_slides_use_the_configured_cap_and_retention(): void
