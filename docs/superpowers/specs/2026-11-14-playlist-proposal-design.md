@@ -708,6 +708,7 @@ resources/js/          propose.js, owner-edit.js, creation-runner.js, lib/*.js(�
 - 匿名の読取予算（`QUOTA_READ_BUDGET`）に対し、IP ごと・チャンネルごとの日次上限は設けない ［ユーザー決定: Y18］。上表の短時間の制限は維持し、読取予算の日次の使い切りが頻発するようなら見直す。
 - 共用サーバーの前段がリバースプロキシの場合、`TrustProxies` の設定次第で全員同じ IP になる ［要確認: CORESERVER の構成］。Phase 0 で `REMOTE_ADDR` を確認する。
 - （Phase 4 追記）レート制限のキーは `ClientKey`（app.key による IP の HMAC。IPv6 は /64 単位）。`TRUSTED_PROXIES`（空なら信頼しない）で前段のプロキシを信頼できる。値は Phase 4 で見直し、変更なし（D34）。
+- （本番確認 2026-11-15、#7）本番では前段のプロキシなし。`REMOTE_ADDR` は利用者の IP そのもの（IPv4・IPv6 とも一致、`X-Forwarded-For` 等の転送ヘッダは付かない）。`TRUSTED_PROXIES` は空のままにする。
 
 ### 8.2 入力上限・検証
 | 項目 | 上限・規則 |
@@ -977,7 +978,7 @@ TRUSTED_PROXIES=
 | U3 | （決定済み → Y12：当面 99 本）99 本を超える需要があればクオータ増加申請（API Compliance Audit）を行い `QUOTA_WRITE_LIMIT` を上げる | ユーザー／利用状況を見て |
 | U4 | （決定済み → Y13）審査用の英語ページ | — |
 | U5 | （決定済み → Y14）チャンネル主による提案削除 | — |
-| U6 | ［要確認］CORESERVER の送信元 IP 固定可否（API キーの IP 制限）とリバースプロキシ有無 | Phase 0 |
+| U6 | ［解決 2026-11-15、#7］送信元 IP は固定（IPv4 `163.44.176.17`・IPv6 `2400:8500:1301:162::17:1`、googleapis へは IPv6 が既定経路）。API キーは両 IP で制限し、API は YouTube Data API v3 のみに制限。リバースプロキシはなく `REMOTE_ADDR` が利用者の IP（`TRUSTED_PROXIES` は空） | Phase 0 |
 | U7 | ［要確認］CORESERVER の SMTP 設定（ホスト・ポート・暗号化・認証）、送信元ドメインの SPF/DKIM、Laravel 13 の `MAIL_SCHEME` 名称 | Phase 0 |
 | U8 | ［要確認］YouTube 側の制約: 再生リスト名・説明の上限と `<>` 可否、連続 insert の 409、同一動画の重複追加可否、uploads の公開範囲、`X-Goog-Api-Key` ヘッダ対応、PKCE 対応、`snippet.position` 指定に手動並び替え設定が必要か、**uploads プレイリストの並び順（プレミア公開・非公開→公開の古い動画・公開日時を過去にした動画がどこに入るか）**、コールバックの `iss` パラメータの有無 | Phase 1〜3 で実測し本書に追記 |
 | U12 | （解決済み → Y16）差分取り込みの取りこぼしへの追加対策 | — |
