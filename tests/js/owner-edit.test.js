@@ -6,6 +6,7 @@ import {
   rowActionLabel, isBlankTitle, TITLE_REQUIRED, DRAFT_RESTORED,
   creationRequestBody, startFailure, markUnavailable, START_FAILED, PAGE_EXPIRED,
   unlistedFailure, withRelogin, publicUnlistedNote, PUBLIC_UNLISTED_NOTE, lookupItem,
+  isPrivacyChosen, privacyErrorFrom, PRIVACY_REQUIRED, createBlockedMessage, failureMessages,
 } from '../../resources/js/lib/owner-edit.js';
 
 test('creationQuota: within remaining', () => {
@@ -38,11 +39,35 @@ test('isCreateDisabled', () => {
   assert.equal(isCreateDisabled({ ...ok, maxItems: 0 }), true);
   assert.equal(isCreateDisabled({ ...ok, count: 0 }), true);
 });
-test('normalizePrivacy defaults to private', () => {
+test('normalizePrivacy has no default: anything else is not chosen', () => {
   assert.deepEqual(PRIVACY_VALUES, ['private', 'unlisted', 'public']);
-  assert.equal(normalizePrivacy('public'), 'public');
-  assert.equal(normalizePrivacy('unlisted'), 'unlisted');
-  for (const v of [undefined, '', 'PUBLIC', 'friends']) assert.equal(normalizePrivacy(v), 'private');
+  for (const v of PRIVACY_VALUES) {
+    assert.equal(normalizePrivacy(v), v);
+    assert.equal(isPrivacyChosen(v), true);
+  }
+  for (const v of [undefined, null, '', 'PUBLIC', 'friends', ['public']]) {
+    assert.equal(normalizePrivacy(v), '');
+    assert.equal(isPrivacyChosen(v), false);
+  }
+});
+test('create is blocked (nothing is sent) until a privacy is chosen', () => {
+  for (const v of [undefined, null, '', 'friends']) assert.equal(createBlockedMessage(v), '公開範囲を選んでください');
+  for (const v of ['private', 'unlisted', 'public']) assert.equal(createBlockedMessage(v), '');
+});
+test('failureMessages shows a privacy-only 422 once, next to the radios', () => {
+  const only = { message: '公開範囲を選んでください', errors: { privacy: ['公開範囲を選んでください'] } };
+  assert.deepEqual(failureMessages('公開範囲を選んでください', only), { createMessage: '', privacyMessage: '公開範囲を選んでください' });
+  const both = { message: 'x', errors: { privacy: ['公開範囲の値が正しくありません'], title: ['再生リスト名を入力してください'] } };
+  assert.deepEqual(failureMessages('x', both), { createMessage: 'x', privacyMessage: '公開範囲の値が正しくありません' });
+  assert.deepEqual(failureMessages('busy', { message: 'busy' }), { createMessage: 'busy', privacyMessage: '' });
+  assert.deepEqual(failureMessages('net', null), { createMessage: 'net', privacyMessage: '' });
+});
+test('privacyErrorFrom takes the server message for privacy only', () => {
+  assert.equal(PRIVACY_REQUIRED, '公開範囲を選んでください');
+  assert.equal(privacyErrorFrom({ message: 'x', errors: { privacy: ['公開範囲を選んでください'] } }), '公開範囲を選んでください');
+  for (const body of [null, {}, { errors: null }, { errors: { title: ['x'] } }, { errors: { privacy: 'x' } }, { errors: { privacy: [1] } }]) {
+    assert.equal(privacyErrorFrom(body), '');
+  }
 });
 
 const A = 'aaaaaaaaaaa'; const B = 'bbbbbbbbbbb'; const C = 'ccccccccccc'; const U = 'uuuuuuuuuuu';
@@ -110,7 +135,7 @@ test('isBlankTitle treats ASCII and full-width spaces as empty', () => {
 test('creationRequestBody sends ids, title, description and a normalized privacy', () => {
   assert.deepEqual(
     creationRequestBody({ items: [{ id: 'aaaaaaaaaaa', title: 'A' }, { id: 'bbbbbbbbbbb' }], title: 't', description: '', privacy: 'x' }),
-    { video_ids: ['aaaaaaaaaaa', 'bbbbbbbbbbb'], title: 't', description: '', privacy: 'private' },
+    { video_ids: ['aaaaaaaaaaa', 'bbbbbbbbbbb'], title: 't', description: '', privacy: '' },
   );
   assert.equal(creationRequestBody({ items: [], title: 't', description: 'd', privacy: 'unlisted' }).privacy, 'unlisted');
 });

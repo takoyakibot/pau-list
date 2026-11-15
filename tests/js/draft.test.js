@@ -42,10 +42,20 @@ test('broken json or wrong shape returns null', () => {
   }
   assert.equal(loadDraft(s, 'missing'), null);
 });
-test('load drops malformed items and normalizes privacy', () => {
+test('load drops malformed items and leaves an invalid privacy unchosen', () => {
   const s = mem();
-  s.setItem('listmaker:edit:k', JSON.stringify({ items: [{ id: A }, { id: 'bad' }, null, 'x'], title: 't', description: 'd', privacy: 'friends' }));
-  assert.deepEqual(loadDraft(s, 'k'), { items: [{ id: A, outside: false }], title: 't', description: 'd', privacy: 'private' });
+  s.setItem('listmaker:edit:k', JSON.stringify({ items: [{ id: A }, { id: 'bad' }, null, 'x'], title: 't', description: 'd', chosenPrivacy: 'friends' }));
+  assert.deepEqual(loadDraft(s, 'k'), { items: [{ id: A, outside: false }], title: 't', description: 'd', privacy: '' });
+});
+test('an unchosen privacy round-trips as unchosen', () => {
+  const s = mem();
+  saveDraft(s, 'k', { items: [], title: 't', description: '', privacy: '' });
+  assert.equal(loadDraft(s, 'k').privacy, '');
+});
+test('a draft from before D46 (old `privacy` field, always defaulted) never pre-selects', () => {
+  const s = mem();
+  s.setItem('listmaker:edit:k', JSON.stringify({ items: [{ id: A }], title: 't', description: 'd', privacy: 'private' }));
+  assert.equal(loadDraft(s, 'k').privacy, '');
 });
 test('throwing or null storage never throws', () => {
   for (const st of [throwing, null, undefined]) {

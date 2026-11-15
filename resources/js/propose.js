@@ -4,6 +4,7 @@ import { filterVideos } from './lib/filter.js';
 import { loadSelection, saveSelection, clearSelection } from './lib/storage.js';
 import { countChars, isOverLimit } from './lib/text.js';
 import { safeStorage } from './lib/safe-storage.js';
+import { canSelectFiltered, selectFilteredCount, selectFilteredLabel, selectFiltered, selectFilteredMessage } from './lib/select-filtered.js';
 
 const MAX_MISSING = '最大本数を読み込めなかったため、動画を選べません。ページを再読み込みしてください';
 
@@ -34,6 +35,7 @@ document.addEventListener('alpine:init', () => {
     urlMessage: '',
     urlBusy: false,
     limitMessage: '',
+    selectFilteredStatus: '',
     title: '',
     description: '',
     comment: '',
@@ -64,6 +66,8 @@ document.addEventListener('alpine:init', () => {
       this.selected = markUnavailable(restored, Array.isArray(catalog.unavailableIds) ? catalog.unavailableIds : []);
       this.persist();
 
+      // The select-all result is about the previous filter.
+      this.$watch('query', () => { this.selectFilteredStatus = ''; });
       // A page restored from the back/forward cache keeps the old disabled state.
       window.addEventListener('pageshow', () => { this.submitting = false; });
     },
@@ -96,6 +100,8 @@ document.addEventListener('alpine:init', () => {
     get hasUrlMessage() { return this.urlMessage !== ''; },
     get hasSelection() { return this.selected.length > 0; },
     get hasPlaceholders() { return this.selected.some((x) => x.placeholder === true); },
+    get selectFilteredLabel() { return selectFilteredLabel(selectFilteredCount(this.query, this.filtered, this.selected)); },
+    get isSelectFilteredDisabled() { return !canSelectFiltered(this.query, this.filtered, this.selected, this.maxItems); },
 
     // --- per-row helpers (use this.video / this.item from x-for scope) ---
     isSelected() { return this.selected.some((x) => x.id === this.video.id); },
@@ -119,8 +125,19 @@ document.addEventListener('alpine:init', () => {
       this.limitMessage = r.error === 'limit' ? this.limitText() : '';
       this.apply(r.list);
     },
+    // 「絞り込み結果をすべて選択」: the filtered, unselected videos in list order, as far as the cap allows.
+    selectAllFiltered() {
+      if (this.isSelectFilteredDisabled) return;
+      const r = selectFiltered(this.selected, this.filtered, this.maxItems, (v) => this.catalogById.get(v.id) ?? v);
+      // Shown (role=status) right under the button; the button may now be disabled, so focus goes back to the filter.
+      this.selectFilteredStatus = selectFilteredMessage(r.wanted, r.added, this.maxItems);
+      this.limitMessage = '';
+      this.apply(r.list);
+      if (r.added >= 1) this.$refs.filter?.focus();
+    },
     clearAll() {
       this.limitMessage = '';
+      this.selectFilteredStatus = '';
       clearSelection(this.storage, this.channelId);
       this.selected = [];
     },

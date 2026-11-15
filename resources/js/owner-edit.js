@@ -4,11 +4,12 @@ import { filterVideos } from './lib/filter.js';
 import { countChars, isOverLimit } from './lib/text.js';
 import { safeSessionStorage } from './lib/safe-storage.js';
 import { loadDraft, saveDraft, clearDraft } from './lib/draft.js';
+import { canSelectFiltered, selectFilteredCount, selectFilteredLabel, selectFiltered, selectFilteredMessage } from './lib/select-filtered.js';
 import {
   normalizePrivacy, remainingFrom, creationQuota, shortageText, isCreateDisabled as createDisabled,
   restoreDraftItems, sanitizeUnlisted, mergeUnlisted, upgradePlaceholders, unlistedResultMessage, rowActionLabel, isBlankTitle,
   creationRequestBody, startFailure, markUnavailable, unlistedFailure, withRelogin, publicUnlistedNote, lookupItem,
-  TITLE_REQUIRED, DRAFT_RESTORED, TITLE_MAX, DESCRIPTION_MAX,
+  createBlockedMessage, failureMessages, TITLE_REQUIRED, DRAFT_RESTORED, TITLE_MAX, DESCRIPTION_MAX,
 } from './lib/owner-edit.js';
 
 const MAX_MISSING = '最大本数を読み込めなかったため、動画を選べません。ページを再読み込みしてください';
@@ -63,14 +64,17 @@ document.addEventListener('alpine:init', () => {
     resetLabel: '',
     maxItems: 0,
     remainingItems: 0,
-    initial: { items: [], title: '', description: '', privacy: 'private' },
+    initial: { items: [], title: '', description: '', privacy: '' },
     byId: new Map(),
     videos: [],
     items: [],
     query: '',
     title: '',
     description: '',
-    privacy: 'private',
+    // '' until the owner picks one of the radios (D46): never defaulted.
+    privacy: '',
+    privacyMessage: '',
+    selectFilteredStatus: '',
     urlInput: '',
     urlMessage: '',
     urlBusy: false,
@@ -102,7 +106,7 @@ document.addEventListener('alpine:init', () => {
         items: proposalItems,
         title: typeof editor.title === 'string' ? editor.title : '',
         description: typeof editor.description === 'string' ? editor.description : '',
-        privacy: normalizePrivacy(editor.privacy),
+        privacy: '',
       };
       // Proposal items first (they keep their outside flag), channel videos (current values) override.
       this.byId = new Map(proposalItems.map((x) => [x.id, x]));
@@ -120,9 +124,15 @@ document.addEventListener('alpine:init', () => {
         this.applyInitial();
       }
 
+      // The select-all result is about the previous filter.
+      this.$watch('query', () => { this.selectFilteredStatus = ''; });
       this.$watch('title', () => this.persist());
       this.$watch('description', () => this.persist());
-      this.$watch('privacy', () => { this.privacy = normalizePrivacy(this.privacy); this.persist(); });
+      this.$watch('privacy', () => {
+        this.privacy = normalizePrivacy(this.privacy);
+        if (createBlockedMessage(this.privacy) === '') this.privacyMessage = '';
+        this.persist();
+      });
       this.ready = true;
     },
 
@@ -159,6 +169,9 @@ document.addEventListener('alpine:init', () => {
     get hasUrlMessage() { return this.urlMessage !== ''; },
     get hasUnlistedMessage() { return this.unlistedMessage !== ''; },
     get hasCreateMessage() { return this.createMessage !== ''; },
+    get hasPrivacyMessage() { return this.privacyMessage !== ''; },
+    get selectFilteredLabel() { return selectFilteredLabel(selectFilteredCount(this.query, this.filtered, this.items)); },
+    get isSelectFilteredDisabled() { return !canSelectFiltered(this.query, this.filtered, this.items, this.maxItems); },
     get createNeedsRelogin() { return this.relogin.create; },
     get unlistedNeedsRelogin() { return this.relogin.unlisted; },
     get urlNeedsRelogin() { return this.relogin.url; },
@@ -212,6 +225,16 @@ document.addEventListener('alpine:init', () => {
       this.limitMessage = r.error === 'limit' ? this.limitText() : '';
       this.apply(r.list);
     },
+    // 「絞り込み結果をすべて選択」: the filtered, unselected videos in list order, as far as the cap allows.
+    selectAllFiltered() {
+      if (this.isSelectFilteredDisabled) return;
+      const r = selectFiltered(this.items, this.filtered, this.maxItems, (v) => this.byId.get(v.id) ?? toItem(v));
+      // Shown (role=status) right under the button; the button may now be disabled, so focus goes back to the filter.
+      this.selectFilteredStatus = selectFilteredMessage(r.wanted, r.added, this.maxItems);
+      this.limitMessage = '';
+      this.apply(r.list);
+      if (r.added >= 1) this.$refs.filter?.focus();
+    },
     remove() {
       this.limitMessage = '';
       this.apply(removeVideo(this.items, this.item.id));
@@ -225,10 +248,19 @@ document.addEventListener('alpine:init', () => {
       this.restoredMessage = '';
       this.urlMessage = '';
       this.createMessage = '';
+      this.privacyMessage = '';
+      this.selectFilteredStatus = '';
     },
     // 「作成」: POST the edited list (JSON) to the start API; on success S6 takes over and the draft is dropped.
     async onCreate() {
       if (this.isCreateDisabled) return;
+      // No default privacy (D46): ask for a choice next to the radios instead of sending.
+      const blocked = createBlockedMessage(this.privacy);
+      if (blocked !== '') {
+        this.privacyMessage = blocked;
+        document.getElementById('privacy-private')?.focus();
+        return;
+      }
       this.createBusy = true;
       this.createMessage = '';
       this.relogin = withRelogin(this.relogin, 'create', false);
@@ -250,7 +282,9 @@ document.addEventListener('alpine:init', () => {
           return; // stays busy: the page is leaving
         }
         const failure = startFailure(res.status, body);
-        this.createMessage = failure.message;
+        const messages = failureMessages(failure.message, body);
+        this.createMessage = messages.createMessage;
+        this.privacyMessage = messages.privacyMessage;
         this.relogin = withRelogin(this.relogin, 'create', failure.relogin);
         this.items = markUnavailable(this.items, failure.unavailableIds);
       } catch {

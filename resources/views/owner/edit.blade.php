@@ -85,8 +85,11 @@
             <div x-show="hasVideos" x-cloak class="space-y-2">
                 <label class="block text-sm">
                     <span class="block">タイトルで絞り込み（スペース区切りですべて含むもの）</span>
-                    <input type="search" x-model="query" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" autocomplete="off">
+                    <input type="search" x-model="query" x-ref="filter" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" autocomplete="off">
                 </label>
+                {{-- Disabled until a filter matches a video not selected yet (owner-edit.js); the no-JS state is disabled. --}}
+                <button type="button" @click="selectAllFiltered" :disabled="isSelectFilteredDisabled" x-text="selectFilteredLabel" class="rounded border border-gray-400 px-3 py-1 text-sm disabled:opacity-50" disabled>絞り込み結果をすべて選択</button>
+                <p class="select-filtered-status text-sm text-gray-700" role="status" aria-live="polite" x-text="selectFilteredStatus"></p>
                 <ul class="max-h-[32rem] divide-y divide-gray-200 overflow-y-auto rounded border border-gray-200">
                     <template x-for="video in filtered" :key="video.id">
                         <li class="flex items-center gap-2 pr-2">
@@ -132,14 +135,22 @@
                 <span class="block text-xs" :class="descriptionCounterClass" x-text="descriptionCounter"></span>
                 <span class="block text-xs text-red-700" x-show="descriptionOver" x-cloak>再生リストの説明 は 1000 文字以内で入力してください</span>
             </label>
-            <label class="block text-sm">
-                <span class="block font-semibold">公開範囲</span>
-                <select name="privacy" x-model="privacy" class="mt-1 rounded border border-gray-300 px-3 py-2">
-                    <option value="private" selected>非公開</option>
-                    <option value="unlisted">限定公開</option>
-                    <option value="public">公開</option>
-                </select>
-            </label>
+            {{-- No default (D46): nothing is checked until the owner picks one; 「作成」 asks for it otherwise. --}}
+            <fieldset class="privacy-choice text-sm" aria-describedby="privacy-error">
+                <legend class="font-semibold">公開範囲（必須）</legend>
+                <div class="mt-1 space-y-2">
+                    @foreach (\App\Http\Controllers\OwnerEditController::PRIVACY_OPTIONS as $value => [$label, $hint])
+                        <label class="privacy-option flex cursor-pointer items-start gap-2 rounded border border-gray-300 px-3 py-2">
+                            <input type="radio" name="privacy" value="{{ $value }}" id="privacy-{{ $value }}" x-model="privacy" autocomplete="off" class="mt-1">
+                            <span>
+                                <span class="block font-semibold">{{ $label }}</span>
+                                <span class="block text-xs text-gray-600">{{ $hint }}</span>
+                            </span>
+                        </label>
+                    @endforeach
+                </div>
+                <p id="privacy-error" class="mt-1 text-sm text-red-700" role="alert" x-show="hasPrivacyMessage" x-cloak x-text="privacyMessage"></p>
+            </fieldset>
             {{-- Security M1: a public playlist exposes the owner's unlisted videos in it to anyone who opens it. --}}
             <p class="text-sm text-amber-800" role="status" x-show="hasPublicUnlistedNote" x-cloak x-text="publicUnlistedNote"></p>
         </section>

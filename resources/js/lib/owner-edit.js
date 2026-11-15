@@ -10,8 +10,36 @@ export const DESCRIPTION_MAX = 1000;
 
 const ID_RE = /^[A-Za-z0-9_-]{11}$/;
 
+// No default (D46): anything but the three values means "not chosen yet" (''), and the owner must pick one.
 export function normalizePrivacy(v) {
-  return PRIVACY_VALUES.includes(v) ? v : 'private';
+  return PRIVACY_VALUES.includes(v) ? v : '';
+}
+
+export function isPrivacyChosen(v) {
+  return PRIVACY_VALUES.includes(v);
+}
+
+export const PRIVACY_REQUIRED = '公開範囲を選んでください';
+
+// 「作成」 is not sent until a privacy is chosen: the message to show next to the radios, or '' to go ahead.
+export function createBlockedMessage(privacy) {
+  return isPrivacyChosen(privacy) ? '' : PRIVACY_REQUIRED;
+}
+
+// The server's 422 message for privacy (errors.privacy[0]), shown next to the radios; '' when there is none.
+export function privacyErrorFrom(body) {
+  const list = body !== null && typeof body === 'object' && body.errors !== null && typeof body.errors === 'object'
+    ? body.errors.privacy : undefined;
+  return Array.isArray(list) && typeof list[0] === 'string' ? list[0] : '';
+}
+
+// A failed start split between the message under 「作成」 and the one next to the radios: when privacy is the only
+// failed field, its message is shown once (next to the radios) instead of twice.
+export function failureMessages(failureMessage, body) {
+  const privacyMessage = privacyErrorFrom(body);
+  const errors = body !== null && typeof body === 'object' && body.errors !== null && typeof body.errors === 'object' ? body.errors : {};
+  const onlyPrivacy = privacyMessage !== '' && Object.keys(errors).every((k) => k === 'privacy');
+  return { createMessage: onlyPrivacy ? '' : failureMessage, privacyMessage };
 }
 
 // Missing or malformed means 0: nothing can be created.
