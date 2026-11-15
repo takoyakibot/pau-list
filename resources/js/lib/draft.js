@@ -1,6 +1,7 @@
 // The owner's edit draft (S5), in sessionStorage only: key listmaker:edit:${draftId}.
-// Stored shape: {items: [{id, outside}], title, description, privacy}. No titles or thumbnails
-// (API data). Every function swallows storage errors.
+// Stored shape: {items: [{id, outside}], title, description, chosenPrivacy}. No titles or thumbnails
+// (API data). Every function swallows storage errors. chosenPrivacy is '' until the owner picks one (D46);
+// the older `privacy` field always held the old default 'private' and is ignored, so it never pre-selects.
 import { normalizePrivacy } from './owner-edit.js';
 
 const PREFIX = 'listmaker:edit:';
@@ -25,7 +26,7 @@ export function loadDraft(storage, draftId) {
       || typeof v.title !== 'string' || typeof v.description !== 'string') {
       return null;
     }
-    return { items: cleanItems(v.items), title: v.title, description: v.description, privacy: normalizePrivacy(v.privacy) };
+    return { items: cleanItems(v.items), title: v.title, description: v.description, privacy: normalizePrivacy(v.chosenPrivacy) };
   } catch {
     return null;
   }
@@ -38,7 +39,7 @@ export function saveDraft(storage, draftId, state) {
       items: cleanItems(Array.isArray(state.items) ? state.items : []),
       title: String(state.title ?? ''),
       description: String(state.description ?? ''),
-      privacy: normalizePrivacy(state.privacy),
+      chosenPrivacy: normalizePrivacy(state.privacy),
     };
     storage.setItem(keyFor(draftId), JSON.stringify(value));
     return true;

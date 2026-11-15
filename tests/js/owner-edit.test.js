@@ -6,6 +6,7 @@ import {
   rowActionLabel, isBlankTitle, TITLE_REQUIRED, DRAFT_RESTORED,
   creationRequestBody, startFailure, markUnavailable, START_FAILED, PAGE_EXPIRED,
   unlistedFailure, withRelogin, publicUnlistedNote, PUBLIC_UNLISTED_NOTE, lookupItem,
+  isPrivacyChosen, privacyErrorFrom, PRIVACY_REQUIRED,
 } from '../../resources/js/lib/owner-edit.js';
 
 test('creationQuota: within remaining', () => {
@@ -38,11 +39,23 @@ test('isCreateDisabled', () => {
   assert.equal(isCreateDisabled({ ...ok, maxItems: 0 }), true);
   assert.equal(isCreateDisabled({ ...ok, count: 0 }), true);
 });
-test('normalizePrivacy defaults to private', () => {
+test('normalizePrivacy has no default: anything else is not chosen', () => {
   assert.deepEqual(PRIVACY_VALUES, ['private', 'unlisted', 'public']);
-  assert.equal(normalizePrivacy('public'), 'public');
-  assert.equal(normalizePrivacy('unlisted'), 'unlisted');
-  for (const v of [undefined, '', 'PUBLIC', 'friends']) assert.equal(normalizePrivacy(v), 'private');
+  for (const v of PRIVACY_VALUES) {
+    assert.equal(normalizePrivacy(v), v);
+    assert.equal(isPrivacyChosen(v), true);
+  }
+  for (const v of [undefined, null, '', 'PUBLIC', 'friends', ['public']]) {
+    assert.equal(normalizePrivacy(v), '');
+    assert.equal(isPrivacyChosen(v), false);
+  }
+});
+test('privacyErrorFrom takes the server message for privacy only', () => {
+  assert.equal(PRIVACY_REQUIRED, '公開範囲を選んでください');
+  assert.equal(privacyErrorFrom({ message: 'x', errors: { privacy: ['公開範囲を選んでください'] } }), '公開範囲を選んでください');
+  for (const body of [null, {}, { errors: null }, { errors: { title: ['x'] } }, { errors: { privacy: 'x' } }, { errors: { privacy: [1] } }]) {
+    assert.equal(privacyErrorFrom(body), '');
+  }
 });
 
 const A = 'aaaaaaaaaaa'; const B = 'bbbbbbbbbbb'; const C = 'ccccccccccc'; const U = 'uuuuuuuuuuu';
@@ -110,7 +123,7 @@ test('isBlankTitle treats ASCII and full-width spaces as empty', () => {
 test('creationRequestBody sends ids, title, description and a normalized privacy', () => {
   assert.deepEqual(
     creationRequestBody({ items: [{ id: 'aaaaaaaaaaa', title: 'A' }, { id: 'bbbbbbbbbbb' }], title: 't', description: '', privacy: 'x' }),
-    { video_ids: ['aaaaaaaaaaa', 'bbbbbbbbbbb'], title: 't', description: '', privacy: 'private' },
+    { video_ids: ['aaaaaaaaaaa', 'bbbbbbbbbbb'], title: 't', description: '', privacy: '' },
   );
   assert.equal(creationRequestBody({ items: [], title: 't', description: 'd', privacy: 'unlisted' }).privacy, 'unlisted');
 });

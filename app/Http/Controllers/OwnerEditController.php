@@ -51,6 +51,18 @@ class OwnerEditController extends Controller
     /** Named limiter for lookup()'s owner-token step only (each call spends the shared owner_read pool). */
     public const OWNER_CHECK_LIMITER = 'owner-video-check';
 
+    /**
+     * S5 公開範囲 radios (D46): value => [label, one-line explanation], in display order. None is pre-selected;
+     * the values match StartCreationRequest::PRIVACY.
+     *
+     * @var array<string, array{string, string}>
+     */
+    public const PRIVACY_OPTIONS = [
+        'private' => ['非公開', '自分だけが見られます'],
+        'unlisted' => ['限定公開', 'リンクを知っている人だけが見られます'],
+        'public' => ['公開', 'だれでも検索・閲覧できます'],
+    ];
+
     /** Shown under the URL input on S5. */
     public const URL_UNLISTED_HINT = 'あなたの限定公開の動画は、URL を入力するか「限定公開の動画も表示する」から追加できます';
 
@@ -102,7 +114,6 @@ class OwnerEditController extends Controller
             'unlistedUrl' => route('owner.unlisted'),
             'title' => $proposal->title,
             'description' => $proposal->description,
-            'privacy' => 'private',
             // POST target of 「作成」, relative to /p/{key}/edit: the raw key is never written into the page.
             'creationUrl' => 'creation',
         ];

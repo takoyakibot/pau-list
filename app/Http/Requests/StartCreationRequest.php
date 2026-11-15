@@ -56,7 +56,8 @@ class StartCreationRequest extends FormRequest
             'video_ids.*.distinct' => '同じ動画が重複しています',
             'video_ids.*.regex' => '動画 ID の形式が正しくありません',
             'title.required' => '再生リスト名を入力してください',
-            'privacy.required' => '公開範囲の値が正しくありません',
+            // No default (D46): a missing choice is asked for, not filled in.
+            'privacy.required' => '公開範囲を選んでください',
             'privacy.string' => '公開範囲の値が正しくありません',
             'privacy.in' => '公開範囲の値が正しくありません',
             'string' => ':attribute の形式が正しくありません',

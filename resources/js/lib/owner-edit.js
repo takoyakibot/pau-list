@@ -10,8 +10,22 @@ export const DESCRIPTION_MAX = 1000;
 
 const ID_RE = /^[A-Za-z0-9_-]{11}$/;
 
+// No default (D46): anything but the three values means "not chosen yet" (''), and the owner must pick one.
 export function normalizePrivacy(v) {
-  return PRIVACY_VALUES.includes(v) ? v : 'private';
+  return PRIVACY_VALUES.includes(v) ? v : '';
+}
+
+export function isPrivacyChosen(v) {
+  return PRIVACY_VALUES.includes(v);
+}
+
+export const PRIVACY_REQUIRED = '公開範囲を選んでください';
+
+// The server's 422 message for privacy (errors.privacy[0]), shown next to the radios; '' when there is none.
+export function privacyErrorFrom(body) {
+  const list = body !== null && typeof body === 'object' && body.errors !== null && typeof body.errors === 'object'
+    ? body.errors.privacy : undefined;
+  return Array.isArray(list) && typeof list[0] === 'string' ? list[0] : '';
 }
 
 // Missing or malformed means 0: nothing can be created.

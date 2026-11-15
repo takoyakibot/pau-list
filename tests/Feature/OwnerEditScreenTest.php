@@ -22,7 +22,7 @@ class OwnerEditScreenTest extends TestCase
 
     private const UPLOADS = 'UUaaaaaaaaaaaaaaaaaaaaaa';
 
-    private const EDITOR_KEYS = ['creationUrl', 'description', 'draftId', 'items', 'lookupUrl', 'maxItems', 'privacy', 'remainingItems', 'resetLabel', 'title', 'unlistedUrl', 'videos'];
+    private const EDITOR_KEYS = ['creationUrl', 'description', 'draftId', 'items', 'lookupUrl', 'maxItems', 'remainingItems', 'resetLabel', 'title', 'unlistedUrl', 'videos'];
 
     protected function setUp(): void
     {
@@ -127,17 +127,33 @@ class OwnerEditScreenTest extends TestCase
         $this->assertMatchesRegularExpression('/<button[^>]*id="create-playlist"[^>]*disabled/', $res->getContent());
     }
 
-    public function test_privacy_defaults_to_private_and_offers_three_values(): void
+    public function test_privacy_is_three_radios_with_none_checked(): void
     {
         $this->cacheChannel();
         $html = $this->edit($this->createProposal())->getContent();
-        $this->assertMatchesRegularExpression('/<select[^>]*name="privacy"/', $html);
-        $this->assertMatchesRegularExpression('/<option value="private"[^>]*selected/', $html);
-        foreach (['unlisted', 'public'] as $v) {
-            $this->assertStringContainsString('<option value="'.$v.'"', $html);
-            $this->assertDoesNotMatchRegularExpression('/<option value="'.$v.'"[^>]*selected/', $html);
+        $this->assertStringNotContainsString('<select name="privacy"', $html);
+        $this->assertMatchesRegularExpression('/<fieldset[^>]*>\s*<legend[^>]*>公開範囲（必須）<\/legend>/u', $html);
+        $this->assertSame(3, preg_match_all('/<input type="radio" name="privacy"[^>]*>/', $html, $m));
+        foreach (['private', 'unlisted', 'public'] as $i => $v) {
+            $this->assertStringContainsString('value="'.$v.'" id="privacy-'.$v.'" x-model="privacy"', $m[0][$i]);
+            $this->assertStringNotContainsString('checked', $m[0][$i]);
         }
-        $this->assertSame(3, substr_count($html, '<option value="'));
+        foreach ([
+            ['非公開', '自分だけが見られます'],
+            ['限定公開', 'リンクを知っている人だけが見られます'],
+            ['公開', 'だれでも検索・閲覧できます'],
+        ] as [$label, $hint]) {
+            $this->assertMatchesRegularExpression('/>'.$label.'<\/span>\s*<span[^>]*>'.$hint.'<\/span>/u', $html);
+        }
+        // The client-side message for a missing choice sits next to the radios (property refs only, CSP build).
+        $this->assertStringContainsString('x-show="hasPrivacyMessage" x-cloak x-text="privacyMessage"', $html);
+    }
+
+    public function test_select_filtered_button_starts_disabled_and_uses_property_refs(): void
+    {
+        $this->cacheChannel();
+        $html = $this->edit($this->createProposal())->getContent();
+        $this->assertMatchesRegularExpression('/<button type="button" @click="selectAllFiltered" :disabled="isSelectFilteredDisabled" x-text="selectFilteredLabel"[^>]* disabled>絞り込み結果をすべて選択（0 本）<\/button>/u', $html);
     }
 
     public function test_name_and_description_inputs_start_from_the_proposal(): void
@@ -195,7 +211,8 @@ class OwnerEditScreenTest extends TestCase
         ], $payload['videos']);
         $this->assertSame('私の再生リスト', $payload['title']);
         $this->assertSame("1 行目\n2 行目 https://example.com/x", $payload['description']);
-        $this->assertSame('private', $payload['privacy']);
+        // No default privacy is sent (D46): the radios start with nothing chosen.
+        $this->assertArrayNotHasKey('privacy', $payload);
         // Relative to /p/{key}/edit: the raw key is never written into the page.
         $this->assertSame('creation', $payload['creationUrl']);
 

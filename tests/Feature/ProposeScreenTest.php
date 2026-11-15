@@ -69,6 +69,15 @@ class ProposeScreenTest extends TestCase
         $this->assertSame(['id', 'title', 'thumbnail_url', 'published_at'], array_keys($payload['videos'][0]));
     }
 
+    public function test_select_filtered_button_starts_disabled_and_uses_property_refs(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-14 03:00:00'));
+        $id = $this->setUpChannel();
+        $html = $this->get(route('channels.propose', $id))->assertOk()->getContent();
+        // Enabled by propose.js only while a filter matches a video not selected yet (CSP build: property refs only).
+        $this->assertMatchesRegularExpression('/<button type="button" @click="selectAllFiltered" :disabled="isSelectFilteredDisabled" x-text="selectFilteredLabel"[^>]* disabled>絞り込み結果をすべて選択（0 本）<\/button>/u', $html);
+    }
+
     public function test_title_is_escaped_in_page_and_payload(): void
     {
         $id = $this->id();

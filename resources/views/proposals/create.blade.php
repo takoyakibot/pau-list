@@ -48,6 +48,8 @@
                 <span class="block">タイトルで絞り込み（スペース区切りですべて含むもの）</span>
                 <input type="search" x-model="query" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" autocomplete="off">
             </label>
+            {{-- Disabled until a filter matches a video not selected yet (propose.js); the no-JS state is disabled. --}}
+            <button type="button" @click="selectAllFiltered" :disabled="isSelectFilteredDisabled" x-text="selectFilteredLabel" class="rounded border border-gray-400 px-3 py-1 text-sm disabled:opacity-50" disabled>絞り込み結果をすべて選択（0 本）</button>
             <p class="text-sm" aria-live="polite">
                 表示 <span x-text="shownCount"></span> 件／選択 <span x-text="selectedCount"></span> / <span x-text="maxItems"></span>
                 <button type="button" class="ml-3 underline" @click="clearAll">全解除</button>

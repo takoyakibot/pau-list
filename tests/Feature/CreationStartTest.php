@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Testing\TestResponse;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Tests\Support\CreatesProposals;
 use Tests\Support\EnforcesCsrf;
@@ -110,6 +111,38 @@ class CreationStartTest extends TestCase
         $this->assertSame(['bbbbbbbbbbb', 'aaaaaaaaaaa'], $c->items()->pluck('video_id')->all());
         $this->assertSame([0, 1], $c->items()->pluck('position')->all());
         $this->assertSame('私の再生リスト', Proposal::sole()->title);
+    }
+
+    /** @return array<string, array{string}> */
+    public static function privacyValues(): array
+    {
+        return ['private' => ['private'], 'unlisted' => ['unlisted'], 'public' => ['public']];
+    }
+
+    #[DataProvider('privacyValues')]
+    public function test_each_privacy_value_is_accepted(string $privacy): void
+    {
+        $key = $this->createProposal();
+        $this->fakeBothPublic();
+
+        $this->actAsOwner($this->channelId)->start($key, $this->body(['privacy' => $privacy]))->assertCreated();
+
+        $this->assertSame($privacy, PlaylistCreation::sole()->privacy_status);
+    }
+
+    public function test_missing_privacy_is_rejected_without_a_default(): void
+    {
+        $key = $this->createProposal();
+        $body = $this->body();
+        unset($body['privacy']);
+
+        $res = $this->actAsOwner($this->channelId)->start($key, $body)->assertStatus(422);
+
+        $this->assertSame('公開範囲を選んでください', $res->json('errors.privacy.0'));
+        $this->assertSame('公開範囲を選んでください', $res->json('message'));
+        $this->assertCount(0, Http::recorded());
+        $this->assertSame(0, PlaylistCreation::count());
+        $this->assertSame(0, QuotaReservation::count());
     }
 
     public function test_one_video_reserves_100(): void
@@ -322,7 +355,10 @@ class CreationStartTest extends TestCase
             [['title' => str_repeat('あ', 151)], 'title', '再生リスト名 は 150 文字以内で入力してください'],
             [['description' => str_repeat('あ', 1001)], 'description', '再生リストの説明 は 1000 文字以内で入力してください'],
             [['privacy' => 'friends'], 'privacy', '公開範囲の値が正しくありません'],
-            [['privacy' => null], 'privacy', '公開範囲の値が正しくありません'],
+            [['privacy' => null], 'privacy', '公開範囲を選んでください'],
+            [['privacy' => ''], 'privacy', '公開範囲を選んでください'],
+            [['privacy' => 'PUBLIC'], 'privacy', '公開範囲の値が正しくありません'],
+            [['privacy' => ['public']], 'privacy', '公開範囲の値が正しくありません'],
             [['video_ids' => []], 'video_ids', '動画を 1 本以上選んでください'],
             [['video_ids' => array_map(fn ($i) => sprintf('v%010d', $i), range(1, 100))], 'video_ids', '1 つの再生リストに入れられるのは最大 99 本です'],
             [['video_ids' => ['aaaaaaaaaaa', 'aaaaaaaaaaa']], 'video_ids.0', '同じ動画が重複しています'],
