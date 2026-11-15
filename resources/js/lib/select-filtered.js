@@ -25,12 +25,15 @@ export function selectFilteredCount(query, filtered, selected) {
   return hasFilter(query) ? unselectedFiltered(filtered, selected).length : 0;
 }
 
-export function canSelectFiltered(query, filtered, selected) {
-  return selectFilteredCount(query, filtered, selected) > 0;
+// Like the per-row checkboxes, nothing can be added once the selection is at the cap (or the cap is unknown).
+export function canSelectFiltered(query, filtered, selected, max) {
+  const n = Array.isArray(selected) ? selected.length : 0;
+  return max >= 1 && n < max && selectFilteredCount(query, filtered, selected) > 0;
 }
 
+// The count only when there is something to add.
 export function selectFilteredLabel(count) {
-  return `絞り込み結果をすべて選択（${count} 本）`;
+  return count >= 1 ? `絞り込み結果をすべて選択（${count} 本）` : '絞り込み結果をすべて選択';
 }
 
 // Adds the filtered, not-yet-selected videos in order until the cap. `resolve` maps a list video to the item the
@@ -50,7 +53,8 @@ export function selectFiltered(selected, filtered, max, resolve = (v) => v) {
   return { list, wanted: wanted.length, added };
 }
 
-// Only when the cap cut the additions short.
+// The result, announced politely next to the button: how many were added, and why not all when the cap cut it short.
 export function selectFilteredMessage(wanted, added, max) {
-  return added < wanted ? `上限の ${max} 本に達したため、${wanted} 本のうち ${added} 本だけ選択しました` : '';
+  if (!(wanted >= 1)) return '';
+  return added < wanted ? `上限 ${max} 本のため、${wanted} 本中 ${added} 本を選択しました` : `${added} 本を選択しました`;
 }

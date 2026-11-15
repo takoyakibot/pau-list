@@ -75,7 +75,8 @@ class ProposeScreenTest extends TestCase
         $id = $this->setUpChannel();
         $html = $this->get(route('channels.propose', $id))->assertOk()->getContent();
         // Enabled by propose.js only while a filter matches a video not selected yet (CSP build: property refs only).
-        $this->assertMatchesRegularExpression('/<button type="button" @click="selectAllFiltered" :disabled="isSelectFilteredDisabled" x-text="selectFilteredLabel"[^>]* disabled>絞り込み結果をすべて選択（0 本）<\/button>/u', $html);
+        $this->assertMatchesRegularExpression('/<button type="button" @click="selectAllFiltered" :disabled="isSelectFilteredDisabled" x-text="selectFilteredLabel"[^>]* disabled>絞り込み結果をすべて選択<\/button>\s*<p class="select-filtered-status[^"]*" role="status" aria-live="polite" x-text="selectFilteredStatus"><\/p>/u', $html);
+        $this->assertStringContainsString('x-model="query" x-ref="filter"', $html);
     }
 
     public function test_title_is_escaped_in_page_and_payload(): void

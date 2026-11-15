@@ -12,24 +12,29 @@ test('hasFilter needs a non-blank query (full-width space counts as blank)', () 
   assert.equal(hasFilter(' a '), true);
 });
 
-test('enabled only with a filter and at least one filtered video not yet selected', () => {
+test('enabled only with a filter, a filtered video not yet selected and room below the cap', () => {
   const filtered = [v('a'), v('b')];
-  assert.equal(canSelectFiltered('', filtered, []), false);
-  assert.equal(canSelectFiltered('  ', filtered, []), false);
-  assert.equal(canSelectFiltered('x', [], []), false);
-  assert.equal(canSelectFiltered('x', filtered, [v('a'), v('b')]), false);
-  assert.equal(canSelectFiltered('x', filtered, [v('a')]), true);
+  assert.equal(canSelectFiltered('', filtered, [], 99), false);
+  assert.equal(canSelectFiltered('  ', filtered, [], 99), false);
+  assert.equal(canSelectFiltered('x', [], [], 99), false);
+  assert.equal(canSelectFiltered('x', filtered, [v('a'), v('b')], 99), false);
+  assert.equal(canSelectFiltered('x', filtered, [v('a')], 99), true);
+  // At the cap (like the per-row checkboxes) or with an unknown cap: disabled.
+  assert.equal(canSelectFiltered('x', filtered, [v('z'), v('y')], 2), false);
+  assert.equal(canSelectFiltered('x', filtered, [v('z')], 2), true);
+  assert.equal(canSelectFiltered('x', filtered, [], 0), false);
   assert.equal(selectFilteredCount('x', filtered, [v('a')]), 1);
   assert.equal(selectFilteredCount('', filtered, []), 0);
 });
 
 test('an already selected placeholder counts as selected', () => {
-  assert.equal(canSelectFiltered('x', [v('a')], [v('a', { placeholder: true, title: '動画 a' })]), false);
+  assert.equal(canSelectFiltered('x', [v('a')], [v('a', { placeholder: true, title: '動画 a' })], 99), false);
 });
 
-test('label shows the count', () => {
+test('label shows the count only when there is something to add', () => {
   assert.equal(selectFilteredLabel(3), '絞り込み結果をすべて選択（3 本）');
-  assert.equal(selectFilteredLabel(0), '絞り込み結果をすべて選択（0 本）');
+  assert.equal(selectFilteredLabel(1), '絞り込み結果をすべて選択（1 本）');
+  assert.equal(selectFilteredLabel(0), '絞り込み結果をすべて選択');
 });
 
 test('unselectedFiltered keeps the displayed order and drops duplicates and malformed entries', () => {
@@ -46,7 +51,8 @@ test('selectFiltered appends in the filtered order after the current selection w
   assert.equal(r.list[1].placeholder, true);
   assert.deepEqual([r.wanted, r.added], [2, 2]);
   assert.equal(JSON.stringify(selected), before);
-  assert.equal(selectFilteredMessage(r.wanted, r.added, 99), '');
+  assert.equal(selectFilteredMessage(r.wanted, r.added, 99), '2 本を選択しました');
+  assert.equal(selectFilteredMessage(0, 0, 99), '');
 });
 
 test('selectFiltered uses resolve for the added items (flags of the screen)', () => {
@@ -62,7 +68,7 @@ test('selectFiltered stops at the cap and reports how many fit', () => {
   assert.equal(r.list.length, 99);
   assert.deepEqual(r.list.slice(97).map((x) => x.id), ['a', 'b']);
   assert.deepEqual([r.wanted, r.added], [4, 2]);
-  assert.equal(selectFilteredMessage(r.wanted, r.added, 99), '上限の 99 本に達したため、4 本のうち 2 本だけ選択しました');
+  assert.equal(selectFilteredMessage(r.wanted, r.added, 99), '上限 99 本のため、4 本中 2 本を選択しました');
 });
 
 test('selectFiltered at the cap adds nothing', () => {
@@ -70,5 +76,5 @@ test('selectFiltered at the cap adds nothing', () => {
   const r = selectFiltered(selected, [v('c')], 2);
   assert.deepEqual(r.list.map((x) => x.id), ['a', 'b']);
   assert.notEqual(r.list, selected);
-  assert.equal(selectFilteredMessage(r.wanted, r.added, 2), '上限の 2 本に達したため、1 本のうち 0 本だけ選択しました');
+  assert.equal(selectFilteredMessage(r.wanted, r.added, 2), '上限 2 本のため、1 本中 0 本を選択しました');
 });

@@ -146,14 +146,16 @@ class OwnerEditScreenTest extends TestCase
             $this->assertMatchesRegularExpression('/>'.$label.'<\/span>\s*<span[^>]*>'.$hint.'<\/span>/u', $html);
         }
         // The client-side message for a missing choice sits next to the radios (property refs only, CSP build).
-        $this->assertStringContainsString('x-show="hasPrivacyMessage" x-cloak x-text="privacyMessage"', $html);
+        $this->assertStringContainsString('<fieldset class="privacy-choice text-sm" aria-describedby="privacy-error">', $html);
+        $this->assertStringContainsString('id="privacy-error" class="mt-1 text-sm text-red-700" role="alert" x-show="hasPrivacyMessage" x-cloak x-text="privacyMessage"', $html);
     }
 
     public function test_select_filtered_button_starts_disabled_and_uses_property_refs(): void
     {
         $this->cacheChannel();
         $html = $this->edit($this->createProposal())->getContent();
-        $this->assertMatchesRegularExpression('/<button type="button" @click="selectAllFiltered" :disabled="isSelectFilteredDisabled" x-text="selectFilteredLabel"[^>]* disabled>絞り込み結果をすべて選択（0 本）<\/button>/u', $html);
+        $this->assertMatchesRegularExpression('/<button type="button" @click="selectAllFiltered" :disabled="isSelectFilteredDisabled" x-text="selectFilteredLabel"[^>]* disabled>絞り込み結果をすべて選択<\/button>\s*<p class="select-filtered-status[^"]*" role="status" aria-live="polite" x-text="selectFilteredStatus"><\/p>/u', $html);
+        $this->assertStringContainsString('x-model="query" x-ref="filter"', $html);
     }
 
     public function test_name_and_description_inputs_start_from_the_proposal(): void
