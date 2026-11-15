@@ -5,7 +5,7 @@ import {
   restoreDraftItems, mergeUnlisted, upgradePlaceholders, sanitizeUnlisted, unlistedResultMessage,
   rowActionLabel, isBlankTitle, TITLE_REQUIRED, DRAFT_RESTORED,
   creationRequestBody, startFailure, markUnavailable, START_FAILED, PAGE_EXPIRED,
-  unlistedFailure, withRelogin, publicUnlistedNote, PUBLIC_UNLISTED_NOTE,
+  unlistedFailure, withRelogin, publicUnlistedNote, PUBLIC_UNLISTED_NOTE, lookupItem,
 } from '../../resources/js/lib/owner-edit.js';
 
 test('creationQuota: within remaining', () => {
@@ -155,6 +155,21 @@ test('withRelogin keeps one login link per failing action', () => {
   assert.deepEqual(withRelogin(b, 'unlisted', false), { create: true, unlisted: false });
   assert.deepEqual(none, { create: false, unlisted: false }); // not mutated
   assert.deepEqual(withRelogin(none, 'other', true), none);
+  assert.deepEqual(withRelogin(none, 'url', true), { create: false, unlisted: false, url: true });
+});
+
+test('lookupItem: the owner\'s own unlisted video is marked like the loaded list; public keeps outside', () => {
+  assert.deepEqual(
+    lookupItem({ video: { id: 'unl00000001', title: '限定', thumbnail_url: 'https://i.ytimg.com/x.jpg', outside: true, unlisted: true } }),
+    { id: 'unl00000001', title: '限定', thumbnail_url: 'https://i.ytimg.com/x.jpg', outside: false, unlisted: true },
+  );
+  assert.deepEqual(
+    lookupItem({ video: { id: 'pub00000001', title: 'P', thumbnail_url: null, outside: true } }),
+    { id: 'pub00000001', title: 'P', thumbnail_url: null, outside: true },
+  );
+  assert.equal(lookupItem({ video: { id: 'bad', title: 'x' } }), null);
+  assert.equal(lookupItem({ message: 'm' }), null);
+  assert.equal(lookupItem(null), null);
 });
 
 test('publicUnlistedNote: only a public playlist with an unlisted video', () => {

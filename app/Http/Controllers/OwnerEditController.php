@@ -5,22 +5,28 @@ namespace App\Http\Controllers;
 use App\Http\Middleware\RequireOwnerSession;
 use App\Models\Proposal;
 use App\Services\ChannelVideoCatalog;
+use App\Services\PublicVideoLookup;
 use App\Services\YouTube\PlaylistItem;
 use App\Services\YouTube\QuotaLedger;
+use App\Services\YouTube\ReadBudgetExceeded;
 use App\Services\YouTube\YouTubeApiException;
 use App\Services\YouTube\YouTubeOwnerClient;
 use App\Support\OwnerLogin;
 use App\Support\OwnerSession;
 use App\Support\QuotaPolicy;
+use App\Support\RateLimitLog;
+use App\Support\VideoUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\RateLimiter;
 
 /**
  * S5: the owner's edit screen. 「作成」 posts JSON to proposals.creation.start (owner-edit.js); no form.
  * Candidates are the channel's public list (shared cache). The owner's own unlisted uploads (user
- * decision #9) come from unlisted() on demand and are kept only in the owner's session and the response.
+ * decision #9) come from unlisted() on demand and are kept only in the owner's session and the response,
+ * or one at a time by URL from lookup() (response only). Neither ever reaches a shared cache.
  */
 class OwnerEditController extends Controller
 {
@@ -33,6 +39,20 @@ class OwnerEditController extends Controller
     public const UNLISTED_TRUNCATED = '限定公開の動画は新しい順に300本まで表示しています';
 
     public const UNLISTED_THROTTLED = '限定公開の動画の読み込みが続いています。10 分ほど待ってから再度お試しください';
+
+    public const LOOKUP_NOT_ADDABLE = 'この動画は追加できません（削除・非公開、またはあなたのチャンネル以外の限定公開の動画です）';
+
+    public const LOOKUP_UNLISTED_FAILED = 'この動画を確認できませんでした。時間をおいて再度お試しください';
+
+    public const LOOKUP_THROTTLED = '動画の確認が続いています。10 分ほど待ってから再度お試しください';
+
+    public const READ_BUDGET_EXCEEDED = '本日の取得上限に達しました';
+
+    /** Named limiter for lookup()'s owner-token step only (each call spends the shared owner_read pool). */
+    public const OWNER_CHECK_LIMITER = 'owner-video-check';
+
+    /** Shown under the URL input on S5. */
+    public const URL_UNLISTED_HINT = 'あなたの限定公開の動画は、URL を入力するか「限定公開の動画も表示する」から追加できます';
 
     public function show(Request $request, ChannelVideoCatalog $catalog, QuotaLedger $ledger): Response|RedirectResponse
     {
@@ -67,7 +87,8 @@ class OwnerEditController extends Controller
             'maxItems' => QuotaPolicy::maxItemsPerPlaylist(),
             'remainingItems' => max(0, $remaining->items),
             'resetLabel' => $resetLabel,
-            'lookupUrl' => route('channels.video', $proposal->channel_id),
+            // Relative to /p/{key}/edit (proposals.video, owner only): the raw key is never written into the page.
+            'lookupUrl' => 'videos/lookup',
             // A prefix only: enough to keep drafts apart, never the full hash or the raw key.
             'draftId' => substr($proposal->key_hash, 0, 16),
             'items' => $items->map(fn ($item) => [
@@ -142,6 +163,129 @@ class OwnerEditController extends Controller
         $owners->rememberUnlisted($owner->channelId, $videos, $truncated);
 
         return self::unlistedJson($videos, $truncated);
+    }
+
+    /**
+     * JSON for adding one video by URL on S5 (proposals.video, behind RequireOwnerSession). In order:
+     * 1. the owner's unlisted list already loaded into this session (no API call);
+     * 2. the public lookup shared with proposers (API key, read budget, shared 10-minute cache of public videos);
+     *    when the read budget is used up, step 3 is tried instead;
+     * 3. only when that finds nothing: videos.list with the owner's token (owner_read 1, skipped once
+     *    QuotaPolicy::ownerReadGuard() is reached, like unlisted(); limited to OWNER_CHECK_LIMITER per owner channel
+     *    on top of the route's limit, because each call spends the shared owner_read pool). Accepted: the logged-in
+     *    owner's own `unlisted` upload (spec 7.2's final check uses the same rule), or a `public` video (e.g. just
+     *    made public while the shared cache still says "not found"; returned like step 2 but not cached). Anything
+     *    else (another channel's unlisted, private, deleted) is 404 LOOKUP_NOT_ADDABLE.
+     * An unlisted result is marked `unlisted: true` like unlisted() and lives only in this response (and then in
+     * the page and its draft, and in the creation items if the owner creates the playlist). It is never put into
+     * the shared `video-lookup:{id}` cache nor into the session's unlisted list (which stays a whole-list cache).
+     */
+    public function lookup(
+        Request $request,
+        OwnerSession $owners,
+        PublicVideoLookup $public,
+        QuotaLedger $ledger,
+        YouTubeOwnerClient $youtube,
+    ): JsonResponse {
+        /** @var OwnerLogin $owner */
+        $owner = $request->attributes->get('owner');
+        $url = $request->query('url');
+        $videoId = is_string($url) ? VideoUrl::extractId($url) : null;
+        if ($videoId === null) {
+            return response()->json(['message' => ChannelController::VIDEO_URL_INVALID], 422);
+        }
+
+        foreach ($owners->unlisted($owner->channelId)['videos'] ?? [] as $listed) {
+            if (($listed['id'] ?? null) === $videoId) {
+                return self::ownerUnlistedJson($owner, [
+                    'id' => $videoId,
+                    'title' => is_string($listed['title'] ?? null) ? $listed['title'] : '',
+                    'thumbnail_url' => is_string($listed['thumbnail_url'] ?? null) ? $listed['thumbnail_url'] : null,
+                    'published_at' => is_string($listed['published_at'] ?? null) ? $listed['published_at'] : null,
+                ]);
+            }
+        }
+
+        $budgetExceeded = false;
+        try {
+            $video = $public->find($videoId);
+        } catch (ReadBudgetExceeded) {
+            // The owner's token does not use the read budget: step 3 can still answer.
+            $video = null;
+            $budgetExceeded = true;
+        } catch (YouTubeApiException) {
+            return response()->json(['message' => 'YouTube との通信に失敗しました。時間をおいて再度お試しください'], 503);
+        }
+        if ($video !== null) {
+            return self::publicJson($owner, $video);
+        }
+
+        if ($ledger->used(QuotaLedger::OWNER_READ) >= QuotaPolicy::ownerReadGuard()) {
+            return response()->json(['message' => $budgetExceeded ? self::READ_BUDGET_EXCEEDED : self::LOOKUP_UNLISTED_FAILED], 503);
+        }
+        $limit = RateLimiter::limiter(self::OWNER_CHECK_LIMITER)($request);
+        if (RateLimiter::tooManyAttempts($limit->key, $limit->maxAttempts)) {
+            RateLimitLog::exceeded(self::OWNER_CHECK_LIMITER);
+
+            return response()->json(['message' => self::LOOKUP_THROTTLED], 429)
+                ->header('Retry-After', (string) RateLimiter::availableIn($limit->key));
+        }
+        RateLimiter::hit($limit->key, $limit->decaySeconds);
+
+        try {
+            $info = $youtube->videos($owner->accessToken, [$videoId])[$videoId] ?? null;
+        } catch (YouTubeApiException $e) {
+            return RequireOwnerSession::ownerApiFailureJson($e, $owners, self::LOOKUP_UNLISTED_FAILED);
+        }
+        if ($info !== null && $info->isPublic()) {
+            // Not written to the shared cache: that cache is filled by the API key lookup only.
+            return self::publicJson($owner, [
+                'id' => $info->id,
+                'title' => $info->title,
+                'thumbnail_url' => $info->thumbnailUrl,
+                'channel_id' => $info->channelId,
+                'channel_title' => $info->channelTitle,
+                'published_at' => $info->publishedAt?->utc()->format('Y-m-d\TH:i:s\Z'),
+            ]);
+        }
+        if ($info === null || $info->channelId !== $owner->channelId || $info->privacyStatus !== 'unlisted') {
+            return response()->json(['message' => self::LOOKUP_NOT_ADDABLE], 404);
+        }
+
+        return self::ownerUnlistedJson($owner, [
+            'id' => $info->id,
+            'title' => $info->title,
+            'thumbnail_url' => $info->thumbnailUrl,
+            'published_at' => $info->publishedAt?->utc()->format('Y-m-d\TH:i:s\Z'),
+        ]);
+    }
+
+    /**
+     * A public video; `outside` is against the logged-in channel (RequireOwnerSession made it the proposal's).
+     *
+     * @param  array{id: string, title: string, thumbnail_url: ?string, channel_id: string, channel_title: string, published_at: ?string}  $video
+     */
+    private static function publicJson(OwnerLogin $owner, array $video): JsonResponse
+    {
+        return response()->json(['video' => $video + [
+            'outside' => $video['channel_id'] !== $owner->channelId,
+            'unlisted' => false,
+        ]]);
+    }
+
+    /** @param array{id: string, title: string, thumbnail_url: ?string, published_at: ?string} $video */
+    private static function ownerUnlistedJson(OwnerLogin $owner, array $video): JsonResponse
+    {
+        return response()->json(['video' => [
+            'id' => $video['id'],
+            'title' => $video['title'],
+            'thumbnail_url' => $video['thumbnail_url'],
+            'channel_id' => $owner->channelId,
+            'channel_title' => $owner->channelTitle,
+            'published_at' => $video['published_at'],
+            'outside' => false,
+            'unlisted' => true,
+        ]]);
     }
 
     /** @param list<array<string, mixed>> $videos */

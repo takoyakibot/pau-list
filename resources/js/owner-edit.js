@@ -1,4 +1,4 @@
-import { addVideo, removeVideo, moveVideo, toggleVideo, maxItemsFrom } from './lib/selection.js';
+import { addOrUpgrade, removeVideo, moveVideo, toggleVideo, maxItemsFrom } from './lib/selection.js';
 import { formatPublishedDate, watchUrl } from './lib/format.js';
 import { filterVideos } from './lib/filter.js';
 import { countChars, isOverLimit } from './lib/text.js';
@@ -7,7 +7,7 @@ import { loadDraft, saveDraft, clearDraft } from './lib/draft.js';
 import {
   normalizePrivacy, remainingFrom, creationQuota, shortageText, isCreateDisabled as createDisabled,
   restoreDraftItems, sanitizeUnlisted, mergeUnlisted, upgradePlaceholders, unlistedResultMessage, rowActionLabel, isBlankTitle,
-  creationRequestBody, startFailure, markUnavailable, unlistedFailure, withRelogin, publicUnlistedNote,
+  creationRequestBody, startFailure, markUnavailable, unlistedFailure, withRelogin, publicUnlistedNote, lookupItem,
   TITLE_REQUIRED, DRAFT_RESTORED, TITLE_MAX, DESCRIPTION_MAX,
 } from './lib/owner-edit.js';
 
@@ -78,7 +78,7 @@ document.addEventListener('alpine:init', () => {
     unlistedBusy: false,
     unlistedLoaded: false,
     unlistedMessage: '',
-    relogin: { create: false, unlisted: false },
+    relogin: { create: false, unlisted: false, url: false },
     createMessage: '',
     restoredMessage: '',
     storage: null,
@@ -86,7 +86,8 @@ document.addEventListener('alpine:init', () => {
     init() {
       const editor = readJson(this.$el, 'editor') ?? {};
       this.draftId = typeof editor.draftId === 'string' ? editor.draftId : '';
-      this.lookupUrl = typeof editor.lookupUrl === 'string' ? editor.lookupUrl : '';
+      // Relative to this page (videos/lookup, owner only): only that shape is followed.
+      this.lookupUrl = typeof editor.lookupUrl === 'string' && /^[a-z]+\/[a-z]+$/.test(editor.lookupUrl) ? editor.lookupUrl : '';
       this.unlistedUrl = typeof editor.unlistedUrl === 'string' ? editor.unlistedUrl : '';
       this.creationUrl = typeof editor.creationUrl === 'string' && /^[a-z]+$/.test(editor.creationUrl) ? editor.creationUrl : '';
       this.resetLabel = typeof editor.resetLabel === 'string' ? editor.resetLabel : '';
@@ -160,6 +161,7 @@ document.addEventListener('alpine:init', () => {
     get hasCreateMessage() { return this.createMessage !== ''; },
     get createNeedsRelogin() { return this.relogin.create; },
     get unlistedNeedsRelogin() { return this.relogin.unlisted; },
+    get urlNeedsRelogin() { return this.relogin.url; },
     get publicUnlistedNote() { return publicUnlistedNote(this.privacy, this.items); },
     get hasPublicUnlistedNote() { return this.publicUnlistedNote !== ''; },
     get canLoadUnlisted() { return this.unlistedUrl !== '' && !this.unlistedLoaded; },
@@ -262,17 +264,22 @@ document.addEventListener('alpine:init', () => {
       if (url === '' || this.urlBusy || this.lookupUrl === '') return;
       this.urlBusy = true;
       this.urlMessage = '';
+      this.relogin = withRelogin(this.relogin, 'url', false);
       try {
-        const res = await fetch(`${this.lookupUrl}?url=${encodeURIComponent(url)}`, { headers: JSON_HEADERS });
+        const res = await fetch(`${this.lookupUrl}?url=${encodeURIComponent(url)}`, { headers: JSON_HEADERS, credentials: 'same-origin' });
         let body = null;
         try { body = await res.json(); } catch { body = null; }
-        if (!res.ok || !body || !body.video || typeof body.video.id !== 'string') {
+        const found = res.ok ? lookupItem(body) : null;
+        if (found === null) {
+          // 401: the login expired (reloading asks for it again; the draft is kept).
           this.urlMessage = serverMessage(body, '動画を追加できませんでした。時間をおいて再度お試しください');
+          this.relogin = withRelogin(this.relogin, 'url', res.status === 401);
           return;
         }
-        const v = body.video;
-        const item = this.byId.get(v.id) ?? toItem({ ...v, outside: v.outside === true });
-        const r = addVideo(this.items, item, this.maxItems);
+        // The owner's own unlisted video found by URL is marked like the loaded list's entries.
+        if (found.unlisted === true) this.byId.set(found.id, found);
+        const item = this.byId.get(found.id) ?? found;
+        const r = addOrUpgrade(this.items, item, this.maxItems);
         if (r.error === 'duplicate') {
           this.urlMessage = 'この動画はすでに選択されています';
         } else if (r.error === 'limit') {

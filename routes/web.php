@@ -92,6 +92,13 @@ foreach ([
         ->name("proposals.creation.$action");
 }
 
+// S5 add-by-URL (owner only): public videos as for proposers, plus the owner's own unlisted videos (user
+// decision #9). Origin check, then the limiter (per owner channel), then the owner check.
+Route::get('/p/{key}/videos/lookup', [OwnerEditController::class, 'lookup'])
+    ->where('key', ProposalKey::ROUTE_PATTERN)
+    ->middleware([RequireSameOriginFetch::class, 'throttle:owner-video-lookup', RequireOwnerSession::class])
+    ->name('proposals.video');
+
 Route::get('/deleted', [OwnerDeleteController::class, 'deleted'])->name('proposals.deleted');
 
 Route::get('/owner/videos/unlisted', [OwnerEditController::class, 'unlisted'])

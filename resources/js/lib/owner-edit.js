@@ -156,10 +156,24 @@ export function unlistedFailure(httpStatus, body, fallback) {
   return { message: bodyMessage(body) ?? fallback, relogin: httpStatus === 401 };
 }
 
-// One 「もう一度ログインする」 link per action that failed with 401 (create / unlisted), never both for one failure.
+// One 「もう一度ログインする」 link per action that failed with 401 (create / unlisted / url), never two for one failure.
 export function withRelogin(flags, action, needed) {
-  if (action !== 'create' && action !== 'unlisted') return flags;
+  if (action !== 'create' && action !== 'unlisted' && action !== 'url') return flags;
   return { ...flags, [action]: needed === true };
+}
+
+// A video found by URL on S5 (owner lookup). The owner's own unlisted video is marked like the loaded list's
+// entries (outside: false, unlisted: true); anything else keeps the server's outside flag. Null when malformed.
+export function lookupItem(body) {
+  const v = body !== null && typeof body === 'object' ? body.video : null;
+  if (v === null || typeof v !== 'object' || typeof v.id !== 'string' || !ID_RE.test(v.id)) return null;
+  const item = {
+    id: v.id,
+    title: typeof v.title === 'string' ? v.title : '',
+    thumbnail_url: typeof v.thumbnail_url === 'string' ? v.thumbnail_url : null,
+    outside: v.unlisted === true ? false : v.outside === true,
+  };
+  return v.unlisted === true ? { ...item, unlisted: true } : item;
 }
 
 // A public playlist shows its videos to everyone who opens it, and the shared proposal page links to it.
