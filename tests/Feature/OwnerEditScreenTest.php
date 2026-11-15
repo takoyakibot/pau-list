@@ -181,7 +181,9 @@ class OwnerEditScreenTest extends TestCase
         $this->assertSame(99, $payload['maxItems']);
         $this->assertSame(99, $payload['remainingItems']);
         $this->assertSame('11月14日 17時', $payload['resetLabel']);
-        $this->assertSame(route('channels.video', $this->channelId), $payload['lookupUrl']);
+        // Relative to /p/{key}/edit (proposals.video, owner only): the raw key is never written into the page.
+        $this->assertSame('videos/lookup', $payload['lookupUrl']);
+        $this->assertStringContainsString('あなたの限定公開の動画は、URL を入力するか「限定公開の動画も表示する」から追加できます', $html);
         $this->assertSame(substr($proposal->key_hash, 0, 16), $payload['draftId']);
         $this->assertSame([
             ['id' => 'bbbbbbbbbbb', 'title' => '動画 B', 'thumbnail_url' => 'https://i.ytimg.com/vi/bbbbbbbbbbb/mqdefault.jpg', 'outside' => true],

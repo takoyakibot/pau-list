@@ -3,9 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Services\ChannelVideoCatalog;
+use App\Services\PublicVideoLookup;
 use App\Services\YouTube\ReadBudgetExceeded;
 use App\Services\YouTube\YouTubeApiException;
-use App\Services\YouTube\YouTubeReader;
 use App\Support\ChannelFetchThrottle;
 use App\Support\ChannelInput;
 use App\Support\RateLimitLog;
@@ -13,7 +13,6 @@ use App\Support\VideoUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 
 class ChannelController extends Controller
 {
@@ -21,6 +20,15 @@ class ChannelController extends Controller
         .'使える形式は @ から始まるハンドル（例: @example）、UC から始まるチャンネル ID、'
         .'youtube.com/channel/UC… または youtube.com/@… の URL です'
         .'（@ のないハンドルや、/c/・/user/ の URL は使えません）';
+
+    public const VIDEO_URL_INVALID = '動画の URL を確認してください';
+
+    /**
+     * The API key cannot tell deleted, private and unlisted videos apart, so one message covers all three.
+     * The owner's own unlisted videos can be added on S5 (OwnerEditController::lookup, user decision #9).
+     */
+    public const VIDEO_NOT_ADDABLE = 'この動画は追加できません（削除・非公開・限定公開の動画は追加できません。'
+        .'限定公開の動画は、チャンネルの持ち主がログインしたあとの編集画面で追加できます）';
 
     public function open(
         Request $request,
@@ -62,42 +70,27 @@ class ChannelController extends Controller
         return redirect()->route('channels.propose', $id);
     }
 
-    public function video(Request $request, string $channelId, YouTubeReader $reader): JsonResponse
+    public function video(Request $request, string $channelId, PublicVideoLookup $lookup): JsonResponse
     {
         $url = $request->query('url');
         $videoId = is_string($url) ? VideoUrl::extractId($url) : null;
         if ($videoId === null) {
-            return response()->json(['message' => '動画の URL を確認してください'], 422);
+            return response()->json(['message' => self::VIDEO_URL_INVALID], 422);
         }
 
         try {
-            // Not-found results are cached too; budget/transport failures throw and are not.
-            $hit = Cache::remember("video-lookup:{$videoId}", 600, function () use ($reader, $videoId) {
-                $info = $reader->videos([$videoId])[$videoId] ?? null;
-                if ($info === null || ! $info->isPublic()) {
-                    return ['found' => false];
-                }
-
-                return ['found' => true, 'video' => [
-                    'id' => $info->id,
-                    'title' => $info->title,
-                    'thumbnail_url' => $info->thumbnailUrl,
-                    'channel_id' => $info->channelId,
-                    'channel_title' => $info->channelTitle,
-                    'published_at' => $info->publishedAt?->utc()->format('Y-m-d\TH:i:s\Z'),
-                ]];
-            });
+            $video = $lookup->find($videoId);
         } catch (ReadBudgetExceeded) {
             return response()->json(['message' => '本日の取得上限に達しました'], 503);
         } catch (YouTubeApiException) {
             return response()->json(['message' => 'YouTube との通信に失敗しました。時間をおいて再度お試しください'], 503);
         }
 
-        if (! $hit['found']) {
-            return response()->json(['message' => 'この動画は削除または非公開になっています'], 404);
+        if ($video === null) {
+            return response()->json(['message' => self::VIDEO_NOT_ADDABLE], 404);
         }
 
-        return response()->json(['video' => $hit['video'] + ['outside' => $hit['video']['channel_id'] !== $channelId]]);
+        return response()->json(['video' => $video + ['outside' => $video['channel_id'] !== $channelId]]);
     }
 
     private function back(string $message, Request $request): RedirectResponse

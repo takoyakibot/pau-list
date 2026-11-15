@@ -111,7 +111,10 @@
                 <input type="url" x-model="urlInput" @keydown.enter.prevent="addByUrl" placeholder="https://www.youtube.com/watch?v=..." class="min-w-0 flex-1 rounded border border-gray-300 px-3 py-2 text-sm" aria-label="動画の URL" autocomplete="off">
                 <button type="button" @click="addByUrl" :disabled="urlBusy" class="rounded border border-gray-400 px-3 py-2 text-sm">追加</button>
             </div>
+            <p class="text-xs text-gray-600" x-cloak>{{ \App\Http\Controllers\OwnerEditController::URL_UNLISTED_HINT }}</p>
             <p class="text-sm text-red-700" role="alert" x-show="hasUrlMessage" x-cloak x-text="urlMessage"></p>
+            {{-- 401 from the owner lookup (login expired): reloading sends the owner to the preview's login link; the draft is kept. --}}
+            <p class="text-sm" x-show="urlNeedsRelogin" x-cloak><a class="font-semibold underline" :href="reloginHref">もう一度ログインする</a></p>
         </section>
 
         <section class="space-y-4">

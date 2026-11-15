@@ -161,6 +161,9 @@ class AppServiceProvider extends ServiceProvider
 
                 return response()->json(['message' => OwnerEditController::UNLISTED_THROTTLED], 429);
             }));
+        // S5 add-by-URL: 30 per minute per owner channel (IP when logged out), like the proposers' per-IP lookup.
+        RateLimiter::for('owner-video-lookup', fn (Request $request) => Limit::perMinute(30)
+            ->by('owner-video-lookup:'.(app(OwnerSession::class)->current()?->channelId ?? 'ip:'.ClientKey::for($request))));
         // Creation start and the retry of failed items share one limit: 5 per hour per owner channel (IP when logged out).
         RateLimiter::for('creation-start', fn (Request $request) => Limit::perHour(5)
             ->by('creation-start:'.(app(OwnerSession::class)->current()?->channelId ?? 'ip:'.ClientKey::for($request))));

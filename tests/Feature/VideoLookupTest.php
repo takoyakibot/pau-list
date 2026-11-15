@@ -61,7 +61,7 @@ class VideoLookupTest extends TestCase
     public function test_private_or_missing_video_is_404_and_cached(): void
     {
         $this->fakeVideos([$this->videoResource(self::VID, $this->ch(), ['privacy' => 'unlisted'])]);
-        $msg = ['message' => 'この動画は削除または非公開になっています'];
+        $msg = ['message' => 'この動画は追加できません（削除・非公開・限定公開の動画は追加できません。限定公開の動画は、チャンネルの持ち主がログインしたあとの編集画面で追加できます）'];
         $this->lookup(self::VID)->assertNotFound()->assertExactJson($msg);
         $this->lookup('zzzzzzzzzzz')->assertNotFound()->assertExactJson($msg);
         $this->lookup(self::VID)->assertNotFound();
