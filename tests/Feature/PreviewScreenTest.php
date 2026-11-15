@@ -192,7 +192,7 @@ class PreviewScreenTest extends TestCase
         $key = $this->makeProposal();
         $res = $this->get(route('proposals.show', $key))->assertDontSee('準備中')
             ->assertSee('href="'.e(route('owner.login', ['p' => $key])).'"', false)
-            ->assertSee('チャンネル主の方: Google でログインして作成へ')
+            ->assertSee('Google でログインして作成する')
             ->assertSeeText('利用規約・プライバシーポリシーに同意のうえログインしてください')
             ->assertSee('href="'.route('terms').'"', false)->assertSee('href="'.route('privacy').'"', false)
             ->assertDontSee('ログイン中:')
@@ -200,41 +200,68 @@ class PreviewScreenTest extends TestCase
         $this->assertNoInlineCode($res->getContent());
     }
 
+    private function makeProposalWithItems(int $count): string
+    {
+        $items = [];
+        foreach (range(1, $count) as $i) {
+            $items[] = ['video_id' => sprintf('vid%08d', $i), 'title' => '動画 '.$i, 'duration_seconds' => 60, 'is_outside_channel' => false];
+        }
+
+        return $this->makeProposal([], $items);
+    }
+
     public function test_owner_cta_is_right_under_the_title_before_the_videos(): void
     {
         $key = $this->makeProposal();
+        $login = 'href="'.e(route('owner.login', ['p' => $key])).'"';
         $html = $this->get(route('proposals.show', $key))->assertOk()
             ->assertSeeInOrder([
                 '<h1',
                 '私の再生リスト',
+                '提案した方は、この URL をチャンネル主に送ってください',
                 'data-owner-cta="top"',
                 'チャンネル主の方へ',
-                '内容を確認・編集して、あなたのチャンネルに再生リストを作成できます',
-                'href="'.e(route('owner.login', ['p' => $key])).'"',
+                'あなたのチャンネルに再生リストを作成できます',
+                $login,
+                'Google でログインして作成する',
                 '利用規約</a>・<a class="underline" href="'.route('privacy').'">プライバシーポリシー</a>に同意のうえログインしてください',
-                '提案した方は、この URL をチャンネル主に送ってください',
+                '<details',
+                'ログインの流れと権限',
+                '使うのはチャンネルの確認',
+                '</details>',
                 'id="videos-heading"',
                 '動画 A',
             ], false)
             ->getContent();
+        // The card is for the owner only: the proposer hint sits in the header, outside it.
+        $this->assertSame(1, preg_match('#<section[^>]*data-owner-cta="top"[^>]*>(.*?)</section>#s', $html, $m));
+        $this->assertStringNotContainsString('提案した方は', $m[1]);
         // A short list needs no repeat: the login button appears once.
         $this->assertStringNotContainsString('data-owner-cta="bottom"', $html);
-        $this->assertSame(1, substr_count($html, 'href="'.e(route('owner.login', ['p' => $key])).'"'));
+        $this->assertSame(1, substr_count($html, $login));
         $this->assertSame(1, substr_count($html, 'id="owner-heading"'));
     }
 
-    public function test_long_list_repeats_only_the_primary_action_below_the_videos(): void
+    public function test_seven_items_do_not_repeat_the_action_below_the_list(): void
     {
-        $items = [];
-        foreach (range(1, 10) as $i) {
-            $items[] = ['video_id' => sprintf('vid%08d', $i), 'title' => '動画 '.$i, 'duration_seconds' => 60, 'is_outside_channel' => false];
-        }
-        $key = $this->makeProposal([], $items);
+        $key = $this->makeProposalWithItems(7);
+        $html = $this->get(route('proposals.show', $key))->assertOk()->getContent();
+        $this->assertStringNotContainsString('data-owner-cta="bottom"', $html);
+        $this->assertStringNotContainsString('チャンネル主の方は Google でログイン', $html);
+    }
+
+    public function test_eight_items_repeat_only_the_primary_action_below_the_list(): void
+    {
+        $key = $this->makeProposalWithItems(8);
         $login = 'href="'.e(route('owner.login', ['p' => $key])).'"';
         $consent = '利用規約</a>・<a class="underline" href="'.route('privacy').'">プライバシーポリシー</a>に同意のうえログインしてください';
 
         $html = $this->get(route('proposals.show', $key))->assertOk()
-            ->assertSeeInOrder(['data-owner-cta="top"', $login, $consent, '動画 10', 'data-owner-cta="bottom"', $login, $consent], false)
+            ->assertSeeInOrder([
+                'data-owner-cta="top"', $login, 'Google でログインして作成する', $consent, '動画 8',
+                'data-owner-cta="bottom"', $login, 'チャンネル主の方は Google でログイン', $consent,
+                '（<a class="underline" href="'.route('privacy').'#data">権限について</a>）',
+            ], false)
             ->getContent();
         $this->assertSame(2, substr_count($html, $login));
         $this->assertSame(2, substr_count($html, $consent));
@@ -243,7 +270,23 @@ class PreviewScreenTest extends TestCase
         $this->assertSame(1, substr_count($html, 'id="login-flow-heading"'));
 
         $this->actAsOwner($this->channelId, '自分')->get(route('proposals.show', $key))
-            ->assertSeeInOrder(['data-owner-cta="top"', '編集画面へ進む', '動画 10', 'data-owner-cta="bottom"', '編集画面へ進む'], false);
+            ->assertSeeInOrder(['data-owner-cta="top"', '編集画面へ進む', '動画 8', 'data-owner-cta="bottom"', '編集画面へ進む'], false);
+    }
+
+    public function test_owner_of_another_channel_sees_relogin_at_the_top(): void
+    {
+        $key = $this->makeProposal();
+        $this->actAsOwner('UC'.str_repeat('z', 22), '他人')->get(route('proposals.show', $key))
+            ->assertSeeInOrder([
+                '私の再生リスト',
+                'data-owner-cta="top"',
+                'ログイン中: 他人（この提案の対象チャンネルではありません）',
+                'href="'.e(route('owner.login', ['p' => $key])).'"',
+                '別のチャンネルでログインし直す',
+                'プライバシーポリシー</a>に同意のうえログインしてください',
+                'id="videos-heading"',
+            ], false)
+            ->assertDontSee('href="'.route('proposals.edit', $key).'"', false);
     }
 
     public function test_logged_in_owner_action_is_at_the_top(): void
@@ -294,7 +337,7 @@ class PreviewScreenTest extends TestCase
             ->assertDontSee('href="'.route('proposals.edit', $key).'"', false)
             ->assertDontSee('編集画面へ進む')
             ->assertSee('別のチャンネルでログインし直す')
-            ->assertDontSee('チャンネル主の方: Google でログインして作成へ')
+            ->assertDontSee('Google でログインして作成する')
             ->assertSee('href="'.e(route('owner.login', ['p' => $key])).'"', false);
     }
 
@@ -305,7 +348,7 @@ class PreviewScreenTest extends TestCase
             new OwnerLogin('ya29.session-token', now()->toImmutable(), $this->channelId, '自分'),
         )])->get(route('proposals.show', $key))
             ->assertDontSee('編集画面へ進む')
-            ->assertSee('チャンネル主の方: Google でログインして作成へ');
+            ->assertSee('Google でログインして作成する');
     }
 
     public function test_preview_shows_owner_flash_messages_as_alerts(): void

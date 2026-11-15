@@ -15,6 +15,9 @@
             @if ($proposal->description !== '')
                 <p class="text-[13px] whitespace-pre-line break-words text-ink-2">{{ $proposal->description }}</p>
             @endif
+            @unless ($ownerMatches)
+                <p class="hint">提案した方は、この URL をチャンネル主に送ってください</p>
+            @endunless
         </header>
 
         @include('partials.owner-login')
@@ -59,7 +62,7 @@
                 </section>
 
                 {{-- A long list pushes the top call to action out of view: repeat just the primary action below it. --}}
-                @if ($proposal->item_count >= 10)
+                @if ($proposal->item_count >= 8)
                     @include('partials.owner-login', ['compact' => true])
                 @endif
             </div>
