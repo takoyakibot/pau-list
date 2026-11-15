@@ -61,19 +61,32 @@ jobs:
         run: ./vendor/bin/pint --test
 
   php-mysql:
-    name: PHP tests (MySQL group)
+    name: PHP tests (MySQL group, ${{ matrix.db.name }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # 本番（CORESERVER）は MariaDB 11.4。MySQL 8.4 と両方で同時実行・照合順序のテストを流す
+    strategy:
+      fail-fast: false
+      matrix:
+        db:
+          - name: MySQL 8.4
+            image: mysql:8.4
+            health: mysqladmin ping -h 127.0.0.1
+          - name: MariaDB 11.4
+            image: mariadb:11.4
+            health: healthcheck.sh --connect --innodb_initialized
     services:
       mysql:
-        image: mysql:8.4
+        image: ${{ matrix.db.image }}
         # 空の root パスワードはこのジョブ内のサービス限定（秘密値は使わない）
         env:
           MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
           MYSQL_DATABASE: listmaker_test
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: 'yes'
+          MARIADB_DATABASE: listmaker_test
         ports: ['3306:3306']
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-cmd="${{ matrix.db.health }}"
           --health-interval=5s --health-timeout=5s --health-retries=20
     # phpunit.xml の <env> は force 無しなので、ここで渡す値が優先される
     # DB 名は _test で終わること（tests/TestCase.php のガード: それ以外の MySQL ではテストを実行せずスキップする）
