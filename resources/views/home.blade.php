@@ -1,10 +1,11 @@
 @extends('layouts.app')
 
 @push('vite')
-    @vite('resources/js/home.js')
+    @vite(['resources/js/home.js', 'resources/js/home-carousel.js'])
 @endpush
 
 @section('title', 'List Maker')
+@section('main_width', 'max-w-4xl')
 
 @section('content')
     <div class="flex flex-col gap-5">
@@ -12,12 +13,12 @@
             <p class="notice-warn text-sm" role="status">{{ session('owner_notice') }}</p>
         @endif
 
-        <div>
-            <h1 class="text-2xl font-bold">List Maker</h1>
-            <p class="mt-2 text-ink-2">YouTube の再生リストを、ファンが提案してチャンネル主が作成するためのツールです</p>
-        </div>
+        {{-- The app name is in the header; the slides explain the tool and the proposal → creation flow (spec 9.1). --}}
+        <h1 class="sr-only">List Maker</h1>
 
-        @include('partials.steps', ['current' => null])
+        @include('partials.home-howto')
+
+        <p class="text-ink-2">YouTube の再生リストを、ファンが提案してチャンネル主が作成するためのツールです</p>
 
         <form method="GET" action="{{ route('channels.open') }}" class="card flex flex-col gap-2 p-5">
             <label for="q" class="text-base font-bold">提案したいチャンネル</label>
@@ -40,7 +41,7 @@
 
         <section aria-labelledby="home-owner-heading" class="card p-5 text-sm">
             <h2 id="home-owner-heading" class="text-base font-bold">チャンネル主の方へ</h2>
-            <p class="mt-2 text-ink-2">届いた共有 URL を開き、「Google でログインして作成へ」からログインします</p>
+            <p class="mt-2 text-ink-2">届いた共有 URL を開き、「Google でログインして作成する」からログインします</p>
             @include('partials.unverified-app')
         </section>
 
