@@ -1,4 +1,4 @@
-import { addVideo, removeVideo, moveVideo, toggleVideo, maxItemsFrom } from './lib/selection.js';
+import { addOrUpgrade, removeVideo, moveVideo, toggleVideo, maxItemsFrom } from './lib/selection.js';
 import { formatPublishedDate, watchUrl } from './lib/format.js';
 import { filterVideos } from './lib/filter.js';
 import { countChars, isOverLimit } from './lib/text.js';
@@ -279,7 +279,7 @@ document.addEventListener('alpine:init', () => {
         // The owner's own unlisted video found by URL is marked like the loaded list's entries.
         if (found.unlisted === true) this.byId.set(found.id, found);
         const item = this.byId.get(found.id) ?? found;
-        const r = addVideo(this.items, item, this.maxItems);
+        const r = addOrUpgrade(this.items, item, this.maxItems);
         if (r.error === 'duplicate') {
           this.urlMessage = 'この動画はすでに選択されています';
         } else if (r.error === 'limit') {

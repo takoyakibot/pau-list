@@ -1,4 +1,4 @@
-import { toggleVideo, addVideo, removeVideo, moveVideo, restoreSelection, markUnavailable, selectionFromOldIds, maxItemsFrom } from './lib/selection.js';
+import { toggleVideo, addOrUpgrade, removeVideo, moveVideo, restoreSelection, markUnavailable, selectionFromOldIds, maxItemsFrom } from './lib/selection.js';
 import { formatPublishedDate, watchUrl } from './lib/format.js';
 import { filterVideos } from './lib/filter.js';
 import { loadSelection, saveSelection, clearSelection } from './lib/storage.js';
@@ -152,7 +152,7 @@ document.addEventListener('alpine:init', () => {
           thumbnail_url: typeof v.thumbnail_url === 'string' ? v.thumbnail_url : null,
           outside: v.outside === true,
         };
-        const r = addVideo(this.selected, item, this.maxItems);
+        const r = addOrUpgrade(this.selected, item, this.maxItems);
         if (r.error === 'duplicate') {
           this.urlMessage = 'この動画はすでに選択されています';
         } else if (r.error === 'limit') {

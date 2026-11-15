@@ -17,7 +17,7 @@ class RateLimitValuesTest extends TestCase
     public static function limiters(): array
     {
         return [
-            ['global', 120, 60, true], ['video-lookup', 30, 60, true], ['oauth', 10, 60, true], ['owner-unlisted', 5, 600, true], ['owner-video-lookup', 30, 60, true],
+            ['global', 120, 60, true], ['video-lookup', 30, 60, true], ['oauth', 10, 60, true], ['owner-unlisted', 5, 600, true], ['owner-video-lookup', 30, 60, true], ['owner-video-check', 10, 600, true],
             ['creation-start', 5, 3600, true], ['creation-step', 2, 1, false], ['creation-operation', 30, 60, false], ['proposal-post', 20, 600, true],
         ];
     }

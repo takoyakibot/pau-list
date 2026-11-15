@@ -164,6 +164,10 @@ class AppServiceProvider extends ServiceProvider
         // S5 add-by-URL: 30 per minute per owner channel (IP when logged out), like the proposers' per-IP lookup.
         RateLimiter::for('owner-video-lookup', fn (Request $request) => Limit::perMinute(30)
             ->by('owner-video-lookup:'.(app(OwnerSession::class)->current()?->channelId ?? 'ip:'.ClientKey::for($request))));
+        // Its owner-token step only (OwnerEditController::lookup): 10 per 10 minutes per owner channel. Applied in the
+        // controller right before the call, so the session list and the public lookup stay at the 30 per minute above.
+        RateLimiter::for(OwnerEditController::OWNER_CHECK_LIMITER, fn (Request $request) => Limit::perMinutes(10, 10)
+            ->by('owner-video-check:'.(app(OwnerSession::class)->current()?->channelId ?? 'ip:'.ClientKey::for($request))));
         // Creation start and the retry of failed items share one limit: 5 per hour per owner channel (IP when logged out).
         RateLimiter::for('creation-start', fn (Request $request) => Limit::perHour(5)
             ->by('creation-start:'.(app(OwnerSession::class)->current()?->channelId ?? 'ip:'.ClientKey::for($request))));

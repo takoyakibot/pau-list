@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { toggleVideo, addVideo, removeVideo, moveVideo, restoreSelection, markUnavailable, selectionFromOldIds, maxItemsFrom } from '../../resources/js/lib/selection.js';
+import { toggleVideo, addVideo, addOrUpgrade, removeVideo, moveVideo, restoreSelection, markUnavailable, selectionFromOldIds, maxItemsFrom } from '../../resources/js/lib/selection.js';
 
 const v = (id, extra = {}) => ({ id, title: `t${id}`, thumbnail_url: null, outside: false, ...extra });
 
@@ -70,4 +70,22 @@ test('maxItemsFrom uses only the server value; missing or broken means 0', () =>
 test('with max 0 nothing can be added or restored', () => {
   assert.equal(addVideo([], v('a'), 0).error, 'limit');
   assert.deepEqual(restoreSelection([{ id: 'aaaaaaaaaaa' }], new Map(), 0), []);
+});
+
+test('addOrUpgrade replaces a restored placeholder in place and keeps real duplicates', () => {
+  const restored = restoreSelection([{ id: 'aaaaaaaaaaa' }, { id: 'bbbbbbbbbbb', outside: true }], new Map(), 99);
+  assert.equal(restored[1].title, '動画 bbbbbbbbbbb');
+  const found = v('bbbbbbbbbbb', { title: '本物', outside: true, unlisted: true });
+  const r = addOrUpgrade(restored, found, 99);
+  assert.equal(r.error, null);
+  assert.deepEqual(r.list.map((x) => x.id), ['aaaaaaaaaaa', 'bbbbbbbbbbb']);
+  assert.deepEqual(r.list[1], found);
+  assert.equal(restored[1].placeholder, true); // not mutated
+  // Upgraded once: the same video again is a duplicate.
+  assert.equal(addOrUpgrade(r.list, found, 99).error, 'duplicate');
+  // A non-placeholder entry is a duplicate; a full list still upgrades a placeholder but refuses new ones.
+  assert.equal(addOrUpgrade([v('ccccccccccc')], v('ccccccccccc'), 99).error, 'duplicate');
+  assert.equal(addOrUpgrade(restored, found, 2).error, null);
+  assert.equal(addOrUpgrade(restored, v('ddddddddddd'), 2).error, 'limit');
+  assert.deepEqual(addOrUpgrade([], v('ddddddddddd'), 2), { list: [v('ddddddddddd')], error: null });
 });

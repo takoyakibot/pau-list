@@ -27,8 +27,8 @@ class ChannelController extends Controller
      * The API key cannot tell deleted, private and unlisted videos apart, so one message covers all three.
      * The owner's own unlisted videos can be added on S5 (OwnerEditController::lookup, user decision #9).
      */
-    public const VIDEO_NOT_ADDABLE = 'この動画は追加できません（削除・非公開・限定公開の動画は追加できません。'
-        .'限定公開の動画は、チャンネルの持ち主がログインしたあとの編集画面で追加できます）';
+    public const VIDEO_NOT_ADDABLE = 'この動画は追加できません（削除・非公開・限定公開の動画は、ここでは追加できません。'
+        .'限定公開の動画は、その動画のチャンネルの持ち主がログイン後の編集画面で追加できます）';
 
     public function open(
         Request $request,

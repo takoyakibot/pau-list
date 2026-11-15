@@ -5,6 +5,18 @@ export function addVideo(list, video, max) {
   return { list: [...list, video], error: null };
 }
 
+// Adding by URL: a restored placeholder (「動画 {id}」) of the same video is replaced in place (same position)
+// by the found data; any other existing entry is still a duplicate.
+export function addOrUpgrade(list, video, max) {
+  const i = list.findIndex((x) => x.id === video.id);
+  if (i >= 0 && list[i].placeholder === true) {
+    const next = [...list];
+    next[i] = { ...video };
+    return { list: next, error: null };
+  }
+  return addVideo(list, video, max);
+}
+
 export function toggleVideo(list, video, max) {
   if (list.some((x) => x.id === video.id)) return { list: removeVideo(list, video.id), error: null };
   const r = addVideo(list, video, max);

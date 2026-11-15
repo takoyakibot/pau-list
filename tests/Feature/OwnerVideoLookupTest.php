@@ -12,8 +12,10 @@ use App\Support\ProposalKey;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -115,8 +117,8 @@ class OwnerVideoLookupTest extends TestCase
             $this->videoResource('pub00000002', self::OTHER),
         ]);
         $this->actAsOwner($this->channelId);
-        $this->lookup('pub00000001')->assertOk()->assertJsonPath('video.outside', false)->assertJsonMissingPath('video.unlisted');
-        $this->lookup('pub00000002')->assertOk()->assertJsonPath('video.outside', true)->assertJsonMissingPath('video.unlisted');
+        $this->lookup('pub00000001')->assertOk()->assertJsonPath('video.outside', false)->assertJsonPath('video.unlisted', false);
+        $this->lookup('pub00000002')->assertOk()->assertJsonPath('video.outside', true)->assertJsonPath('video.unlisted', false);
         $this->assertSame(0, $this->ownerRequests());
         $this->assertSame(0, app(QuotaLedger::class)->used(QuotaLedger::OWNER_READ));
         $this->assertTrue(Cache::get(PublicVideoLookup::cacheKey('pub00000001'))['found']);
@@ -232,6 +234,67 @@ class OwnerVideoLookupTest extends TestCase
             $this->actAsOwner($this->channelId)->lookup('pub00000001')->assertOk();
         }
         $this->actAsOwner($this->channelId)->lookup('pub00000001')->assertStatus(429);
+    }
+
+    public function test_read_budget_exhausted_falls_through_to_the_owner_token(): void
+    {
+        app(QuotaLedger::class)->record(QuotaLedger::READ, 2000);
+        $unlisted = $this->videoResource(self::UNLISTED, $this->channelId, ['privacy' => 'unlisted']);
+        $this->fakeBoth([$unlisted, $this->videoResource('pub00000001', self::OTHER)], [$unlisted]);
+        $this->actAsOwner($this->channelId);
+        $this->lookup(self::UNLISTED)->assertOk()->assertJsonPath('video.unlisted', true);
+        $this->lookup('pub00000001')->assertOk()->assertJsonPath('video.unlisted', false)->assertJsonPath('video.outside', true);
+        $this->assertSame(0, $this->keyRequests());
+        $this->assertSame(2, $this->ownerRequests());
+        $this->assertNull(Cache::get(PublicVideoLookup::cacheKey('pub00000001')));
+    }
+
+    public function test_read_budget_and_owner_guard_both_exhausted_is_503_budget(): void
+    {
+        app(QuotaLedger::class)->record(QuotaLedger::READ, 2000);
+        app(QuotaLedger::class)->record(QuotaLedger::OWNER_READ, 1500);
+        $this->fakeBoth([], []);
+        $this->actAsOwner($this->channelId)->lookup(self::UNLISTED)->assertStatus(503)
+            ->assertExactJson(['message' => '本日の取得上限に達しました']);
+        $this->assertCount(0, Http::recorded());
+    }
+
+    public function test_public_video_seen_only_by_the_owner_token_is_returned_but_not_cached(): void
+    {
+        // The shared cache still says "not found" (e.g. the owner made it public a moment ago).
+        Cache::put(PublicVideoLookup::cacheKey('pub00000003'), ['found' => false], 600);
+        $this->fakeBoth([$this->videoResource('pub00000003', self::OTHER, ['title' => '公開になった動画', 'channelTitle' => 'Other'])], []);
+        $this->actAsOwner($this->channelId)->lookup('pub00000003')->assertOk()->assertExactJson(['video' => [
+            'id' => 'pub00000003', 'title' => '公開になった動画', 'thumbnail_url' => 'https://i.ytimg.com/vi/pub00000003/mqdefault.jpg',
+            'channel_id' => self::OTHER, 'channel_title' => 'Other', 'published_at' => '2025-01-02T03:04:05Z',
+            'outside' => true, 'unlisted' => false,
+        ]]);
+        $this->assertSame(['found' => false], Cache::get(PublicVideoLookup::cacheKey('pub00000003')));
+    }
+
+    public function test_owner_token_step_is_limited_to_10_per_10_minutes_per_channel(): void
+    {
+        $logs = [];
+        Event::listen(MessageLogged::class, function (MessageLogged $e) use (&$logs) {
+            if ($e->message === 'Rate limit exceeded') {
+                $logs[] = $e->context;
+            }
+        });
+        $this->fakeBoth([], [$this->videoResource('pub00000001', $this->channelId)]);
+        for ($i = 0; $i < 10; $i++) {
+            $this->actAsOwner($this->channelId)->lookup('zzzzzzzzzzz')->assertNotFound();
+        }
+        $res = $this->actAsOwner($this->channelId)->lookup('zzzzzzzzzzz')->assertStatus(429)
+            ->assertExactJson(['message' => '動画の確認が続いています。10 分ほど待ってから再度お試しください']);
+        $this->assertNotNull($res->headers->get('Retry-After'));
+        $this->assertSame([['limiter' => 'owner-video-check']], $logs);
+        $this->assertSame(10, $this->ownerRequests());
+        // The session list and public steps are not limited by it.
+        $this->actAsOwner($this->channelId)->lookup('pub00000001')->assertOk();
+        // Another channel has its own count.
+        $this->actAsOwner(self::OTHER)->lookup('zzzzzzzzzzz', key: $this->createProposal(['channel_id' => self::OTHER]))->assertNotFound();
+        $this->travel(11)->minutes();
+        $this->actAsOwner($this->channelId)->lookup('zzzzzzzzzzz')->assertNotFound();
     }
 
     public function test_proposer_lookup_of_an_unlisted_video_is_still_rejected_and_caches_nothing_unlisted(): void
