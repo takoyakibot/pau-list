@@ -17,6 +17,8 @@
             @endif
         </header>
 
+        @include('partials.owner-login')
+
         <div class="flex flex-wrap items-start gap-5">
             <div class="flex min-w-0 flex-[999_1_560px] flex-col gap-5">
                 <section class="card px-4 py-3 text-sm sm:px-5" aria-labelledby="proposer-heading">
@@ -55,6 +57,11 @@
                     </ol>
                     <p class="hint border-t border-line-subtle px-4 py-2 sm:px-5">データ提供: YouTube</p>
                 </section>
+
+                {{-- A long list pushes the top call to action out of view: repeat just the primary action below it. --}}
+                @if ($proposal->item_count >= 10)
+                    @include('partials.owner-login', ['compact' => true])
+                @endif
             </div>
 
             <aside class="flex min-w-0 flex-[1_1_320px] flex-col gap-4">
@@ -86,8 +93,6 @@
                         @include('partials.remaining-today', ['remaining' => $remaining, 'itemCount' => $proposal->item_count])
                     </div>
                 @endif
-
-                @include('partials.owner-login')
             </aside>
         </div>
     </div>

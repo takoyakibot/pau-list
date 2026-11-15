@@ -200,6 +200,64 @@ class PreviewScreenTest extends TestCase
         $this->assertNoInlineCode($res->getContent());
     }
 
+    public function test_owner_cta_is_right_under_the_title_before_the_videos(): void
+    {
+        $key = $this->makeProposal();
+        $html = $this->get(route('proposals.show', $key))->assertOk()
+            ->assertSeeInOrder([
+                '<h1',
+                '私の再生リスト',
+                'data-owner-cta="top"',
+                'チャンネル主の方へ',
+                '内容を確認・編集して、あなたのチャンネルに再生リストを作成できます',
+                'href="'.e(route('owner.login', ['p' => $key])).'"',
+                '利用規約</a>・<a class="underline" href="'.route('privacy').'">プライバシーポリシー</a>に同意のうえログインしてください',
+                '提案した方は、この URL をチャンネル主に送ってください',
+                'id="videos-heading"',
+                '動画 A',
+            ], false)
+            ->getContent();
+        // A short list needs no repeat: the login button appears once.
+        $this->assertStringNotContainsString('data-owner-cta="bottom"', $html);
+        $this->assertSame(1, substr_count($html, 'href="'.e(route('owner.login', ['p' => $key])).'"'));
+        $this->assertSame(1, substr_count($html, 'id="owner-heading"'));
+    }
+
+    public function test_long_list_repeats_only_the_primary_action_below_the_videos(): void
+    {
+        $items = [];
+        foreach (range(1, 10) as $i) {
+            $items[] = ['video_id' => sprintf('vid%08d', $i), 'title' => '動画 '.$i, 'duration_seconds' => 60, 'is_outside_channel' => false];
+        }
+        $key = $this->makeProposal([], $items);
+        $login = 'href="'.e(route('owner.login', ['p' => $key])).'"';
+        $consent = '利用規約</a>・<a class="underline" href="'.route('privacy').'">プライバシーポリシー</a>に同意のうえログインしてください';
+
+        $html = $this->get(route('proposals.show', $key))->assertOk()
+            ->assertSeeInOrder(['data-owner-cta="top"', $login, $consent, '動画 10', 'data-owner-cta="bottom"', $login, $consent], false)
+            ->getContent();
+        $this->assertSame(2, substr_count($html, $login));
+        $this->assertSame(2, substr_count($html, $consent));
+        // The repeat carries no second heading or login-flow details (no duplicate ids).
+        $this->assertSame(1, substr_count($html, 'id="owner-heading"'));
+        $this->assertSame(1, substr_count($html, 'id="login-flow-heading"'));
+
+        $this->actAsOwner($this->channelId, '自分')->get(route('proposals.show', $key))
+            ->assertSeeInOrder(['data-owner-cta="top"', '編集画面へ進む', '動画 10', 'data-owner-cta="bottom"', '編集画面へ進む'], false);
+    }
+
+    public function test_logged_in_owner_action_is_at_the_top(): void
+    {
+        $key = $this->makeProposal();
+        $this->actAsOwner($this->channelId, '自分')->get(route('proposals.show', $key))
+            ->assertSeeInOrder(['私の再生リスト', 'data-owner-cta="top"', 'ログイン中: 自分', 'href="'.route('proposals.edit', $key).'"', 'id="videos-heading"', '動画 A'], false)
+            ->assertDontSee('提案した方は、この URL をチャンネル主に送ってください');
+
+        $this->makeCreationFor($key);
+        $this->actAsOwner($this->channelId, '自分')->get(route('proposals.show', $key))
+            ->assertSeeInOrder(['私の再生リスト', 'data-owner-cta="top"', 'href="'.route('proposals.creation', $key).'"', 'id="videos-heading"', '動画 A'], false);
+    }
+
     public function test_login_area_has_consent_flow_and_scope(): void
     {
         $key = $this->makeProposal();
