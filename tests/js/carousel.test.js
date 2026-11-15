@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clampIndex, indexFromScroll, stepIndex, scrollLeftFor, scrollBehavior, parseIndex } from '../../resources/js/lib/carousel.js';
+import { clampIndex, indexFromScroll, stepIndex, scrollLeftFor, scrollBehavior, navBehavior, parseIndex } from '../../resources/js/lib/carousel.js';
 
 test('clampIndex keeps the index within the slides', () => {
   assert.equal(clampIndex(-1, 4), 0);
@@ -46,6 +46,15 @@ test('scrollLeftFor is the slide offset, clamped', () => {
 test('scrollBehavior is instant when reduced motion is preferred', () => {
   assert.equal(scrollBehavior(true), 'auto');
   assert.equal(scrollBehavior(false), 'smooth');
+});
+
+test('navBehavior slides to a neighbour but jumps instantly when wrapping or with reduced motion', () => {
+  assert.equal(navBehavior(0, 1, false), 'smooth');
+  assert.equal(navBehavior(2, 1, false), 'smooth');
+  assert.equal(navBehavior(3, 0, false), 'auto');
+  assert.equal(navBehavior(0, 3, false), 'auto');
+  assert.equal(navBehavior(0, 1, true), 'auto');
+  assert.equal(navBehavior(1, 1, false), 'smooth');
 });
 
 test('parseIndex accepts only non-negative integer strings', () => {

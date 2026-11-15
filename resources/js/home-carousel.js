@@ -1,6 +1,6 @@
 // Home「List Maker のしくみ」: a CSS scroll-snap carousel. Swiping and keyboard scrolling are native (and work
 // without JS); this component only keeps the dots in step with the scroll position and scrolls on button clicks.
-import { indexFromScroll, stepIndex, scrollLeftFor, scrollBehavior, parseIndex } from './lib/carousel.js';
+import { indexFromScroll, stepIndex, scrollLeftFor, scrollBehavior, navBehavior, parseIndex } from './lib/carousel.js';
 
 function prefersReducedMotion() {
   try {
@@ -45,17 +45,23 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    show(i) {
+    show(i, behavior = scrollBehavior(prefersReducedMotion())) {
       const track = this.$refs.track;
-      track.scrollTo({ left: scrollLeftFor(i, track.clientWidth, this.count), behavior: scrollBehavior(prefersReducedMotion()) });
+      track.scrollTo({ left: scrollLeftFor(i, track.clientWidth, this.count), behavior });
+    },
+
+    // Wrapping (last → first, first → last) jumps instantly instead of sliding past every slide.
+    step(delta) {
+      const to = stepIndex(this.index, delta, this.count);
+      this.show(to, navBehavior(this.index, to, prefersReducedMotion()));
     },
 
     prev() {
-      this.show(stepIndex(this.index, -1, this.count));
+      this.step(-1);
     },
 
     next() {
-      this.show(stepIndex(this.index, 1, this.count));
+      this.step(1);
     },
 
     goTo(event) {

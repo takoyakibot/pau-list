@@ -14,11 +14,12 @@
         @endif
 
         {{-- The app name is in the header; the slides explain the tool and the proposal → creation flow (spec 9.1). --}}
-        <h1 class="sr-only">List Maker</h1>
+        <div>
+            <h1 class="sr-only">List Maker</h1>
+            <p class="text-ink-2">YouTube の再生リストを、ファンが提案してチャンネル主が作成するためのツールです</p>
+        </div>
 
         @include('partials.home-howto')
-
-        <p class="text-ink-2">YouTube の再生リストを、ファンが提案してチャンネル主が作成するためのツールです</p>
 
         <form method="GET" action="{{ route('channels.open') }}" class="card flex flex-col gap-2 p-5">
             <label for="q" class="text-base font-bold">提案したいチャンネル</label>

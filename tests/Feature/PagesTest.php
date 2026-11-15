@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use Dom\HTMLDocument;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Support\AssertsNoInlineCode;
@@ -96,38 +97,65 @@ class PagesTest extends TestCase
     {
         $html = $this->get('/')->assertOk()->getContent();
         $this->assertNoInlineCode($html);
-        $this->assertSame(1, preg_match('#<main[^>]*>(.*)</main>#s', $html, $m));
-        $main = $m[1];
+        $main = HTMLDocument::createFromString($html, LIBXML_NOERROR)->querySelector('main');
 
-        $this->assertMatchesRegularExpression('#<section aria-roledescription="carousel" aria-label="List Maker のしくみ" x-data="howtoCarousel"#', $main);
-        $this->assertMatchesRegularExpression('#<div x-ref="track" tabindex="0"#', $main);
-        $this->assertSame(4, substr_count($main, 'role="group" aria-roledescription="slide"'));
-        foreach (range(1, 4) as $n) {
-            $this->assertStringContainsString('aria-roledescription="slide" aria-label="'.$n.' / 4"', $main);
-            $this->assertMatchesRegularExpression('#<button type="button" @click="goTo" data-index="'.($n - 1).'" aria-label="スライド '.$n.'"#', $main);
+        // App name and purpose come before the slides (visible on first view).
+        $purpose = $main->querySelector('p');
+        $this->assertStringContainsString('YouTube の再生リストを、ファンが提案してチャンネル主が作成するためのツールです', $purpose->textContent);
+        $this->assertSame('List Maker', $main->querySelector('h1')->textContent);
+
+        $carousel = $main->querySelector('section[aria-roledescription="carousel"]');
+        $this->assertNotNull($carousel);
+        $this->assertSame('List Maker のしくみ', $carousel->getAttribute('aria-label'));
+        $this->assertSame('howtoCarousel', $carousel->getAttribute('x-data'));
+        $this->assertTrue((bool) ($purpose->compareDocumentPosition($carousel) & 4), 'purpose sentence precedes the carousel');
+
+        // The focusable scroll track has a role and a name.
+        $track = $carousel->querySelector('[x-ref="track"]');
+        $this->assertSame('0', $track->getAttribute('tabindex'));
+        $this->assertSame('group', $track->getAttribute('role'));
+        $this->assertNotSame('', trim((string) $track->getAttribute('aria-label')));
+
+        $slides = $track->querySelectorAll('[aria-roledescription="slide"]');
+        $this->assertCount(4, $slides);
+        foreach ($slides as $i => $slide) {
+            $this->assertSame('group', $slide->getAttribute('role'));
+            $this->assertSame(($i + 1).' / 4', $slide->getAttribute('aria-label'));
         }
-        $this->assertSame(1, substr_count($main, 'aria-current="true"'));
-        $this->assertMatchesRegularExpression('#<button type="button" @click="prev" aria-label="前へ"#', $main);
-        $this->assertMatchesRegularExpression('#<button type="button" @click="next" aria-label="次へ"#', $main);
-        foreach (['ファンが選んで、チャンネル主が作る。', '動画を選ぶ', 'URL を送る', 'チャンネル主が作る'] as $heading) {
-            $this->assertMatchesRegularExpression('#<h2 [^>]*>'.preg_quote($heading, '#').'</h2>#', $main, $heading);
-        }
+        $headings = array_map(fn ($h) => trim($h->textContent), iterator_to_array($track->querySelectorAll('h2')));
+        $this->assertSame(['ファンが選んで、チャンネル主が作る。', '動画を選ぶ', 'URL を送る', 'チャンネル主が作る'], $headings);
 
         // The pictures inside the slides are decorative: nothing focusable or form-like inside the track.
-        $this->assertSame(1, preg_match('#<div x-ref="track".*?(?=<div class="min-h-11">)#s', $main, $track));
-        $this->assertDoesNotMatchRegularExpression('#<(button|input|a|select|textarea)\b#', $track[0]);
+        $this->assertCount(0, $track->querySelectorAll('button, input, a, select, textarea, [tabindex]'));
+
+        // One dot per slide, data-index 0..n-1, labelled, only the first current.
+        $dots = $carousel->querySelectorAll('[x-ref="dots"] button');
+        $this->assertCount(count($slides), $dots);
+        foreach ($dots as $i => $dot) {
+            $this->assertSame((string) $i, $dot->getAttribute('data-index'));
+            $this->assertSame('スライド '.($i + 1), $dot->getAttribute('aria-label'));
+            $this->assertSame('goTo', $dot->getAttribute('@click'));
+            $this->assertSame($i === 0 ? 'true' : null, $dot->getAttribute('aria-current'));
+        }
+        foreach (['前へ' => 'prev', '次へ' => 'next'] as $label => $method) {
+            $button = $carousel->querySelector('button[aria-label="'.$label.'"]');
+            $this->assertNotNull($button, $label);
+            $this->assertSame($method, $button->getAttribute('@click'));
+        }
 
         // The start form still follows the carousel.
-        $carouselAt = strpos($main, 'aria-roledescription="carousel"');
-        $formAt = strpos($main, 'action="'.route('channels.open').'"');
-        $this->assertNotFalse($formAt);
-        $this->assertGreaterThan($carouselAt, $formAt);
-        $this->assertStringContainsString('<input id="q" name="q"', $main);
+        $form = $main->querySelector('form[action="'.route('channels.open').'"]');
+        $this->assertNotNull($form);
+        $this->assertTrue((bool) ($carousel->compareDocumentPosition($form) & 4), 'form follows the carousel');
+        $this->assertNotNull($form->querySelector('input#q[name="q"]'));
+
         // Matches the owner login button's label on the shared page (S4).
-        $this->assertStringContainsString('「Google でログインして作成する」からログインします', $main);
+        $this->assertStringContainsString('「Google でログインして作成する」からログインします', $main->textContent);
         // Home keeps the scope note visible, outside the collapsed login-flow <details> (not S4's scopeInDetails).
-        $this->assertMatchesRegularExpression('#</details>\s*<p class="mt-2 text-ink-muted">Google の画面には YouTube アカウントの管理という広い権限#', $main);
-        $this->assertStringContainsString('ログインの流れ（確認されていないアプリの警告について）', $main);
+        $owner = $main->querySelector('section[aria-labelledby="home-owner-heading"]');
+        $this->assertStringContainsString('ログインの流れ（確認されていないアプリの警告について）', $owner->querySelector('details > summary')->textContent);
+        $this->assertStringNotContainsString('広い権限', $owner->querySelector('details')->textContent);
+        $this->assertStringContainsString('Google の画面には YouTube アカウントの管理という広い権限', $owner->textContent);
     }
 
     public function test_home_slides_use_the_configured_cap_and_retention(): void
@@ -137,7 +165,7 @@ class PagesTest extends TestCase
         $this->get('/')->assertOk()
             ->assertSee('最大 50 本まで')
             ->assertSee('/ 50 本')
-            ->assertSee('作成から 14 日で自動削除')
+            ->assertSee('保存から 14 日で自動削除')
             ->assertDontSee('最大 99 本まで');
     }
 

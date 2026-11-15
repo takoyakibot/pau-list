@@ -30,6 +30,14 @@ export function scrollBehavior(reducedMotion) {
   return reducedMotion ? 'auto' : 'smooth';
 }
 
+/**
+ * Behaviour for a move from slide `from` to slide `to`: smooth for a neighbouring slide, but instant for a
+ * longer jump (e.g. wrapping from the last slide to the first) or when reduced motion is preferred.
+ */
+export function navBehavior(from, to, reducedMotion) {
+  return reducedMotion || Math.abs(to - from) > 1 ? 'auto' : 'smooth';
+}
+
 /** Reads a dot's data-index; null when it is missing or not an integer. */
 export function parseIndex(value) {
   if (typeof value !== 'string' || !/^\d+$/.test(value)) return null;

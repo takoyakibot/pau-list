@@ -5,12 +5,12 @@
     Needs $maxItems and $retentionDays.
 --}}
 @php
-    $slideClass = 'relative flex w-full flex-none snap-start snap-always flex-col gap-6 p-5 pb-10 sm:p-8 sm:pb-10 md:px-10';
+    $slideClass = 'relative flex w-full flex-none snap-start snap-always flex-col gap-4 p-4 pb-7 sm:p-8 sm:pb-10 md:gap-6 md:px-10';
     $bulletDot = 'size-2 flex-none rounded-full bg-accent';
     $stepBadge = 'flex size-10 flex-none items-center justify-center rounded-full bg-accent text-lg font-bold text-on-accent md:size-12 md:text-2xl';
     $slideHeading = 'text-2xl leading-snug font-bold md:text-[32px]';
-    $mockPanel = 'flex flex-col gap-2.5 rounded-xl border border-line bg-surface p-4';
-    $counter = 'absolute right-4 bottom-3 text-xs text-ink-muted';
+    $mockPanel = 'flex flex-col gap-2 rounded-xl border border-line bg-surface p-3 md:gap-2.5 md:p-4';
+    $counter = 'absolute right-4 bottom-2 md:bottom-3 text-xs text-ink-muted';
     $rows = [
         ['【コラボ】はじめての合同配信', true, 'bg-indigo-200'],
         ['【コラボ】夏休み耐久ゲーム実況', true, 'bg-purple-200'],
@@ -20,7 +20,7 @@
     ];
 @endphp
 <section aria-roledescription="carousel" aria-label="List Maker のしくみ" x-data="howtoCarousel" class="flex flex-col gap-2">
-    <div x-ref="track" tabindex="0"
+    <div x-ref="track" tabindex="0" role="group" aria-label="スライド（左右にスクロールできます）"
         class="flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain rounded-xl border border-line bg-raised data-enhanced:[scrollbar-width:none] data-enhanced:[&::-webkit-scrollbar]:hidden">
 
         {{-- 1. Overview --}}
@@ -28,9 +28,9 @@
             <div class="flex flex-col gap-2">
                 <p class="text-xs font-bold tracking-widest text-accent md:text-sm">HOW IT WORKS</p>
                 <h2 class="text-2xl leading-snug font-bold md:text-4xl">ファンが選んで、チャンネル主が作る。</h2>
-                <p class="text-ink-muted md:text-lg">再生リストの「案」を URL ひとつで届けるツールです。</p>
+                <p class="hidden text-ink-muted sm:block md:text-lg">再生リストの「案」を URL ひとつで届けるツールです。</p>
             </div>
-            <ol class="flex flex-1 flex-col gap-1 md:flex-row md:items-center md:justify-between md:gap-2">
+            <ol class="flex flex-1 flex-col gap-3 md:flex-row md:items-center md:justify-between md:gap-2">
                 <li class="flex items-center gap-3 md:w-40 md:flex-none md:flex-col md:gap-2 md:text-center">
                     <span class="flex size-12 flex-none items-center justify-center rounded-full bg-accent-soft text-accent md:size-24" aria-hidden="true">
                         <svg class="size-6 md:size-11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
@@ -40,7 +40,7 @@
                         <span class="text-xs text-ink-muted md:text-sm">ログイン不要</span>
                     </span>
                 </li>
-                <li class="flex items-center gap-2 py-1 pl-4 md:flex-1 md:flex-col md:p-0">
+                <li class="hidden md:flex md:flex-1 md:flex-col md:items-center md:gap-2">
                     <svg class="h-5 w-4 flex-none text-ink-muted md:hidden" viewBox="0 0 16 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 2v15M3 12l5 5 5-5"/></svg>
                     <span class="rounded-full bg-muted px-3 py-1 text-xs font-bold text-ink-2 md:text-sm">提案の URL</span>
                     <svg class="hidden h-5 w-full max-w-36 text-ink-muted md:block" viewBox="0 0 144 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" preserveAspectRatio="none" aria-hidden="true"><path d="M4 10h132M128 3l8 7-8 7"/></svg>
@@ -54,7 +54,7 @@
                         <span class="text-xs text-ink-muted md:text-sm">Google でログイン</span>
                     </span>
                 </li>
-                <li class="flex items-center gap-2 py-1 pl-4 md:flex-1 md:flex-col md:p-0">
+                <li class="hidden md:flex md:flex-1 md:flex-col md:items-center md:gap-2">
                     <svg class="h-5 w-4 flex-none text-ink-muted md:hidden" viewBox="0 0 16 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 2v15M3 12l5 5 5-5"/></svg>
                     <span class="rounded-full bg-muted px-3 py-1 text-xs font-bold text-ink-2 md:text-sm">確認して作成</span>
                     <svg class="hidden h-5 w-full max-w-36 text-ink-muted md:block" viewBox="0 0 144 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" preserveAspectRatio="none" aria-hidden="true"><path d="M4 10h132M128 3l8 7-8 7"/></svg>
@@ -75,21 +75,23 @@
         {{-- 2. Pick videos --}}
         <div role="group" aria-roledescription="slide" aria-label="2 / 4" class="{{ $slideClass }} md:flex-row md:gap-8">
             <div class="flex min-w-0 flex-1 flex-col gap-3 md:gap-4">
-                <span class="{{ $stepBadge }}" aria-hidden="true">1</span>
-                <h2 class="{{ $slideHeading }}">動画を選ぶ</h2>
-                <p class="text-ink-2 md:text-base md:leading-relaxed">チャンネルの公開動画が一覧で出ます。チェックした動画は、絞り込みを変えても外れません。</p>
-                <ul class="flex flex-col gap-2 md:mt-auto md:text-[15px]">
+                <div class="flex items-center gap-3 md:flex-col md:items-start md:gap-4">
+                    <span class="{{ $stepBadge }}" aria-hidden="true">1</span>
+                    <h2 class="{{ $slideHeading }}">動画を選ぶ</h2>
+                </div>
+                <p class="text-[13px] text-ink-2 md:text-base md:leading-relaxed">チャンネルの公開動画が一覧で出ます。チェックした動画は、絞り込みを変えても外れません。</p>
+                <ul class="flex flex-col gap-1.5 md:mt-auto md:gap-2 md:text-[15px]">
                     <li class="flex items-center gap-2"><span class="{{ $bulletDot }}" aria-hidden="true"></span>ログインは不要</li>
                     <li class="flex items-center gap-2"><span class="{{ $bulletDot }}" aria-hidden="true"></span>ほかのチャンネルの動画も URL で追加</li>
                     <li class="flex items-center gap-2"><span class="{{ $bulletDot }}" aria-hidden="true"></span>最大 {{ $maxItems }} 本まで</li>
                 </ul>
             </div>
             <div class="{{ $mockPanel }} md:w-[340px] md:flex-none" aria-hidden="true">
-                <div class="flex h-9 items-center gap-2 rounded-md border border-line-strong bg-raised px-3 text-[13px]">
+                <div class="hidden h-9 items-center gap-2 rounded-md border border-line-strong bg-raised px-3 text-[13px] md:flex">
                     <svg class="size-4 flex-none text-ink-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>コラボ
                 </div>
                 @foreach ($rows as $i => [$title, $on, $thumb])
-                    <div @class(['items-center gap-2.5 rounded-lg border bg-raised p-1.5', 'flex' => $i < 3, 'hidden md:flex' => $i >= 3, 'border-accent' => $on, 'border-line-subtle' => ! $on])>
+                    <div @class(['items-center gap-2.5 rounded-lg border bg-raised p-1.5', 'flex' => $i < 2, 'hidden md:flex' => $i >= 2, 'border-accent' => $on, 'border-line-subtle' => ! $on])>
                         <span @class(['flex size-5 flex-none items-center justify-center rounded border-2', 'border-accent bg-accent text-on-accent' => $on, 'border-line-strong bg-raised' => ! $on])>
                             @if ($on)
                                 <svg class="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>
@@ -110,15 +112,17 @@
         {{-- 3. Send the URL --}}
         <div role="group" aria-roledescription="slide" aria-label="3 / 4" class="{{ $slideClass }} md:flex-row md:gap-8">
             <div class="flex min-w-0 flex-1 flex-col gap-3 md:gap-4">
-                <span class="{{ $stepBadge }}" aria-hidden="true">2</span>
-                <h2 class="{{ $slideHeading }}">URL を送る</h2>
-                <p class="text-ink-2 md:text-base md:leading-relaxed">名前とひとことを付けて保存すると、提案の URL ができます。DM やチャットでチャンネル主に送りましょう。</p>
-                <ul class="flex flex-col gap-2 md:mt-auto md:text-[15px]">
+                <div class="flex items-center gap-3 md:flex-col md:items-start md:gap-4">
+                    <span class="{{ $stepBadge }}" aria-hidden="true">2</span>
+                    <h2 class="{{ $slideHeading }}">URL を送る</h2>
+                </div>
+                <p class="text-[13px] text-ink-2 md:text-base md:leading-relaxed">名前とひとことを付けて保存すると、提案の URL ができます。DM やチャットでチャンネル主に送りましょう。</p>
+                <ul class="flex flex-col gap-1.5 md:mt-auto md:gap-2 md:text-[15px]">
                     <li class="flex items-center gap-2"><span class="{{ $bulletDot }}" aria-hidden="true"></span>URL を知っている人だけが開けます</li>
-                    <li class="flex items-center gap-2"><span class="{{ $bulletDot }}" aria-hidden="true"></span>作成から {{ $retentionDays }} 日で自動削除</li>
+                    <li class="flex items-center gap-2"><span class="{{ $bulletDot }}" aria-hidden="true"></span>保存から {{ $retentionDays }} 日で自動削除</li>
                 </ul>
             </div>
-            <div class="flex flex-col justify-center gap-3 md:w-[340px] md:flex-none" aria-hidden="true">
+            <div class="flex flex-col justify-center gap-2 md:w-[340px] md:flex-none md:gap-3" aria-hidden="true">
                 <div class="{{ $mockPanel }}">
                     <span class="text-xs text-ink-muted">提案の URL</span>
                     <div class="flex gap-2">
@@ -135,15 +139,17 @@
         {{-- 4. The owner creates it --}}
         <div role="group" aria-roledescription="slide" aria-label="4 / 4" class="{{ $slideClass }} md:flex-row md:gap-8">
             <div class="flex min-w-0 flex-1 flex-col gap-3 md:gap-4">
-                <span class="{{ $stepBadge }}" aria-hidden="true">3</span>
-                <h2 class="{{ $slideHeading }}">チャンネル主が作る</h2>
-                <p class="text-ink-2 md:text-base md:leading-relaxed">URL を開いて Google でログイン。動画の入れ替えや名前の修正をして、公開範囲を選んで作成します。</p>
-                <ul class="flex flex-col gap-2 md:mt-auto md:text-[15px]">
+                <div class="flex items-center gap-3 md:flex-col md:items-start md:gap-4">
+                    <span class="{{ $stepBadge }}" aria-hidden="true">3</span>
+                    <h2 class="{{ $slideHeading }}">チャンネル主が作る</h2>
+                </div>
+                <p class="text-[13px] text-ink-2 md:text-base md:leading-relaxed">URL を開いて Google でログイン。動画の入れ替えや名前の修正をして、公開範囲を選んで作成します。</p>
+                <ul class="flex flex-col gap-1.5 md:mt-auto md:gap-2 md:text-[15px]">
                     <li class="flex items-center gap-2"><span class="{{ $bulletDot }}" aria-hidden="true"></span>自分の限定公開動画も追加できます</li>
                     <li class="flex items-center gap-2"><span class="{{ $bulletDot }}" aria-hidden="true"></span>作られるのはチャンネル主のチャンネル</li>
                 </ul>
             </div>
-            <div class="flex flex-col justify-center gap-3 md:w-[340px] md:flex-none" aria-hidden="true">
+            <div class="flex flex-col justify-center gap-2 md:w-[340px] md:flex-none md:gap-3" aria-hidden="true">
                 <div class="{{ $mockPanel }}">
                     <span class="text-xs text-ink-muted">公開範囲</span>
                     <div class="flex gap-2 text-[13px]">
@@ -151,12 +157,12 @@
                         <span class="flex h-9 flex-1 items-center justify-center rounded-lg border-2 border-accent bg-accent-soft font-bold text-accent">限定公開</span>
                         <span class="flex h-9 flex-1 items-center justify-center rounded-lg border border-line-strong bg-raised">公開</span>
                     </div>
-                    <span class="flex h-10 items-center justify-center rounded-lg bg-accent text-sm font-bold text-on-accent">再生リストを作成</span>
+                    <span class="flex h-9 items-center justify-center rounded-lg bg-accent text-sm font-bold text-on-accent md:h-10">再生リストを作成</span>
                 </div>
-                <div class="flex flex-col gap-2 rounded-xl border border-line bg-raised px-4 py-3">
-                    <div class="flex items-baseline gap-1.5"><span class="text-2xl font-bold text-accent">20</span><span class="text-[13px] text-ink-muted">/ 20 本 追加しました</span></div>
+                <div class="flex flex-col gap-2 rounded-xl border border-line bg-raised px-3 py-2.5 md:px-4 md:py-3">
+                    <div class="flex items-baseline gap-1.5"><span class="text-2xl font-bold text-accent">3</span><span class="text-[13px] text-ink-muted">/ 3 本 追加しました</span></div>
                     <div class="h-2 rounded-full bg-accent"></div>
-                    <span class="text-xs text-accent underline">YouTube で再生リストを開く</span>
+                    <span class="hidden text-xs text-accent underline md:block">YouTube で再生リストを開く</span>
                 </div>
             </div>
             <span class="{{ $counter }}" aria-hidden="true">4 / 4</span>
