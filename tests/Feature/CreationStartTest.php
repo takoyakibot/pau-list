@@ -352,8 +352,8 @@ class CreationStartTest extends TestCase
         $this->actAsOwner($this->channelId);
         $cases = [
             [['title' => " \u{3000}"], 'title', '再生リスト名を入力してください'],
-            [['title' => str_repeat('あ', 151)], 'title', '再生リスト名 は 150 文字以内で入力してください'],
-            [['description' => str_repeat('あ', 1001)], 'description', '再生リストの説明 は 1000 文字以内で入力してください'],
+            [['title' => str_repeat('あ', 151)], 'title', '再生リスト名は 150 文字以内で入力してください'],
+            [['description' => str_repeat('あ', 1001)], 'description', '再生リストの説明は 1000 文字以内で入力してください'],
             [['privacy' => 'friends'], 'privacy', '公開範囲の値が正しくありません'],
             [['privacy' => null], 'privacy', '公開範囲を選んでください'],
             [['privacy' => ''], 'privacy', '公開範囲を選んでください'],

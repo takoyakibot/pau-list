@@ -212,8 +212,8 @@ class ProposeScreenTest extends TestCase
         // maxlength counts UTF-16 units (an emoji is 2): the code-point counters and the server rule decide instead
         $this->assertSame(0, preg_match('/<(input|textarea)[^>]*name="(title|description|comment|proposer_name)"[^>]*maxlength/', $res->getContent()));
         foreach (['再生リスト名（必須）', '再生リストの説明（任意）', 'チャンネル主へのコメント（任意）', 'ニックネーム（任意）',
-            '再生リスト名 は 150 文字以内で入力してください', '再生リストの説明 は 1000 文字以内で入力してください',
-            'チャンネル主へのコメント は 500 文字以内で入力してください', 'ニックネーム は 30 文字以内で入力してください',
+            '再生リスト名は 150 文字以内で入力してください', '再生リストの説明は 1000 文字以内で入力してください',
+            'チャンネル主へのコメントは 500 文字以内で入力してください', 'ニックネームは 30 文字以内で入力してください',
             '文字数の上限を超えている項目があるため保存できません'] as $s) {
             $res->assertSee($s);
         }

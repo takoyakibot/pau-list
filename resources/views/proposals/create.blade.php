@@ -21,6 +21,7 @@
                 <span class="hint">提案先のチャンネル</span>
                 <h1 class="text-base font-bold break-words">{{ $channel->title }}</h1>
                 <p class="hint">一覧の最終取り込み: {{ $channel->last_synced_at->timezone('Asia/Tokyo')->format('n月j日 G時i分') }}@if ($staleness) <strong>{{ $staleness }}</strong>@endif ・ データ提供: YouTube</p>
+                <p class="hint">この一覧は {{ $channel->cached_since->timezone('Asia/Tokyo')->format('n月j日') }}に取り込み、{{ $channel->expires_at->timezone('Asia/Tokyo')->format('n月j日') }}までに削除されます（削除後に開くと全件を取り込み直します）</p>
             </div>
             <a class="ml-auto text-[13px] underline" href="https://www.youtube.com/channel/{{ $channel->channel_id }}" rel="noopener noreferrer" target="_blank">YouTube でチャンネルを開く</a>
         </header>
@@ -83,7 +84,7 @@
                         <h2 id="selected-heading" class="text-base font-bold">選択中</h2>
                         <span class="text-[22px] font-bold text-accent" x-text="selectedCount"></span>
                         <span class="text-[13px] text-ink-muted">/ <span x-text="maxItems"></span> 本</span>
-                        <button type="button" class="ml-auto min-h-9 px-1 text-[13px] text-ink-muted underline" @click="clearAll">全解除</button>
+                        <button type="button" class="ml-auto min-h-10 px-2 text-[13px] text-ink-muted underline" @click="clearAll">全解除</button>
                     </div>
                     <progress class="h-1.5 w-full appearance-none overflow-hidden rounded-full bg-muted [&::-moz-progress-bar]:bg-accent [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:bg-accent" aria-hidden="true" max="1" value="0" :max="maxItems" :value="selectedCount"></progress>
                     <p class="text-sm text-danger" role="alert" x-show="hasLimitMessage" x-cloak x-text="limitMessage"></p>
@@ -102,9 +103,9 @@
                                         </template>
                                         <span class="min-w-0 flex-1 break-words text-ink-2" x-text="item.title"></span>
                                         <span class="flex flex-none">
-                                            <button type="button" @click="moveUp" class="flex size-8 items-center justify-center rounded-md text-ink-muted hover:bg-muted" aria-label="上へ"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button>
-                                            <button type="button" @click="moveDown" class="flex size-8 items-center justify-center rounded-md text-ink-muted hover:bg-muted" aria-label="下へ"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
-                                            <button type="button" @click="remove" class="flex size-8 items-center justify-center rounded-md text-ink-muted hover:bg-muted" aria-label="削除"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+                                            <button type="button" @click="moveUp" class="flex size-10 items-center justify-center rounded-md text-ink-muted hover:bg-muted" aria-label="上へ"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button>
+                                            <button type="button" @click="moveDown" class="flex size-10 items-center justify-center rounded-md text-ink-muted hover:bg-muted" aria-label="下へ"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+                                            <button type="button" @click="remove" class="flex size-10 items-center justify-center rounded-md text-ink-muted hover:bg-muted" aria-label="削除"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
                                         </span>
                                     </div>
                                     <span class="pill mt-1 bg-muted text-ink-muted" x-show="item.outside">ほかのチャンネル</span>
@@ -117,17 +118,11 @@
                     <section aria-labelledby="url-heading" class="flex flex-col gap-1.5 border-t border-line-subtle pt-3">
                         <h3 id="url-heading" class="hint">動画 URL で追加</h3>
                         <div class="flex gap-1.5">
-                            <input type="url" x-model="urlInput" @keydown.enter.prevent="addByUrl" placeholder="https://www.youtube.com/watch?v=..." class="field min-h-9 min-w-0 flex-1 text-[13px]" aria-label="動画の URL" autocomplete="off">
+                            <input type="url" x-model="urlInput" @keydown.enter.prevent="addByUrl" placeholder="https://www.youtube.com/watch?v=..." class="field min-h-10 min-w-0 flex-1 text-[13px]" aria-label="動画の URL" autocomplete="off">
                             <button type="button" @click="addByUrl" :disabled="urlBusy" class="btn-sm btn-secondary">追加</button>
                         </div>
                         <p class="text-sm text-danger" role="alert" x-show="hasUrlMessage" x-cloak x-text="urlMessage"></p>
-                        <details class="hint">
-                            <summary>一覧について</summary>
-                            <div class="mt-1 space-y-1">
-                                <p>最近公開に切り替えた古い動画などは一覧に出ないことがあります。動画 URL で追加してください</p>
-                                <p>この一覧は {{ $channel->cached_since->timezone('Asia/Tokyo')->format('n月j日') }}に取り込み、{{ $channel->expires_at->timezone('Asia/Tokyo')->format('n月j日') }}までに削除されます（削除後に開くと全件を取り込み直します）</p>
-                            </div>
-                        </details>
+                        <p class="hint">最近公開に切り替えた古い動画などは一覧に出ないことがあります。動画 URL で追加してください</p>
                     </section>
                 </section>
 
@@ -148,26 +143,26 @@
                         <span class="block font-semibold text-ink-2">再生リスト名（必須）</span>
                         <input type="text" name="title" x-model="title" required class="field mt-1 min-h-10">
                         <span class="block text-xs" :class="titleCounterClass" x-text="titleCounter"></span>
-                        <span class="block text-xs text-danger" x-show="titleOver" x-cloak>再生リスト名 は 150 文字以内で入力してください</span>
+                        <span class="block text-xs text-danger" x-show="titleOver" x-cloak>再生リスト名は 150 文字以内で入力してください</span>
                     </label>
                     <label class="block text-[13px]">
                         <span class="block font-semibold text-ink-2">再生リストの説明（任意）</span>
                         <textarea name="description" x-model="description" rows="2" class="field mt-1"></textarea>
                         <span class="block text-xs" :class="descriptionCounterClass" x-text="descriptionCounter"></span>
-                        <span class="block text-xs text-danger" x-show="descriptionOver" x-cloak>再生リストの説明 は 1000 文字以内で入力してください</span>
+                        <span class="block text-xs text-danger" x-show="descriptionOver" x-cloak>再生リストの説明は 1000 文字以内で入力してください</span>
                     </label>
                     <label class="block text-[13px]">
                         <span class="block font-semibold text-ink-2">チャンネル主へのコメント（任意）</span>
                         <textarea name="comment" x-model="comment" rows="3" class="field mt-1"></textarea>
                         <span class="block text-xs" :class="commentCounterClass" x-text="commentCounter"></span>
-                        <span class="block text-xs text-danger" x-show="commentOver" x-cloak>チャンネル主へのコメント は 500 文字以内で入力してください</span>
+                        <span class="block text-xs text-danger" x-show="commentOver" x-cloak>チャンネル主へのコメントは 500 文字以内で入力してください</span>
                     </label>
                     <label class="block text-[13px]">
                         <span class="block font-semibold text-ink-2">ニックネーム（任意）</span>
                         <input type="text" name="proposer_name" x-model="proposerName" class="field mt-1 min-h-10">
                         <span class="hint block">実名は書かないでください</span>
                         <span class="block text-xs" :class="proposerNameCounterClass" x-text="proposerNameCounter"></span>
-                        <span class="block text-xs text-danger" x-show="proposerNameOver" x-cloak>ニックネーム は 30 文字以内で入力してください</span>
+                        <span class="block text-xs text-danger" x-show="proposerNameOver" x-cloak>ニックネームは 30 文字以内で入力してください</span>
                     </label>
                     <input type="text" name="website" class="hidden" tabindex="-1" autocomplete="off" aria-hidden="true">
 

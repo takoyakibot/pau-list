@@ -15,7 +15,7 @@
     --color-line-strong: #d4d4d8;
     --color-ink: #1a1a1a;
     --color-ink-2: #374151;
-    --color-ink-muted: #71717a;
+    --color-ink-muted: #666670;
     --color-accent: #2563eb;
     --color-accent-hover: #1d4ed8;
     --color-accent-soft: #eff6ff;
@@ -97,7 +97,7 @@
 }
 
 @utility btn-sm {
-    @apply inline-flex min-h-9 items-center justify-center gap-1 rounded-md px-3 text-[13px] disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-10 items-center justify-center gap-1 rounded-md px-3 text-[13px] disabled:cursor-not-allowed disabled:opacity-50;
 }
 
 @utility btn-primary {

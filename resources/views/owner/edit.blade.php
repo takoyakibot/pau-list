@@ -76,9 +76,9 @@
                                                 </div>
                                                 {{-- Per-row names for screen readers (owner-edit.js methods; the CSP build allows property refs only). --}}
                                                 <span class="flex flex-none">
-                                                    <button type="button" @click="moveUp" class="flex size-8 items-center justify-center rounded-md text-ink-muted hover:bg-muted" aria-label="上へ" :aria-label="moveUpLabel"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button>
-                                                    <button type="button" @click="moveDown" class="flex size-8 items-center justify-center rounded-md text-ink-muted hover:bg-muted" aria-label="下へ" :aria-label="moveDownLabel"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
-                                                    <button type="button" @click="remove" class="flex size-8 items-center justify-center rounded-md text-ink-muted hover:bg-muted" aria-label="削除" :aria-label="removeLabel"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+                                                    <button type="button" @click="moveUp" class="flex size-10 items-center justify-center rounded-md text-ink-muted hover:bg-muted" aria-label="上へ" :aria-label="moveUpLabel"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button>
+                                                    <button type="button" @click="moveDown" class="flex size-10 items-center justify-center rounded-md text-ink-muted hover:bg-muted" aria-label="下へ" :aria-label="moveDownLabel"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+                                                    <button type="button" @click="remove" class="flex size-10 items-center justify-center rounded-md text-ink-muted hover:bg-muted" aria-label="削除" :aria-label="removeLabel"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
                                                 </span>
                                             </div>
                                             <p class="mt-1 text-xs font-semibold text-danger" x-show="item.unavailable">削除または非公開のため作成できません</p>
@@ -92,7 +92,7 @@
                     <p class="hint border-t border-line-subtle px-4 py-2 sm:px-5">データ提供: YouTube</p>
                 </section>
 
-                <details class="card group overflow-hidden">
+                <details class="card group overflow-hidden" @if ($catalogUnavailable) open @endif>
                     <summary class="flex min-h-12 items-center gap-2 px-4 font-bold sm:px-5">
                         <svg class="flex-none text-ink-muted transition-transform group-open:rotate-45" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
                         <span id="add-heading">動画を追加</span>
@@ -144,7 +144,7 @@
 
                         <div class="flex flex-col gap-1.5 border-t border-line-subtle pt-3" x-cloak>
                             <div class="flex gap-1.5">
-                                <input type="url" x-model="urlInput" @keydown.enter.prevent="addByUrl" placeholder="https://www.youtube.com/watch?v=..." class="field min-h-9 min-w-0 flex-1 text-[13px]" aria-label="動画の URL" autocomplete="off">
+                                <input type="url" x-model="urlInput" @keydown.enter.prevent="addByUrl" placeholder="https://www.youtube.com/watch?v=..." class="field min-h-10 min-w-0 flex-1 text-[13px]" aria-label="動画の URL" autocomplete="off">
                                 <button type="button" @click="addByUrl" :disabled="urlBusy" class="btn-sm btn-secondary">追加</button>
                             </div>
                             <p class="hint">{{ \App\Http\Controllers\OwnerEditController::URL_UNLISTED_HINT }}</p>
@@ -164,14 +164,14 @@
                         <span class="block font-semibold text-ink-2">再生リスト名（必須）</span>
                         <input type="text" name="title" x-model="title" value="{{ $proposal->title }}" required class="field mt-1 min-h-10">
                         <span class="block text-xs" :class="titleCounterClass" x-text="titleCounter"></span>
-                        <span class="block text-xs text-danger" x-show="titleOver" x-cloak>再生リスト名 は 150 文字以内で入力してください</span>
+                        <span class="block text-xs text-danger" x-show="titleOver" x-cloak>再生リスト名は 150 文字以内で入力してください</span>
                         <span class="block text-xs text-danger" x-show="titleEmpty" x-cloak x-text="titleRequiredText">再生リスト名を入力してください</span>
                     </label>
                     <label class="block text-[13px]">
                         <span class="block font-semibold text-ink-2">再生リストの説明（任意）</span>
                         <textarea name="description" x-model="description" rows="2" class="field mt-1">{{ $proposal->description }}</textarea>
                         <span class="block text-xs" :class="descriptionCounterClass" x-text="descriptionCounter"></span>
-                        <span class="block text-xs text-danger" x-show="descriptionOver" x-cloak>再生リストの説明 は 1000 文字以内で入力してください</span>
+                        <span class="block text-xs text-danger" x-show="descriptionOver" x-cloak>再生リストの説明は 1000 文字以内で入力してください</span>
                     </label>
                     {{-- No default (D46): nothing is checked until the owner picks one; 「作成」 asks for it otherwise. --}}
                     <fieldset class="privacy-choice text-sm" aria-describedby="privacy-error">
@@ -217,7 +217,6 @@
                     <div class="flex flex-col gap-2">
                         {{-- The server-side disabled attribute is the no-JS state; owner-edit.js keeps it in sync via :disabled. --}}
                         <button type="button" :disabled="isCreateDisabled" @click="onCreate" class="btn btn-primary min-h-[46px] w-full text-[15px]" id="create-playlist" @disabled($count === 0 || $shortBy > 0)>あなたのチャンネルに再生リストを作成します</button>
-                        <p class="hint">押すとあなたの YouTube チャンネルに再生リストが作成されます（書き込み操作）</p>
                         <p class="text-sm text-danger" role="alert" x-show="hasCreateMessage" x-cloak x-text="createMessage"></p>
                         {{-- 401 from the start API (login expired): reloading sends the owner to the preview's login link; the draft is kept. --}}
                         <p class="text-sm" x-show="createNeedsRelogin" x-cloak><a class="font-semibold underline" :href="reloginHref">もう一度ログインする</a></p>

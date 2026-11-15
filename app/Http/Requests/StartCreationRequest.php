@@ -60,8 +60,8 @@ class StartCreationRequest extends FormRequest
             'privacy.required' => '公開範囲を選んでください',
             'privacy.string' => '公開範囲の値が正しくありません',
             'privacy.in' => '公開範囲の値が正しくありません',
-            'string' => ':attribute の形式が正しくありません',
-            'max' => ':attribute は :max 文字以内で入力してください',
+            'string' => ':attributeの形式が正しくありません',
+            'max' => ':attributeは :max 文字以内で入力してください',
         ];
     }
 

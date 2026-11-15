@@ -58,8 +58,8 @@ class StoreProposalRequest extends FormRequest
             'video_ids.*.distinct' => '同じ動画が重複しています',
             'video_ids.*.regex' => '動画 ID の形式が正しくありません',
             'title.required' => '再生リスト名を入力してください',
-            'string' => ':attribute の形式が正しくありません',
-            'max' => ':attribute は :max 文字以内で入力してください',
+            'string' => ':attributeの形式が正しくありません',
+            'max' => ':attributeは :max 文字以内で入力してください',
         ];
     }
 

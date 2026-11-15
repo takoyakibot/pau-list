@@ -81,7 +81,7 @@ class OwnerEditScreenTest extends TestCase
             ->assertSee('この内容に必要な枠: 再生リスト 1 つ＋動画 2 本')
             ->assertSee('本日の残り: 再生リスト 1 つ＋動画あと 99 本まで作成できます')
             ->assertSee('あなたのチャンネルに再生リストを作成します')
-            ->assertSee('押すとあなたの YouTube チャンネルに再生リストが作成されます（書き込み操作）')
+            ->assertDontSee('（書き込み操作）')
             ->assertSee('提案の内容に戻す')
             ->assertSee('データ提供: YouTube')
             ->assertSeeText('再生リストに入れる動画（2 / 99）')
@@ -280,7 +280,7 @@ class OwnerEditScreenTest extends TestCase
         $this->cacheChannel();
         $res = $this->edit($this->createProposal())->assertOk();
         $res->assertDontSee('準備中')
-            ->assertSee('押すとあなたの YouTube チャンネルに再生リストが作成されます（書き込み操作）')
+            ->assertDontSee('（書き込み操作）')
             ->assertSee('削除または非公開のため作成できません')
             ->assertSee('x-show="item.unavailable"', false);
         $this->assertSame('creation', $this->editorPayload($res->getContent())['creationUrl']);

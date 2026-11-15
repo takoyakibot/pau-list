@@ -11,7 +11,7 @@
     $completed = $progress['status'] === \App\Models\PlaylistCreation::COMPLETED;
     $privacyLabel = ['private' => '非公開', 'unlisted' => '限定公開'][$creation->privacy_status] ?? null;
     // Item status pills: the colour follows data-status (server-rendered here, bound to row.status by Alpine).
-    $statusPill = 'pill shrink-0 bg-muted text-ink-muted data-[status=done]:bg-success-soft data-[status=done]:text-success data-[status=in_flight]:bg-accent-soft data-[status=in_flight]:text-accent-hover data-[status=failed]:bg-danger-soft data-[status=failed]:text-danger';
+    $statusPill = 'pill shrink-0 bg-muted text-ink-muted data-[status=done]:bg-success-soft data-[status=done]:text-success data-[status=in\_flight]:bg-accent-soft data-[status=in\_flight]:text-accent-hover data-[status=failed]:bg-danger-soft data-[status=failed]:text-danger';
 @endphp
 
 @section('content')
@@ -34,9 +34,9 @@
         <div id="creation-runner" x-data="creationRunner" data-runner="{{ json_encode($runner, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}" class="flex flex-col gap-4">
             <section class="card flex flex-col gap-4 p-5 sm:p-6" aria-label="進捗">
                 <div>
-                    <h1 class="text-xs font-normal text-ink-muted">再生リストの作成</h1>
+                    <p class="hint">再生リストの作成</p>
                     <div class="mt-1 flex flex-wrap items-center gap-2.5">
-                        <p class="text-[22px] font-bold break-words">{{ $creation->title }}</p>
+                        <h1 class="text-[22px] font-bold break-words">{{ $creation->title }}</h1>
                         @if (in_array($creation->privacy_status, ['private', 'unlisted', 'public'], true))
                         <span class="pill bg-muted text-ink-2">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -117,9 +117,9 @@
                 <div class="space-y-1">
                     {{-- Always shown (static): reads right before and after the playlist exists. Nothing for public. --}}
                     @if ($privacyLabel !== null)
-                        <p>この再生リストは「{{ $privacyLabel }}」で作成されます。公開範囲は、作成後に YouTube Studio の「再生リスト」で変更できます。</p>
+                        <p>この再生リストは「{{ $privacyLabel }}」で作成され、公開範囲は作成後に YouTube Studio の「再生リスト」で変更できます。</p>
                     @endif
-                    <p>Google アカウントの <a class="underline" href="https://myaccount.google.com/permissions" rel="noopener noreferrer">サードパーティのアクセス（https://myaccount.google.com/permissions）</a>からいつでも承認を取り消せます</p>
+                    <p>このサービスへの承認は <a class="underline" href="https://myaccount.google.com/permissions" rel="noopener noreferrer">Google アカウントのアクセス権</a> からいつでも取り消せます</p>
                     <p class="hint">データ提供: YouTube</p>
                 </div>
             </section>
