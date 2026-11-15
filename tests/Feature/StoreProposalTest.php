@@ -138,11 +138,11 @@ class StoreProposalTest extends TestCase
         $this->travel(11)->minutes(); // stay under the 5 per 10 minutes limit
         $this->store(['title' => '', 'video_ids' => [self::A]])->assertSessionHasErrors(['title' => '再生リスト名を入力してください']);
         $this->store(['title' => 't', 'video_ids' => [self::A], 'comment' => str_repeat('a', 501)])
-            ->assertSessionHasErrors(['comment' => 'チャンネル主へのコメント は 500 文字以内で入力してください']);
+            ->assertSessionHasErrors(['comment' => 'チャンネル主へのコメントは 500 文字以内で入力してください']);
         $this->store(['title' => 't', 'video_ids' => [self::A], 'proposer_name' => str_repeat('a', 31)])
-            ->assertSessionHasErrors(['proposer_name' => 'ニックネーム は 30 文字以内で入力してください']);
+            ->assertSessionHasErrors(['proposer_name' => 'ニックネームは 30 文字以内で入力してください']);
         $this->store(['title' => 't', 'video_ids' => [self::A], 'description' => str_repeat('a', 1001)])
-            ->assertSessionHasErrors(['description' => '再生リストの説明 は 1000 文字以内で入力してください']);
+            ->assertSessionHasErrors(['description' => '再生リストの説明は 1000 文字以内で入力してください']);
         $this->assertSame(0, Proposal::count());
         $this->assertNoApiCalls();
     }
@@ -305,7 +305,7 @@ class StoreProposalTest extends TestCase
         $this->assertSame(150, mb_strlen($p->title));
 
         $this->store(['title' => str_repeat('😀', 151), 'video_ids' => [self::A]])
-            ->assertSessionHasErrors(['title' => '再生リスト名 は 150 文字以内で入力してください']);
+            ->assertSessionHasErrors(['title' => '再生リスト名は 150 文字以内で入力してください']);
         $this->store(['title' => 't', 'description' => str_repeat("あ\r\n", 500).'x', 'video_ids' => [self::A]])
             ->assertSessionHasErrors('description');
     }

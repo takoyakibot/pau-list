@@ -213,7 +213,7 @@ class OwnerDeleteProposalTest extends TestCase
         // S6 shows the notice as an alert.
         $this->actAsOwner($this->channelId)->withSession(['creation_notice' => self::IN_PROGRESS])
             ->get(route('proposals.creation', $key))->assertOk()
-            ->assertSee('<p class="rounded bg-amber-50 p-2 text-sm text-amber-900" role="alert">'.e(self::IN_PROGRESS).'</p>', false);
+            ->assertSee('<p class="notice-warn text-sm" role="alert">'.e(self::IN_PROGRESS).'</p>', false);
     }
 
     public function test_paused_or_needs_check_also_blocks_delete(): void

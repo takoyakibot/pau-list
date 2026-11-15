@@ -25,7 +25,7 @@ function readJson(el, name) {
 }
 
 function counterClass(over) {
-  return over ? 'font-semibold text-red-700' : 'text-gray-600';
+  return over ? 'font-semibold text-danger' : 'text-ink-muted';
 }
 
 function toItem(x) {

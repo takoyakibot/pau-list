@@ -4,17 +4,17 @@
 
 @section('content')
     <h1 class="text-2xl font-bold">プライバシーポリシー</h1>
-    <p class="mt-2 text-sm text-gray-600">最終更新: 2026年11月15日</p>
+    <p class="mt-2 text-sm text-ink-muted">最終更新: 2026年11月15日</p>
 
-    <div class="mt-6 space-y-8 leading-relaxed">
+    <div class="card mt-6 space-y-8 p-5 leading-relaxed text-ink-2 sm:p-8">
         <section>
-            <h2 id="about" class="text-xl font-bold">1. 本サービスについて</h2>
+            <h2 id="about" class="text-lg font-bold text-ink">1. 本サービスについて</h2>
             <p class="mt-3">「List Maker」（https://list-maker.alpacasandbag.jp 、以下「本サービス」）は、YouTube の再生リストを提案し、チャンネル主が自分のチャンネルに作成するためのツールです。運営者が個人で運営しています。本サービスは YouTube および Google とは提携しておらず、YouTube・Google が提供・承認するものではありません。</p>
             <p class="mt-3">このページでは、本サービスが取得する情報と、その利用目的・保存期間・削除の方法を説明します。</p>
         </section>
 
         <section>
-            <h2 id="youtube" class="text-xl font-bold">2. YouTube API Services の利用</h2>
+            <h2 id="youtube" class="text-lg font-bold text-ink">2. YouTube API Services の利用</h2>
             <p class="mt-3">本サービスは YouTube API Services を使用しています。チャンネルや動画の情報の取得と、チャンネル主の操作による再生リストの作成に使います。</p>
             <p class="mt-3">YouTube API Services による情報の取り扱いには Google プライバシーポリシーが適用されます。</p>
             <ul class="mt-3 list-disc space-y-1 pl-6">
@@ -32,7 +32,7 @@
         </section>
 
         <section>
-            <h2 id="data" class="text-xl font-bold">3. 取得する情報と利用目的</h2>
+            <h2 id="data" class="text-lg font-bold text-ink">3. 取得する情報と利用目的</h2>
             <p class="mt-3">本サービスが取得・保存する情報は次のとおりです。本サービスには会員登録はなく、提案する人のアカウントは作りません。</p>
             <ul class="mt-3 list-disc space-y-3 pl-6">
                 <li><strong>提案の内容</strong>（再生リスト名・説明・コメント・ニックネーム・選んだ動画）: 共有 URL での表示と、チャンネル主が再生リストを作成するために使います。ニックネームとコメントの入力は任意です。</li>
@@ -48,7 +48,7 @@
         </section>
 
         <section>
-            <h2 id="retention" class="text-xl font-bold">4. 保存場所と期間</h2>
+            <h2 id="retention" class="text-lg font-bold text-ink">4. 保存場所と期間</h2>
             <p class="mt-3">情報は本サービスのサーバーのデータベースに保存し、期限を過ぎたものは 1 日 1 回の処理で削除します。</p>
             <ul class="mt-3 list-disc space-y-3 pl-6">
                 <li>提案と、YouTube から取得した動画の情報は、最長 30 日で削除します。提案は作成から 30 日で、提案に関する作成の記録も提案と一緒に削除します。チャンネルごとに取り込んだ動画の一覧は、取り込みから 30 日でチャンネル単位でまとめて削除します（削除したチャンネルの ID と削除日時だけは、取り込み直しの判定のため、さらに 30 日保存します）。</li>
@@ -61,7 +61,7 @@
         </section>
 
         <section>
-            <h2 id="browser-storage" class="text-xl font-bold">5. Cookie とブラウザへの保存</h2>
+            <h2 id="browser-storage" class="text-lg font-bold text-ink">5. Cookie とブラウザへの保存</h2>
             <p class="mt-3">本サービスが使う Cookie は、セッション用の Cookie と、フォームの不正な送信を防ぐための Cookie（XSRF-TOKEN）だけです。アクセス解析や広告のためのタグ・Cookie は使いません。</p>
             <p class="mt-3">提案作成中の選択と『この端末で作った提案』（共有 URL）はブラウザの localStorage に保存し、サーバーには送りません。選択中の動画は動画の ID（と、別のチャンネルの動画かどうか）だけを保存し、最後の保存から 30 日たったものは削除します。『この端末で作った提案』は、共有 URL・提案名・チャンネル名などを最大 50 件、提案の期限まで保存し、期限を過ぎたものは削除します。これらの期限切れの情報は、そのブラウザで次に本サービスを開いたときに削除されます（『この端末で作った提案』はトップページ、選択中の動画は動画を選ぶページを開いたときです）。</p>
             <p class="mt-3">チャンネル主の編集中の内容はブラウザの sessionStorage に保存し、タブを閉じると消えます。</p>
@@ -69,7 +69,7 @@
         </section>
 
         <section>
-            <h2 id="sharing" class="text-xl font-bold">6. 第三者への提供</h2>
+            <h2 id="sharing" class="text-lg font-bold text-ink">6. 第三者への提供</h2>
             <p class="mt-3">本サービスは、取得した情報を第三者に提供しません。ただし、次の場合を除きます。</p>
             <ul class="mt-3 list-disc space-y-1 pl-6">
                 <li>チャンネル主の操作によって、YouTube に再生リストの作成と動画の追加の内容を送信する場合</li>
@@ -80,13 +80,13 @@
         </section>
 
         <section>
-            <h2 id="contact-form" class="text-xl font-bold">7. 問い合わせの取り扱い</h2>
+            <h2 id="contact-form" class="text-lg font-bold text-ink">7. 問い合わせの取り扱い</h2>
             <p class="mt-3">問い合わせの内容は運営者へのメールとして送られ、本サービスのデータベースには保存しません。返信用のメールアドレスの入力は任意です。入力された場合は返信のためだけに使います。</p>
             <p class="mt-3">受け取ったメールは対応の完了後 90 日以内に削除します。</p>
         </section>
 
         <section>
-            <h2 id="revoke" class="text-xl font-bold">8. 承認の取り消し</h2>
+            <h2 id="revoke" class="text-lg font-bold text-ink">8. 承認の取り消し</h2>
             <p class="mt-3">チャンネル主が本サービスからログアウトすると、本サービスは Google 側の承認（アクセストークン）も取り消します。取り消しに失敗した場合は画面でお知らせしますので、下の方法で取り消してください。</p>
             <p class="mt-3">また、Google アカウントの サードパーティのアクセス（<a class="underline" href="https://myaccount.google.com/permissions" rel="noopener noreferrer" target="_blank">https://myaccount.google.com/permissions</a>）からいつでも承認を取り消せます。</p>
             <p class="mt-3">本サービスはリフレッシュトークンを取得しないため、取り消した後に本サービスがチャンネルにアクセスできるトークンは残りません。</p>
@@ -94,7 +94,7 @@
         </section>
 
         <section>
-            <h2 id="deletion" class="text-xl font-bold">9. 削除の依頼</h2>
+            <h2 id="deletion" class="text-lg font-bold text-ink">9. 削除の依頼</h2>
             <p class="mt-3">提案などの削除は、お問い合わせフォームから種別『削除依頼』でご依頼ください。7 日以内に削除します。依頼の際は、本文に提案の URL を書いてください。</p>
             <p class="mt-3">チャンネルに関するデータ（そのチャンネル宛ての提案と作成の記録、取り込んだ動画の一覧）をまとめて削除したい場合は、チャンネルの URL（https://www.youtube.com/channel/UC…）またはチャンネル ID を書いてください。チャンネル単位の削除では、そのチャンネルの持ち主からの依頼であることを確かめるため、運営者がチャンネルの公開の連絡先を通じて確認をお願いすることがあります。</p>
             <p class="mt-3">お問い合わせフォームが使えない場合（1 日の受付数の上限に達した場合など）は、@include('partials.operator-contact')からも削除をご依頼いただけます。</p>
@@ -102,12 +102,12 @@
         </section>
 
         <section>
-            <h2 id="contact" class="text-xl font-bold">10. お問い合わせ先</h2>
+            <h2 id="contact" class="text-lg font-bold text-ink">10. お問い合わせ先</h2>
             <p class="mt-3">このプライバシーポリシーや情報の取り扱いに関するお問い合わせは、<a class="underline" href="{{ route('contact.show') }}">お問い合わせフォーム</a>から受け付けます。</p>
         </section>
 
         <section>
-            <h2 id="changes" class="text-xl font-bold">11. 改定</h2>
+            <h2 id="changes" class="text-lg font-bold text-ink">11. 改定</h2>
             <p class="mt-3">このプライバシーポリシーを変更する場合は、このページでお知らせします。</p>
             <p class="mt-3">最終更新: 2026年11月15日</p>
         </section>

@@ -81,7 +81,7 @@ class OwnerEditScreenTest extends TestCase
             ->assertSee('この内容に必要な枠: 再生リスト 1 つ＋動画 2 本')
             ->assertSee('本日の残り: 再生リスト 1 つ＋動画あと 99 本まで作成できます')
             ->assertSee('あなたのチャンネルに再生リストを作成します')
-            ->assertSee('押すとあなたの YouTube チャンネルに再生リストが作成されます（書き込み操作）')
+            ->assertDontSee('（書き込み操作）')
             ->assertSee('提案の内容に戻す')
             ->assertSee('データ提供: YouTube')
             ->assertSeeText('再生リストに入れる動画（2 / 99）')
@@ -147,7 +147,7 @@ class OwnerEditScreenTest extends TestCase
         }
         // The client-side message for a missing choice sits next to the radios (property refs only, CSP build).
         $this->assertStringContainsString('<fieldset class="privacy-choice text-sm" aria-describedby="privacy-error">', $html);
-        $this->assertStringContainsString('id="privacy-error" class="mt-1 text-sm text-red-700" role="alert" x-show="hasPrivacyMessage" x-cloak x-text="privacyMessage"', $html);
+        $this->assertStringContainsString('id="privacy-error" class="mt-1 text-sm text-danger" role="alert" x-show="hasPrivacyMessage" x-cloak x-text="privacyMessage"', $html);
     }
 
     public function test_select_filtered_button_starts_disabled_and_uses_property_refs(): void
@@ -280,7 +280,7 @@ class OwnerEditScreenTest extends TestCase
         $this->cacheChannel();
         $res = $this->edit($this->createProposal())->assertOk();
         $res->assertDontSee('準備中')
-            ->assertSee('押すとあなたの YouTube チャンネルに再生リストが作成されます（書き込み操作）')
+            ->assertDontSee('（書き込み操作）')
             ->assertSee('削除または非公開のため作成できません')
             ->assertSee('x-show="item.unavailable"', false);
         $this->assertSame('creation', $this->editorPayload($res->getContent())['creationUrl']);

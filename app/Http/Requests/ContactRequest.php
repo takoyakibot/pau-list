@@ -56,10 +56,10 @@ class ContactRequest extends FormRequest
             'kind.required' => '種別を選んでください',
             'kind.in' => '種別を選んでください',
             'body.required' => '本文を入力してください',
-            'reply_address.not_regex' => '返信用メールアドレス の形式が正しくありません',
-            'reply_address.email' => '返信用メールアドレス の形式が正しくありません',
-            'string' => ':attribute の形式が正しくありません',
-            'max' => ':attribute は :max 文字以内で入力してください',
+            'reply_address.not_regex' => '返信用メールアドレスの形式が正しくありません',
+            'reply_address.email' => '返信用メールアドレスの形式が正しくありません',
+            'string' => ':attributeの形式が正しくありません',
+            'max' => ':attributeは :max 文字以内で入力してください',
         ];
     }
 

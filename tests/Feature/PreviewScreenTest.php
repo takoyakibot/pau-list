@@ -80,7 +80,7 @@ class PreviewScreenTest extends TestCase
         $res->assertDontSee('href="https://spam.example', false);
         $res->assertDontSee('href="https://example.com/x', false);
         $res->assertSee('whitespace-pre-line', false);
-        $res->assertSee('対象チャンネル外');
+        $res->assertSee('ほかのチャンネル');
         $res->assertSee('2 本');
         $res->assertSee('合計 1 時間 2 分');
         $res->assertSee('1:05');
