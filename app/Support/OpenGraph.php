@@ -26,6 +26,11 @@ final class OpenGraph
 
     public const THEME_COLOR = '#2563eb';
 
+    /** Display widths (mb_strimwidth) of the proposal title and the channel title in S4's card. */
+    public const TITLE_WIDTH = 120;
+
+    public const CHANNEL_WIDTH = 100;
+
     /**
      * S4 only. The proposer name, the comment (meant for the owner) and the video titles are not included.
      * $key is the raw key of the preview's own URL (the shared URL; S4 is the one page meant to be passed around).
@@ -36,9 +41,18 @@ final class OpenGraph
     {
         return [
             'url' => self::absolute(route('proposals.show', $key, false)),
-            'title' => '「'.$proposal->title.'」の再生リスト案',
-            'description' => $itemCount.' 本の動画 ・ '.$proposal->channel_title.' への提案 ・ '.self::SITE_NAME,
+            'title' => '「'.self::clip($proposal->title, self::TITLE_WIDTH).'」の再生リスト案',
+            'description' => $itemCount.' 本の動画 ・ '.self::clip($proposal->channel_title, self::CHANNEL_WIDTH)
+                .' への提案 ・ '.self::SITE_NAME,
         ];
+    }
+
+    /** One line (control characters, newlines, separators and whitespace runs become one space; ZWJ etc. are kept), cut to $width with "…". */
+    private static function clip(string $text, int $width): string
+    {
+        $line = trim((string) preg_replace('/[\p{Cc}\p{Z}\s]+/u', ' ', $text));
+
+        return mb_strimwidth($line, 0, $width, '…', 'UTF-8');
     }
 
     /**

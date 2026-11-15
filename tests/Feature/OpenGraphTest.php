@@ -117,6 +117,39 @@ class OpenGraphTest extends TestCase
         $this->assertStringNotContainsString('evil.example', substr($res->getContent(), 0, (int) strpos($res->getContent(), '</head>')));
     }
 
+    public function test_app_url_with_trailing_slash_gives_single_slashes(): void
+    {
+        config(['app.url' => 'https://list-maker.example/']);
+        $key = $this->createProposal();
+
+        $this->assertSame(['https://list-maker.example'], $this->metas($this->get('/')->assertOk())['og:url']);
+        $this->assertSame(['https://list-maker.example/terms'], $this->metas($this->get('/terms')->assertOk())['og:url']);
+        $metas = $this->metas($this->get("/p/$key")->assertOk());
+        $this->assertSame(["https://list-maker.example/p/$key"], $metas['og:url']);
+        $this->assertSame(['https://list-maker.example/images/og-card.png'], $metas['og:image']);
+    }
+
+    public function test_preview_card_text_is_one_line_and_clipped(): void
+    {
+        $key = $this->createProposal([
+            'title' => "  夏の\n\n歌\t\tまとめ\r\n ",
+            'channel_title' => str_repeat('長', 80),
+        ]);
+
+        $metas = $this->metas($this->get(route('proposals.show', $key))->assertOk());
+        $this->assertSame(['「夏の 歌 まとめ」の再生リスト案'], $metas['og:title']);
+        // 100 display columns: 49 full-width characters (98) + "…".
+        $this->assertSame(
+            ['2 本の動画 ・ '.str_repeat('長', 49).'… への提案 ・ List Maker'],
+            $metas['og:description'],
+        );
+
+        $long = str_repeat('あ', 150);
+        $key = $this->createProposal(['title' => $long]);
+        $title = $this->metas($this->get(route('proposals.show', $key))->assertOk())['og:title'][0];
+        $this->assertSame('「'.str_repeat('あ', 59).'…」の再生リスト案', $title);
+    }
+
     public function test_static_pages_have_default_card(): void
     {
         $this->assertDefaultCard($this->get('/terms')->assertOk(), url('/terms'));
